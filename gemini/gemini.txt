@@ -1,0 +1,18 @@
+# ==========================================
+# ⚡ 极简高浓缩版 · 娇俏软萌少女脸 + 纤细窄腰适中胸型黄金版（对齐 gemini.png 原图气质！）
+# 🔧 微调：
+#   1. 移除催熟脸型和骨架的 `1.2::large breasts::` 与负向的 `round face`！
+#   2. 改为主框反向压制成熟御姐感 `-2::mature female::`，角色框采用 `slender, petite, narrow waist, medium breasts`（纤瘦娇小骨架 + 细腰 + 恰到好处的少女胸线，不胖不矮也不显老！）
+# ==========================================
+
+
+## 1. 主输入框【Base Prompt】：
+2::2koma::, 2::vertical split screen::, comic, vertical border, gutter, before and after, 2girls, same character, best quality, 1.7::pixel art::, 16-bit, 1.3::dithering::, retro style, soft colors, from below, low angle, park, sky, rating:explicit, nsfw, uncensored, -1.5::realistic, smooth shading::, -2::mature female, plump, chubby, thick thighs, chibi::
+
+
+## 2. 【Character 1（选左边 A3 — 娇俏萌系脸 + 纤细窄腰适中胸围）】：
+cat girl, slender, petite, narrow waist, medium breasts, 1.4::purple hair::, dark purple hair, gradient hair, purple cat ears, ahoge, double bun, long wavy hair, purple cat tail, four-pointed star hair ornament, heterochromia, red right eye, yellow left eye, from below, cowboy shot, standing, high collar, halterneck, bare shoulders, dark blue cropped bustier, purple criss-cross waist, midriff, detached wide sleeves, frilled cuffs, dark blue and white layered frilled miniskirt, gold chain belt, coattails, thigh strap, white panties, upskirt, looking down, cute face, slight smile, blush
+
+
+## 3. 【Character 2（选右边 E3 — 娇俏萌系脸 + 纤细窄腰适中胸围 + 展示差分）】：
+cat girl, slender, petite, narrow waist, medium breasts, 1.4::purple hair::, dark purple hair, gradient hair, purple cat ears, ahoge, double bun, long wavy hair, purple cat tail, four-pointed star hair ornament, heterochromia, red right eye, yellow left eye, thigh strap, from below, cowboy shot, standing, spread legs, completely nude, uncensored, nipples, pussy, spread pussy, after vaginal, cum in pussy, cumdrip, pussy juice, looking down, cute face, torogao, bedroom eyes, half-closed eyes, blush, slight smile, heavy breathing, -2.5::clothes, bustier, skirt, sleeves, panties::

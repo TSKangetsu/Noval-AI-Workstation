@@ -1,0 +1,38 @@
+# ==========================================
+# Before & After 差分套组（修复局部形状畸形：去除勒痕冲突词，恢复干净二次元一线天画法）
+# ==========================================
+
+
+# ------------------------------------------
+# 方案 A：固定同一个 Seed 分两张出图（立绘切换差分）
+# ------------------------------------------
+
+## 【1. Before 版 - 事前穿衣原版姿势】
+
+### 正面提示词 (Prompt)：
+1girl, javelin (azur lane), hair ribbon, x hair ornament, slender, year 2025, 1.5::cowboy shot::, standing, legs slightly apart, miniskirt, bare thighs, 0.8::diamond-shaped pupils::, slight smile, blush, heart hands, simple background, window (computing), glitch, dithering, paper texture, chromatic aberration, no text, -3::realistic::, -2::chibi::, A cowboy shot from thighs up of Javelin standing with slender proportions making heart hands and a slight smile. The glitch effect slightly distorts part of her figure. Multiple computer windows are open in the background.
+
+### 负面提示词 (Undesired Content)：
+close-up, portrait, upper body, text, watermark, nsfw, nude
+
+
+## 【2. After 版 - 事后解除衣物（干净自然线条版，不过曝不变形）】
+
+### 正面提示词 (Prompt)：
+1girl, javelin (azur lane), hair ribbon, x hair ornament, slender, year 2025, 1.5::cowboy shot::, standing, legs slightly apart, nsfw, 1.5::nude::, completely nude, 1.5::uncensored::, nipples, pussy, 1.3::cleft of venus::, cumdrip, groin, thighs, sweat, 1.8::torogao::, 1.4::bedroom eyes::, 0.8::diamond-shaped pupils::, half-closed eyes, blush, slight smile, flirt, heavy breathing, heart hands, simple background, window (computing), glitch, 0.7::dithering::, paper texture, chromatic aberration, no text, -2::realistic::, -2::chibi::, A cowboy shot from thighs up of an unclothed Javelin standing with legs slightly apart, making heart hands with a blushing torogao expression. The glitch effect slightly distorts the edge of her figure. Multiple computer windows are open in the background.
+
+### 负面提示词 (Undesired Content)：
+close-up, portrait, upper body, text, watermark, mosaic censoring, bar censor, censored, convenient censoring, barbie doll anatomy, cameltoe, bad anatomy, clothes, shirt, skirt, miniskirt, serafuku, neckerchief, gloves, dress, panties, underwear
+
+
+# ------------------------------------------
+# 方案 B：单张画布左右分屏直出 Before & After（横图 1216x832）
+# ------------------------------------------
+
+## 【单图左右对比版 Prompt】（同步去除局部过曝权重，线条更自然）
+
+### 正面提示词 (Prompt)：
+2koma, vertical split screen, before and after, same character, 1girl, javelin (azur lane), hair ribbon, x hair ornament, slender, year 2025, 1.5::cowboy shot::, standing, legs slightly apart, groin, thighs, 0.8::diamond-shaped pupils::, heart hands, nsfw, 1.5::uncensored::, pussy, 1.3::cleft of venus::, cumdrip, simple background, window (computing), glitch, 0.7::dithering::, paper texture, chromatic aberration, no text, -2::realistic::, -2::chibi::, Split screen comparison of Javelin standing with legs slightly apart in the exact same cowboy shot pose making heart hands with multiple computer windows in the background. On the left panel (before), she is wearing her sleeveless top, blue neckerchief, and plaid miniskirt with a pure slight smile. On the right panel (after), she is completely nude with exposed nipples, clean cleft of venus and cumdrip between her thighs, sweat, heavy blush, half-closed bedroom eyes, and a melting torogao expression. The glitch effect distorts the outer edges of both panels.
+
+### 配套负面提示词 (Undesired Content)：
+close-up, portrait, upper body, text, watermark, mosaic censoring, bar censor, censored, convenient censoring, barbie doll anatomy, cameltoe, bad anatomy, speech bubble, 4koma

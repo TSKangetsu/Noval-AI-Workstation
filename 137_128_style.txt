@@ -1,0 +1,21 @@
+# ==========================================
+# ⚔️ 锋利复线 + 柔肤无痕过渡版（默认角色：标枪 javelin (azur lane)）
+# 🔧 本轮针对性修复：
+#   1. 默认角色已切换为 `javelin (azur lane)`（保留发带与 X 发饰，并在负向屏蔽原版水手服领巾防串色）。
+#   2. 彻底解决局部“像贴上去一样、色差突兀生硬”的三大元凶：
+#      - 删掉了 `pink pussy`（在暖灰低饱和光影下强行指定粉红，会导致局部变成高饱和粉红贴纸，与暖米色大腿产生剧烈色差！去掉后会自动跟随全局 `pastel colors + subsurface scattering` 呈现自然的暖珊瑚肉色渐变）。
+#      - 把 `cleft of venus` 从负向放出（之前 `-2` 封杀它会把大腿根外侧原本用来自然衔接的皮肤折痕一并抹掉，导致开口像孤立抠图贴上去的；现在补回 `groin` 骨盆阴影衔接，过渡自然生长）。
+#      - 线条继续靠 `1.4::sharp focus:: + 0.8::pen (medium):: + 1.1::colored sketch::` 保持针尖级锋利；但上色把生硬切色块的 `marker` 换回 `0.5::watercolor (medium)::, soft colors`，并解除对柔和皮肤晕染的封杀，让局部血色像水彩透肤一样柔和化开！
+# ==========================================
+
+
+## 1. 【默认角色（标枪 Javelin）完整单条直出 Prompt】：
+masterpiece, best quality, 0.8::very aesthetic::, absurdres, year 2025, 1.4::sharp focus::, fine details, 1.1::colored sketch::, 0.8::pen (medium)::, 0.8::painterly::, 0.5::watercolor (medium)::, visible brushstrokes, pastel colors, soft colors, muted colors, subsurface scattering, backlighting, rim lighting, warm lighting, 1girl, javelin (azur lane), hair ribbon, x hair ornament, slender, petite, pointy hair, stray hair, indoors, couch, lamp, sitting, sitting on couch, one knee up, spread legs, barefoot, oversized shirt, white t-shirt, off-shoulder, single bare shoulder, wet clothes, bottomless, no panties, double v, hands up, :p, tongue out, smug, furrowed brow, half-closed eyes, watery eyes, blush, floating heart, rating:explicit, nsfw, uncensored, groin, pussy, 0.5::spread pussy::, after vaginal, cum, cum in pussy, cumdrip, cum on thighs, sweat, -1.5::labia::, -2::blurry, out of focus, depth of field, soft focus, cel shading, flat color, oil painting (medium), thick outlines, high contrast, harsh shadows, dark, realistic, 3d, plump, thick thighs, barbie doll anatomy, neckerchief, serafuku, plaid, gloves::
+
+
+## 2. 【纯画风与锋利复线柔肤插件包（套其他角色时复制）】：
+# 放在开头：
+masterpiece, best quality, 0.8::very aesthetic::, absurdres, year 2025, 1.4::sharp focus::, fine details, 1.1::colored sketch::, 0.8::pen (medium)::, 0.8::painterly::, 0.5::watercolor (medium)::, visible brushstrokes, pastel colors, soft colors, muted colors, subsurface scattering, backlighting, rim lighting, warm lighting
+
+# 放在末尾：
+-2::blurry, out of focus, depth of field, soft focus, cel shading, flat color, oil painting (medium), thick outlines, high contrast, harsh shadows, dark, realistic, 3d::
