@@ -1,0 +1,2061 @@
+# -*- coding: utf-8 -*-
+"""
+NovelAI V4.5 / V5 连续故事线提示词生成器 GUI (story_gui.py)
+特性：
+1. 第一人称 (POV) 与第三人称 (客观机位) 全 12 幕双轨独立分离；
+2. 右上角醒目双态选择器，默认控制下方「🎯 单幕精细预览」展示第一人称还是第三人称；
+3. 支持【精密参照 (Precise Reference)】快捷一键减负模式与 14 项细粒度模块独立 OFF 开关，仅留核心动作骨架即可配合精密参照出图。
+"""
+
+from __future__ import annotations
+import ctypes
+from io import BytesIO
+import os
+import threading
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, simpledialog
+from typing import Dict, List, Optional
+
+from PIL import Image, ImageTk
+
+from nai_api import (
+    BatchUpscaleSummary,
+    CANVAS_PRESETS,
+    DEFAULT_OUTPUT_DIR,
+    FolderUpscalePlan,
+    GenerationResult,
+    MAX_T5_TOKENS,
+    MODEL_V5_FULL_MEDIUM,
+    NaiApiError,
+    NaiApiSettings,
+    SubscriptionInfo,
+    UpscaleResult,
+    batch_upscale_folder_nai,
+    count_prompt_t5_tokens,
+    estimate_v5_medium_anlas,
+    extract_first_prompt_from_preview,
+    extract_prompt_blocks_from_preview,
+    fetch_subscription_info,
+    generate_single_image_v5_medium,
+    load_api_settings,
+    parse_canvas_size,
+    save_api_settings,
+    scan_folder_for_upscale,
+    upscale_single_image_nai,
+)
+from story_engine import (
+    BUILTIN_CHARACTERS,
+    BODY_PRESETS,
+    BUST_PRESETS,
+    SKIN_PRESETS,
+    OUTFIT_PRESETS,
+    LEGWEAR_PRESETS,
+    STYLE_PRESETS,
+    MULTI_PANEL_MODE_PRESETS,
+    MORPH_PRESETS,
+    PUBIC_PRESETS,
+    PIGMENT_PRESETS,
+    STORY_CHAPTERS,
+    MODULE_SWITCH_PRESETS,
+    CharacterConfig,
+    generate_scene_prompts,
+    generate_full_suite,
+    load_custom_presets,
+    save_custom_preset,
+    delete_custom_preset,
+)
+
+
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)
+except Exception:
+    pass
+
+
+BG_MAIN = "#1e1e2e"
+BG_PANEL = "#262637"
+BG_INPUT = "#181825"
+FG_TEXT = "#cdd6f4"
+FG_MUTED = "#a6adc8"
+ACCENT = "#cba6f7"
+ACCENT_POV = "#89b4fa"
+ACCENT_3RD = "#f9e2af"
+SUCCESS = "#a6e3a1"
+BORDER = "#313244"
+
+
+class StoryPromptGeneratorApp:
+    def __init__(self, root: tk.Tk) -> None:
+        self.root = root
+        self.root.title("NovelAI V4.5 / V5 连续故事线提示词工作台 (第一/第三人称双轨 · 支持精密参照模块 OFF)")
+        self.root.geometry("1500x920")
+        self.root.minsize(1220, 760)
+        self.root.configure(bg=BG_MAIN)
+
+        self._setup_styles()
+        self._init_variables()
+        self._build_layout()
+        self._load_preset_by_name(self.var_preset.get(), trigger_refresh=False)
+        self._update_perspective_buttons_visual()
+        self.refresh_output()
+
+    # ------------------------------------------------------------------
+    # 样式与变量初始化
+    # ------------------------------------------------------------------
+    def _setup_styles(self) -> None:
+        style = ttk.Style(self.root)
+        style.theme_use("clam")
+
+        style.configure(".", background=BG_MAIN, foreground=FG_TEXT, font=("Microsoft YaHei UI", 10))
+        style.configure("TFrame", background=BG_MAIN)
+        style.configure("Card.TFrame", background=BG_PANEL)
+        style.configure("TLabel", background=BG_PANEL, foreground=FG_TEXT)
+        style.configure("Main.TLabel", background=BG_MAIN, foreground=FG_TEXT)
+        style.configure("Header.TLabel", background=BG_MAIN, foreground=ACCENT, font=("Microsoft YaHei UI", 12, "bold"))
+        style.configure("SubHeader.TLabel", background=BG_PANEL, foreground=ACCENT, font=("Microsoft YaHei UI", 10, "bold"))
+        style.configure("Hint.TLabel", background=BG_PANEL, foreground=FG_MUTED, font=("Microsoft YaHei UI", 9))
+
+        style.configure("TNotebook", background=BG_MAIN, borderwidth=0, tabmargins=[2, 4, 2, 0])
+        style.configure(
+            "TNotebook.Tab",
+            background=BORDER,
+            foreground=FG_MUTED,
+            padding=[10, 6],
+            font=("Microsoft YaHei UI", 9, "bold"),
+        )
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", BG_PANEL)],
+            foreground=[("selected", ACCENT)],
+        )
+
+        style.configure(
+            "TCombobox",
+            fieldbackground=BG_INPUT,
+            background=BORDER,
+            foreground=FG_TEXT,
+            arrowcolor=FG_TEXT,
+            padding=4,
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", BG_INPUT)],
+            foreground=[("readonly", FG_TEXT)],
+            selectbackground=[("readonly", BG_INPUT)],
+            selectforeground=[("readonly", ACCENT)],
+        )
+        self.root.option_add("*TCombobox*Listbox.background", BG_INPUT)
+        self.root.option_add("*TCombobox*Listbox.foreground", FG_TEXT)
+        self.root.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
+        self.root.option_add("*TCombobox*Listbox.selectForeground", "#11111b")
+
+        style.configure("TCheckbutton", background=BG_PANEL, foreground=FG_TEXT)
+        style.map("TCheckbutton", background=[("active", BG_PANEL)])
+
+        style.configure(
+            "Accent.TButton",
+            background=ACCENT,
+            foreground="#11111b",
+            font=("Microsoft YaHei UI", 10, "bold"),
+            padding=[10, 5],
+            borderwidth=0,
+        )
+        style.map("Accent.TButton", background=[("active", "#b4befe")])
+
+        style.configure(
+            "Action.TButton",
+            background=ACCENT_POV,
+            foreground="#11111b",
+            font=("Microsoft YaHei UI", 10, "bold"),
+            padding=[10, 5],
+            borderwidth=0,
+        )
+        style.map("Action.TButton", background=[("active", "#74c7ec")])
+
+        style.configure(
+            "Secondary.TButton",
+            background=BORDER,
+            foreground=FG_TEXT,
+            padding=[8, 4],
+            borderwidth=0,
+        )
+        style.map("Secondary.TButton", background=[("active", "#45475a")])
+
+        style.configure(
+            "Generate.TButton",
+            background=SUCCESS,
+            foreground="#11111b",
+            font=("Microsoft YaHei UI", 10, "bold"),
+            padding=[12, 5],
+            borderwidth=0,
+        )
+        style.map(
+            "Generate.TButton",
+            background=[("active", "#94e2d5"), ("disabled", BORDER)],
+            foreground=[("disabled", FG_MUTED)],
+        )
+
+    def _get_all_preset_names(self) -> List[str]:
+        custom = load_custom_presets()
+        names = list(BUILTIN_CHARACTERS.keys())
+        for k in custom.keys():
+            if k not in names:
+                names.append(k)
+        return names
+
+    def _init_variables(self) -> None:
+        cfg = CharacterConfig()
+        self.var_preset = tk.StringVar(value=cfg.preset_name)
+        self.var_char_tag = tk.StringVar(value=cfg.char_tag)
+        self.var_eng_name = tk.StringVar(value=cfg.eng_name)
+        self.var_eye_color = tk.StringVar(value=cfg.eye_color)
+        self.var_hair_tags = tk.StringVar(value=cfg.hair_tags)
+        self.var_canon_neg = tk.StringVar(value=cfg.canon_neg_tags)
+        self.var_extra_char = tk.StringVar(value=cfg.extra_char_tags)
+
+        self.var_body = tk.StringVar(value=cfg.body_preset)
+        self.var_bust = tk.StringVar(value=cfg.bust_preset)
+        self.var_skin = tk.StringVar(value=cfg.skin_preset)
+        self.var_outfit = tk.StringVar(value=cfg.outfit_preset)
+        self.var_custom_outfit = tk.StringVar(value=cfg.custom_outfit_tags)
+        self.var_legwear = tk.StringVar(value=cfg.legwear_preset)
+
+        self.var_cat_ears = tk.BooleanVar(value=False)
+        self.var_horns = tk.BooleanVar(value=False)
+        self.var_glasses = tk.BooleanVar(value=False)
+        self.var_choker = tk.BooleanVar(value=False)
+        self.var_extra_sweat = tk.BooleanVar(value=False)
+
+        self.var_style = tk.StringVar(value=cfg.style_preset)
+        self.var_custom_style_pos = tk.StringVar(value="")
+        self.var_custom_style_neg = tk.StringVar(value="")
+        self.var_morph = tk.StringVar(value=cfg.morph_preset)
+        self.var_pubic = tk.StringVar(value=cfg.pubic_preset)
+        self.var_pigment = tk.StringVar(value=cfg.pigment_preset)
+        self.var_fluid_scale = tk.DoubleVar(value=1.0)
+
+        # 右上角人称选择器（默认 "pov" 第一人称）与多图分镜单图开关
+        self.var_perspective = tk.StringVar(value="pov")
+        self.var_sub_variants = tk.BooleanVar(value=False)
+        self.var_multi_panel_label = tk.StringVar(value="📑 同屏双格漫画差分 (2koma 默认)")
+        self.var_active_block_choice = tk.StringVar(value="第 1 条")
+        self.var_pure_batch = tk.BooleanVar(value=False)
+        self.var_export_both = tk.BooleanVar(value=False)
+
+        # 14 项精密参照模块独立开关
+        self.module_vars: Dict[str, tk.BooleanVar] = {
+            "enable_quality": tk.BooleanVar(value=True),
+            "enable_style": tk.BooleanVar(value=True),
+            "enable_identity": tk.BooleanVar(value=True),
+            "enable_body": tk.BooleanVar(value=True),
+            "enable_outfit": tk.BooleanVar(value=True),
+            "enable_clothing_state": tk.BooleanVar(value=True),
+            "enable_legwear": tk.BooleanVar(value=True),
+            "enable_background": tk.BooleanVar(value=True),
+            "enable_expression": tk.BooleanVar(value=True),
+            "enable_anatomy": tk.BooleanVar(value=True),
+            "enable_action_fluids": tk.BooleanVar(value=True),
+            "enable_remnants": tk.BooleanVar(value=True),
+            "enable_t5_prose": tk.BooleanVar(value=True),
+            "enable_negatives": tk.BooleanVar(value=True),
+        }
+
+        self.var_status = tk.StringVar(
+            value="就绪 · 可在左侧「🎛️ 精密参照开关」一键关闭角色/画风/外观词条，仅保留核心动作骨架"
+        )
+
+        self.scene_vars: Dict[str, tk.BooleanVar] = {
+            ch["id"]: tk.BooleanVar(value=True) for ch in STORY_CHAPTERS
+        }
+        self.active_scene_id: str = "S00"
+
+        # === NovelAI V5 Full Medium 单张 API 生图状态 ===
+        api_cfg = load_api_settings()
+        self.var_api_token = tk.StringVar(value=api_cfg.api_token)
+        self.var_show_token = tk.BooleanVar(value=False)
+        self.var_api_canvas = tk.StringVar(value=api_cfg.canvas_preset)
+        self.var_api_scale = tk.DoubleVar(value=api_cfg.scale)
+        self.var_api_rescale = tk.DoubleVar(value=api_cfg.cfg_rescale)
+        self.var_api_seed = tk.StringVar(value=str(api_cfg.seed))
+        self.var_api_extra_uc = tk.StringVar(value=api_cfg.extra_uc)
+        self.var_api_quality = tk.BooleanVar(value=api_cfg.append_v5_quality)
+        self.var_api_proxy = tk.StringVar(value=api_cfg.proxy)
+        self.var_api_outdir = tk.StringVar(value=api_cfg.output_dir)
+        self.var_anlas_badge = tk.StringVar(
+            value="💎 账户状态：未验证（点击「查点数」检测 Token 与 Anlas 余额）"
+        )
+        self.var_preview_meta = tk.StringVar(
+            value="尚未生成图片 · 选定章节后点击「🎨 生成当前单幕图片 (V5 Medium · 1张)」即可单张出图"
+        )
+
+        self.is_generating: bool = False
+        self._cancel_batch_upscale: bool = False
+        self.last_generated_path: Optional[str] = None
+        self.last_generated_seed: Optional[int] = None
+        self._preview_pil_img: Optional[Image.Image] = None
+        self._preview_tk_img: Optional[ImageTk.PhotoImage] = None
+        self.gen_btn_refs: Dict[str, tk.Button] = {}
+
+    # ------------------------------------------------------------------
+    # 主界面布局构建
+    # ------------------------------------------------------------------
+    def _build_layout(self) -> None:
+        top_bar = ttk.Frame(self.root, padding=(14, 10, 14, 6))
+        top_bar.pack(fill=tk.X)
+
+        ttk.Label(
+            top_bar,
+            text="🎬 NovelAI 连续故事线工作台（双轨视角分离 · 支持精密参照模块 OFF）",
+            style="Header.TLabel",
+        ).pack(side=tk.LEFT)
+
+        # === 右上角：视角切换胶囊组 + 整套复制/导出 ===
+        right_ctrl = tk.Frame(top_bar, bg=BG_MAIN)
+        right_ctrl.pack(side=tk.RIGHT)
+
+        pov_switch_box = tk.Frame(
+            right_ctrl, bg=BG_INPUT, highlightbackground=ACCENT, highlightthickness=1, padx=4, pady=3
+        )
+        pov_switch_box.pack(side=tk.LEFT, padx=(0, 12))
+
+        tk.Label(
+            pov_switch_box,
+            text="单幕预览视角：",
+            bg=BG_INPUT,
+            fg=FG_MUTED,
+            font=("Microsoft YaHei UI", 9, "bold"),
+        ).pack(side=tk.LEFT, padx=(4, 4))
+
+        self.btn_mode_pov = tk.Button(
+            pov_switch_box,
+            text="👁️ 第一人称 (POV)",
+            relief=tk.FLAT,
+            padx=10,
+            pady=3,
+            cursor="hand2",
+            font=("Microsoft YaHei UI", 9, "bold"),
+            command=lambda: self.set_perspective_mode("pov"),
+        )
+        self.btn_mode_pov.pack(side=tk.LEFT, padx=2)
+
+        self.btn_mode_3rd = tk.Button(
+            pov_switch_box,
+            text="🎥 第三人称 (客观机位)",
+            relief=tk.FLAT,
+            padx=10,
+            pady=3,
+            cursor="hand2",
+            font=("Microsoft YaHei UI", 9, "bold"),
+            command=lambda: self.set_perspective_mode("3rd"),
+        )
+        self.btn_mode_3rd.pack(side=tk.LEFT, padx=2)
+
+        ttk.Button(
+            right_ctrl, text="📋 复制当前视角整套", style="Accent.TButton", command=self.copy_current_track_suite
+        ).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(
+            right_ctrl, text="💾 导出 .txt", style="Action.TButton", command=self.export_to_file
+        ).pack(side=tk.LEFT)
+
+        paned = tk.PanedWindow(
+            self.root, orient=tk.HORIZONTAL, bg=BORDER, sashwidth=5, sashrelief=tk.FLAT, bd=0
+        )
+        paned.pack(fill=tk.BOTH, expand=True, padx=12, pady=(2, 6))
+
+        left_container = ttk.Frame(paned, width=510)
+        right_container = ttk.Frame(paned)
+        paned.add(left_container, minsize=465)
+        paned.add(right_container, minsize=640)
+
+        self._build_left_tabs(left_container)
+        self._build_right_panel(right_container)
+
+        status_bar = tk.Label(
+            self.root,
+            textvariable=self.var_status,
+            bg="#11111b",
+            fg=SUCCESS,
+            anchor="w",
+            padx=14,
+            pady=5,
+            font=("Microsoft YaHei UI", 9),
+        )
+        status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+
+    def _make_entry(self, parent: tk.Widget, var: tk.StringVar) -> tk.Entry:
+        ent = tk.Entry(
+            parent,
+            textvariable=var,
+            bg=BG_INPUT,
+            fg=FG_TEXT,
+            insertbackground=ACCENT,
+            relief=tk.FLAT,
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            highlightcolor=ACCENT,
+            font=("Consolas", 10),
+        )
+        ent.bind("<KeyRelease>", lambda _e: self.refresh_output())
+        return ent
+
+    def _make_combo(self, parent: tk.Widget, var: tk.StringVar, values: List[str], callback=None) -> ttk.Combobox:
+        cb = ttk.Combobox(parent, textvariable=var, values=values, state="readonly")
+        cb.bind("<<ComboboxSelected>>", callback if callback else lambda _e: self.refresh_output())
+        return cb
+
+    def _build_left_tabs(self, parent: ttk.Frame) -> None:
+        # 左侧常驻顶部栏：精密参照一键预设快捷条（在任意标签页均可一键切换！）
+        quick_card = ttk.Frame(parent, style="Card.TFrame", padding=(8, 6))
+        quick_card.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(
+            quick_card, text="⚡ 精密参照 (Precise Ref) 一键减负：", style="SubHeader.TLabel"
+        ).pack(anchor="w", pady=(0, 4))
+
+        qbtn_row = ttk.Frame(quick_card, style="Card.TFrame")
+        qbtn_row.pack(fill=tk.X)
+        short_labels = [
+            ("🌕 全量直出", "🌕 全量直出（默认全开）"),
+            ("🎯 参照:人+画风", "🎯 精密参照：人物+画风（关身份/外观/画风）"),
+            ("👤 参照:仅人物", "👤 精密参照：仅锁人物（保留本台画风+动作）"),
+            ("🦴 纯动作骨架", "🦴 极简纯动作骨架（除动作与视角外全 OFF）"),
+        ]
+        for btn_txt, preset_key in short_labels:
+            tk.Button(
+                qbtn_row,
+                text=btn_txt,
+                bg=BORDER,
+                fg=FG_TEXT,
+                activebackground=ACCENT,
+                activeforeground="#11111b",
+                relief=tk.FLAT,
+                padx=6,
+                pady=3,
+                cursor="hand2",
+                font=("Microsoft YaHei UI", 8, "bold"),
+                command=lambda k=preset_key: self.apply_module_switch_preset(k),
+            ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+
+        nb = ttk.Notebook(parent)
+        nb.pack(fill=tk.BOTH, expand=True)
+
+        tab_sw = ttk.Frame(nb, style="Card.TFrame", padding=12)
+        tab_char = ttk.Frame(nb, style="Card.TFrame", padding=12)
+        tab_look = ttk.Frame(nb, style="Card.TFrame", padding=12)
+        tab_style = ttk.Frame(nb, style="Card.TFrame", padding=12)
+        tab_api = ttk.Frame(nb, style="Card.TFrame", padding=12)
+
+        nb.add(tab_sw, text=" 🎛️ 精密参照开关 ")
+        nb.add(tab_char, text=" 👤 角色身份 ")
+        nb.add(tab_look, text=" 👗 体型穿搭 ")
+        nb.add(tab_style, text=" 🎨 画风局部 ")
+        nb.add(tab_api, text=" 🚀 API生图 ")
+        self.left_nb = nb
+
+        # === Tab 0: 精密参照模块独立 ON/OFF 开关面板 ===
+        ttk.Label(
+            tab_sw,
+            text="模块独立开关（取消勾选 = OFF，核心动作与镜头视角始终保留）",
+            style="SubHeader.TLabel",
+        ).pack(anchor="w", pady=(0, 6))
+
+        switch_groups = [
+            (
+                "🖼️ 画风与角色外观层（开精密参照时建议 OFF）",
+                [
+                    ("enable_quality", "基础质量前缀 (masterpiece, best quality, absurdres...)"),
+                    ("enable_style", "画风笔触与光影词 (colored sketch, backlighting... 及画风负向)"),
+                    ("enable_identity", "角色身份·瞳色·发型头饰·原皮负向屏蔽 (OFF后自动由参照接管)"),
+                    ("enable_body", "身材体型·胸围·肤色·额外萌点配件 (slender, breasts...)"),
+                    ("enable_outfit", "具体服装款式词 (白T恤/水手服/衬衫等具体衣服名称)"),
+                    ("enable_legwear", "鞋袜/赤足外观词 (barefoot / 丝袜等；抓脚动作脚掌词仍保留)"),
+                ],
+            ),
+            (
+                "🎬 场景辅助与神态细节层（按需自由保留或 OFF）",
+                [
+                    ("enable_clothing_state", "动作掀衣/下身暴露辅助词 (clothes lift, bottomless · 参照带衣角色建议开)"),
+                    ("enable_background", "室内沙发与暖光灯背景词 (indoors, couch, pillow, lamp)"),
+                    ("enable_expression", "面部微表情与羞红修饰词 (smug, bedroom eyes, blush...)"),
+                    ("enable_anatomy", "局部四维解剖修饰词 (器型/毛发/色泽细分词条)"),
+                ],
+            ),
+            (
+                "💦 流体连续性与语句防护层（按需自由保留或 OFF）",
+                [
+                    ("enable_action_fluids", "本幕核心流体动作表现 (如 S02松口拉丝 / S05排泄 / S07足部 / S11外射)"),
+                    ("enable_remnants", "跨幕历史累积残留痕迹 (继承自前几幕的脸颊/发丝/小腹旧积液)"),
+                    ("enable_t5_prose", "句尾英文自然语言锚点句 (开启时也会自动剔除上方已 OFF 的模块描述)"),
+                    ("enable_negatives", "负向提示词防崩保护块 (-2.5 / -2 姿态与错位封锁词)"),
+                ],
+            ),
+        ]
+
+        for grp_title, items in switch_groups:
+            ttk.Label(tab_sw, text=grp_title, foreground=ACCENT_3RD, font=("Microsoft YaHei UI", 9, "bold")).pack(
+                anchor="w", pady=(8, 2)
+            )
+            for key, desc in items:
+                ttk.Checkbutton(
+                    tab_sw,
+                    text=desc,
+                    variable=self.module_vars[key],
+                    command=self.refresh_output,
+                ).pack(anchor="w", padx=(6, 0), pady=2)
+
+        # === Tab 1: 角色与身份 ===
+        ttk.Label(tab_char, text="预设角色快选（支持一键切换或保存新角色）", style="SubHeader.TLabel").pack(anchor="w")
+        preset_row = ttk.Frame(tab_char, style="Card.TFrame")
+        preset_row.pack(fill=tk.X, pady=(4, 6))
+
+        self.cb_preset = self._make_combo(
+            preset_row, self.var_preset, self._get_all_preset_names(), self._on_preset_selected
+        )
+        self.cb_preset.pack(fill=tk.X)
+
+        btn_row = ttk.Frame(tab_char, style="Card.TFrame")
+        btn_row.pack(fill=tk.X, pady=(0, 10))
+        ttk.Button(
+            btn_row, text="💾 保存当前配置为新角色预设", style="Secondary.TButton", command=self.on_save_preset
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        ttk.Button(
+            btn_row, text="🗑️ 删除预设", style="Secondary.TButton", command=self.on_delete_preset
+        ).pack(side=tk.LEFT)
+
+        fields = [
+            ("角色核心 Tag（Danbooru 角色名，原创填 original）", self.var_char_tag),
+            ("英文句中称呼（自动替换进每幕末尾自然语言锚点）", self.var_eng_name),
+            ("瞳色 Tag（智能防冲撞：熟睡闭眼幕 S06/S07 自动隐藏！）", self.var_eye_color),
+            ("发型·发色·头饰特征 Tags", self.var_hair_tags),
+            ("原设官方服装屏蔽词（自动压入负向防止串回原皮）", self.var_canon_neg),
+            ("角色额外常驻补充 Tags（纹身/泪痣/特殊印记等，选填）", self.var_extra_char),
+        ]
+        for label_txt, var in fields:
+            ttk.Label(tab_char, text=label_txt).pack(anchor="w", pady=(6, 2))
+            self._make_entry(tab_char, var).pack(fill=tk.X, ipady=4)
+
+        ttk.Label(
+            tab_char,
+            text="💡 若已在「🎛️ 精密参照开关」中将角色身份设为 OFF，此处角色词条不会输出，完全交由精密参照图片控制。",
+            style="Hint.TLabel",
+            wraplength=450,
+        ).pack(anchor="w", pady=(14, 0))
+
+        # === Tab 2: 体型·穿搭·萌点 ===
+        ttk.Label(tab_look, text="身材与局部比例自定义", style="SubHeader.TLabel").pack(anchor="w")
+
+        ttk.Label(tab_look, text="身材体型预设（自动同步移除冲突负向词）：").pack(anchor="w", pady=(6, 2))
+        self._make_combo(tab_look, self.var_body, list(BODY_PRESETS.keys())).pack(fill=tk.X)
+
+        ttk.Label(tab_look, text="胸围大小预设：").pack(anchor="w", pady=(6, 2))
+        self._make_combo(tab_look, self.var_bust, list(BUST_PRESETS.keys())).pack(fill=tk.X)
+
+        ttk.Label(tab_look, text="肤色与汗湿质感预设：").pack(anchor="w", pady=(6, 2))
+        self._make_combo(tab_look, self.var_skin, list(SKIN_PRESETS.keys())).pack(fill=tk.X)
+
+        ttk.Label(tab_look, text="服装与鞋袜搭配", style="SubHeader.TLabel").pack(anchor="w", pady=(14, 2))
+
+        ttk.Label(tab_look, text="上装 / 穿搭款式预设：").pack(anchor="w", pady=(4, 2))
+        self._make_combo(tab_look, self.var_outfit, list(OUTFIT_PRESETS.keys())).pack(fill=tk.X)
+
+        ttk.Label(tab_look, text="自定义穿搭 Tags（上方选“自定义穿搭”时生效）：").pack(anchor="w", pady=(6, 2))
+        self._make_entry(tab_look, self.var_custom_outfit).pack(fill=tk.X, ipady=4)
+
+        ttk.Label(tab_look, text="足部 / 丝袜款式（自动联动 S07/S08 抓脚足部幕）：").pack(anchor="w", pady=(6, 2))
+        self._make_combo(tab_look, self.var_legwear, list(LEGWEAR_PRESETS.keys())).pack(fill=tk.X)
+
+        ttk.Label(tab_look, text="额外萌点配件开关（可多选叠加）", style="SubHeader.TLabel").pack(anchor="w", pady=(14, 4))
+        chk_grid = ttk.Frame(tab_look, style="Card.TFrame")
+        chk_grid.pack(fill=tk.X)
+        extras_chk = [
+            ("🐾 猫耳与耳绒毛 (cat ears)", self.var_cat_ears),
+            ("😈 小恶魔角与尾巴 (horns & tail)", self.var_horns),
+            ("👓 半框眼镜娘 (glasses)", self.var_glasses),
+            ("🎀 黑色颈带项圈 (black choker)", self.var_choker),
+            ("💦 害羞飞汗与热气 (steam & sweatdrops)", self.var_extra_sweat),
+        ]
+        for idx, (txt, bvar) in enumerate(extras_chk):
+            cb = ttk.Checkbutton(chk_grid, text=txt, variable=bvar, command=self.refresh_output)
+            cb.grid(row=idx // 2, column=idx % 2, sticky="w", padx=(0, 12), pady=3)
+
+        # === Tab 3: 画风·局部四维 ===
+        ttk.Label(tab_style, text="全局画风引擎", style="SubHeader.TLabel").pack(anchor="w")
+        ttk.Label(tab_style, text="画风预设：").pack(anchor="w", pady=(4, 2))
+        self._make_combo(tab_style, self.var_style, list(STYLE_PRESETS.keys())).pack(fill=tk.X)
+
+        ttk.Label(tab_style, text="自定义正向画风词（选“自定义画风”时生效）：").pack(anchor="w", pady=(6, 2))
+        self._make_entry(tab_style, self.var_custom_style_pos).pack(fill=tk.X, ipady=3)
+
+        ttk.Label(tab_style, text="自定义负向画风词（选“自定义画风”时生效）：").pack(anchor="w", pady=(6, 2))
+        self._make_entry(tab_style, self.var_custom_style_neg).pack(fill=tk.X, ipady=3)
+
+        ttk.Label(tab_style, text="局部四维模块化精调 (Anatomy Presets)", style="SubHeader.TLabel").pack(
+            anchor="w", pady=(14, 2)
+        )
+        ttk.Label(tab_style, text="第一维 · 局部先天器型分类：").pack(anchor="w", pady=(4, 2))
+        self._make_combo(tab_style, self.var_morph, list(MORPH_PRESETS.keys())).pack(fill=tk.X)
+
+        ttk.Label(tab_style, text="第二维 · 毛发修饰款式：").pack(anchor="w", pady=(6, 2))
+        self._make_combo(tab_style, self.var_pubic, list(PUBIC_PRESETS.keys())).pack(fill=tk.X)
+
+        ttk.Label(tab_style, text="第三维 · 色泽与黏膜层次：").pack(anchor="w", pady=(6, 2))
+        self._make_combo(tab_style, self.var_pigment, list(PIGMENT_PRESETS.keys())).pack(fill=tk.X)
+
+        scale_frame = ttk.Frame(tab_style, style="Card.TFrame")
+        scale_frame.pack(fill=tk.X, pady=(14, 4))
+        self.lbl_fluid = ttk.Label(scale_frame, text="全局液体与残留痕迹权重倍率：1.00x（标准定稿）", style="SubHeader.TLabel")
+        self.lbl_fluid.pack(anchor="w")
+
+        slider = tk.Scale(
+            scale_frame,
+            from_=0.70,
+            to=1.45,
+            resolution=0.05,
+            orient=tk.HORIZONTAL,
+            variable=self.var_fluid_scale,
+            bg=BG_PANEL,
+            fg=FG_TEXT,
+            troughcolor=BG_INPUT,
+            highlightthickness=0,
+            activebackground=ACCENT,
+            showvalue=False,
+            command=self._on_fluid_slider,
+        )
+        slider.pack(fill=tk.X, pady=(2, 6))
+
+        ttk.Label(tab_style, text="多格分镜幕 (S03 / S04) 出图模式（可一键拆为全尺寸单图）：").pack(
+            anchor="w", pady=(8, 2)
+        )
+        self._make_combo(
+            tab_style, self.var_multi_panel_label, list(MULTI_PANEL_MODE_PRESETS.keys())
+        ).pack(fill=tk.X)
+
+        ttk.Checkbutton(
+            tab_style,
+            text="附加同视角下的进阶子变体（如 S04 多角色分区框 / S11 双腿抬高环腰版）",
+            variable=self.var_sub_variants,
+            command=self.refresh_output,
+        ).pack(anchor="w", pady=(8, 2))
+
+        # === Tab 4: NovelAI V5 Full Medium 单张 API 生图设置 ===
+        self._build_api_tab(tab_api)
+
+    def _make_api_entry(self, parent: tk.Widget, var: tk.StringVar, show: str = "") -> tk.Entry:
+        ent = tk.Entry(
+            parent,
+            textvariable=var,
+            show=show,
+            bg=BG_INPUT,
+            fg=FG_TEXT,
+            insertbackground=ACCENT,
+            relief=tk.FLAT,
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            highlightcolor=ACCENT,
+            font=("Consolas", 10),
+        )
+        return ent
+
+    def _build_api_tab(self, tab_api: ttk.Frame) -> None:
+        ttk.Label(
+            tab_api,
+            text=f"⚡ 单张按需生图引擎（锁定：{MODEL_V5_FULL_MEDIUM} · 14步）",
+            style="SubHeader.TLabel",
+        ).pack(anchor="w")
+
+        tk.Label(
+            tab_api,
+            textvariable=self.var_anlas_badge,
+            bg=BG_INPUT,
+            fg=SUCCESS,
+            anchor="w",
+            padx=8,
+            pady=5,
+            font=("Microsoft YaHei UI", 9, "bold"),
+        ).pack(fill=tk.X, pady=(6, 8))
+
+        ttk.Label(tab_api, text="Persistent API Token（以 pst- 开头，网页端 Account 获取）：").pack(
+            anchor="w", pady=(2, 2)
+        )
+        tok_row = ttk.Frame(tab_api, style="Card.TFrame")
+        tok_row.pack(fill=tk.X)
+        self.ent_api_token = self._make_api_entry(tok_row, self.var_api_token, show="*")
+        self.ent_api_token.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4)
+        ttk.Checkbutton(
+            tok_row,
+            text="显示",
+            variable=self.var_show_token,
+            command=lambda: self.ent_api_token.config(show="" if self.var_show_token.get() else "*"),
+        ).pack(side=tk.LEFT, padx=(6, 0))
+
+        tok_btn_row = ttk.Frame(tab_api, style="Card.TFrame")
+        tok_btn_row.pack(fill=tk.X, pady=(6, 10))
+        ttk.Button(
+            tok_btn_row,
+            text="💾 保存 API 配置",
+            style="Secondary.TButton",
+            command=self.on_save_api_config,
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        self.btn_check_anlas = ttk.Button(
+            tok_btn_row,
+            text="🔍 验证 Token / 查点数 (Anlas)",
+            style="Action.TButton",
+            command=self.on_check_anlas_clicked,
+        )
+        self.btn_check_anlas.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        ttk.Label(tab_api, text="画布尺寸（默认自动识别当前单幕推荐横/竖图）：").pack(anchor="w", pady=(4, 2))
+        cb_canvas = ttk.Combobox(
+            tab_api,
+            textvariable=self.var_api_canvas,
+            values=list(CANVAS_PRESETS.keys()),
+            state="readonly",
+        )
+        cb_canvas.pack(fill=tk.X)
+        cb_canvas.bind("<<ComboboxSelected>>", lambda _e: self._update_cost_hint_label())
+
+        self.lbl_cost_hint = ttk.Label(tab_api, text="", style="Hint.TLabel")
+        self.lbl_cost_hint.pack(anchor="w", pady=(3, 6))
+
+        seed_hdr = ttk.Frame(tab_api, style="Card.TFrame")
+        seed_hdr.pack(fill=tk.X, pady=(2, 2))
+        ttk.Label(seed_hdr, text="随机种子 Seed（填 -1 为每次随机）：").pack(side=tk.LEFT)
+        ttk.Button(
+            seed_hdr,
+            text="🎲 设为随机(-1)",
+            style="Secondary.TButton",
+            command=lambda: self.var_api_seed.set("-1"),
+        ).pack(side=tk.RIGHT, padx=(4, 0))
+        ttk.Button(
+            seed_hdr,
+            text="🔒 锁定上次 Seed",
+            style="Secondary.TButton",
+            command=self.on_lock_last_seed,
+        ).pack(side=tk.RIGHT)
+        self._make_api_entry(tab_api, self.var_api_seed).pack(fill=tk.X, ipady=3)
+
+        scale_row = ttk.Frame(tab_api, style="Card.TFrame")
+        scale_row.pack(fill=tk.X, pady=(8, 2))
+        self.lbl_api_scale = ttk.Label(
+            scale_row, text=f"Prompt Guidance (相关性 Scale)：{self.var_api_scale.get():.1f}", style="SubHeader.TLabel"
+        )
+        self.lbl_api_scale.pack(anchor="w")
+        tk.Scale(
+            scale_row,
+            from_=3.0,
+            to=9.0,
+            resolution=0.5,
+            orient=tk.HORIZONTAL,
+            variable=self.var_api_scale,
+            bg=BG_PANEL,
+            fg=FG_TEXT,
+            troughcolor=BG_INPUT,
+            highlightthickness=0,
+            activebackground=ACCENT,
+            showvalue=False,
+            command=lambda v: self.lbl_api_scale.config(text=f"Prompt Guidance (相关性 Scale)：{float(v):.1f}"),
+        ).pack(fill=tk.X)
+
+        ttk.Checkbutton(
+            tab_api,
+            text="未含质量词时自动补充 V5 官方质量后缀 (very aesthetic, masterpiece, no text)",
+            variable=self.var_api_quality,
+        ).pack(anchor="w", pady=(4, 4))
+
+        ttk.Label(tab_api, text="额外全局负面词 UC（可选，附加在 V5 Heavy 预设之后）：").pack(anchor="w", pady=(4, 2))
+        self._make_api_entry(tab_api, self.var_api_extra_uc).pack(fill=tk.X, ipady=3)
+
+        ttk.Label(tab_api, text="本地代理 Proxy（选填，如 http://127.0.0.1:7890；留空走系统默认）：").pack(
+            anchor="w", pady=(6, 2)
+        )
+        self._make_api_entry(tab_api, self.var_api_proxy).pack(fill=tk.X, ipady=3)
+
+        dir_row = ttk.Frame(tab_api, style="Card.TFrame")
+        dir_row.pack(fill=tk.X, pady=(6, 2))
+        ttk.Label(dir_row, text="输出目录：").pack(side=tk.LEFT)
+        ttk.Button(
+            dir_row, text="📂 浏览", style="Secondary.TButton", command=self.on_choose_output_dir
+        ).pack(side=tk.RIGHT, padx=(4, 0))
+        ttk.Button(
+            dir_row, text="📁 打开目录", style="Secondary.TButton", command=self.on_open_output_dir
+        ).pack(side=tk.RIGHT)
+        self._make_api_entry(tab_api, self.var_api_outdir).pack(fill=tk.X, ipady=3, pady=(2, 8))
+
+        self.btn_left_generate = ttk.Button(
+            tab_api,
+            text="🎨 立即单张生成当前选中幕 (V5 Full Medium · 1张)",
+            style="Generate.TButton",
+            command=self.on_generate_current_preview,
+        )
+        self.btn_left_generate.pack(fill=tk.X, pady=(4, 4))
+
+        up_row = ttk.Frame(tab_api, style="Card.TFrame")
+        up_row.pack(fill=tk.X, pady=(0, 4))
+        self.btn_left_upscale_last = ttk.Button(
+            up_row,
+            text="🔎 高清放大当前图 (2x · 1点数)",
+            style="Accent.TButton",
+            command=self.on_upscale_last_image,
+        )
+        self.btn_left_upscale_last.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        self.btn_left_upscale_file = ttk.Button(
+            up_row,
+            text="📂 选单图放大 (1点数)",
+            style="Secondary.TButton",
+            command=self.on_upscale_chosen_file,
+        )
+        self.btn_left_upscale_file.pack(side=tk.LEFT)
+
+        batch_up_row = ttk.Frame(tab_api, style="Card.TFrame")
+        batch_up_row.pack(fill=tk.X, pady=(0, 4))
+        self.btn_left_batch_upscale = ttk.Button(
+            batch_up_row,
+            text="📁 按文件夹批量 Upscale 并另存新目录 (每张 1 点数)",
+            style="Action.TButton",
+            command=self.on_batch_upscale_folder,
+        )
+        self.btn_left_batch_upscale.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.btn_cancel_batch = ttk.Button(
+            batch_up_row,
+            text="⏹ 停止批量",
+            style="Secondary.TButton",
+            command=self.on_request_cancel_batch_upscale,
+            state="disabled",
+        )
+        self.btn_cancel_batch.pack(side=tk.RIGHT, padx=(4, 0))
+
+        ttk.Label(
+            tab_api,
+            text="💡 说明：V5 官网暂未开放垫图角色参照接口；生图将直接读取右侧「单幕精细预览」框内的第一条文本（支持手改微调后直接点生成）。",
+            style="Hint.TLabel",
+            wraplength=445,
+        ).pack(anchor="w", pady=(4, 0))
+
+    def _build_right_panel(self, parent: ttk.Frame) -> None:
+        top_card = ttk.Frame(parent, style="Card.TFrame", padding=10)
+        top_card.pack(fill=tk.X, pady=(0, 8))
+
+        hdr = ttk.Frame(top_card, style="Card.TFrame")
+        hdr.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(
+            hdr, text="📌 故事线 12 幕章节列表（点击任意幕在下方精细预览 · 右上角切换第一 / 第三人称）", style="SubHeader.TLabel"
+        ).pack(side=tk.LEFT)
+
+        ttk.Button(hdr, text="全不选", style="Secondary.TButton", command=lambda: self._batch_toggle(None)).pack(
+            side=tk.RIGHT, padx=2
+        )
+        ttk.Button(hdr, text="仅双人互动幕", style="Secondary.TButton", command=lambda: self._batch_toggle("Duo")).pack(
+            side=tk.RIGHT, padx=2
+        )
+        ttk.Button(hdr, text="仅单人幕", style="Secondary.TButton", command=lambda: self._batch_toggle("Solo")).pack(
+            side=tk.RIGHT, padx=2
+        )
+        ttk.Button(hdr, text="全选 12 幕", style="Secondary.TButton", command=lambda: self._batch_toggle("ALL")).pack(
+            side=tk.RIGHT, padx=2
+        )
+
+        # 多格分镜幕 (S03/S04) 快捷出图模式切换栏（与左侧「🎨 画风局部」双向同步）
+        mp_bar = ttk.Frame(top_card, style="Card.TFrame")
+        mp_bar.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(
+            mp_bar,
+            text="🎞️ 多图分镜幕 (S03 / S04) 出图模式：",
+            style="SubHeader.TLabel",
+        ).pack(side=tk.LEFT)
+        cb_mp_quick = ttk.Combobox(
+            mp_bar,
+            textvariable=self.var_multi_panel_label,
+            values=list(MULTI_PANEL_MODE_PRESETS.keys()),
+            state="readonly",
+            width=36,
+        )
+        cb_mp_quick.pack(side=tk.LEFT, padx=(6, 10))
+        cb_mp_quick.bind("<<ComboboxSelected>>", lambda _e: self.refresh_output())
+        ttk.Label(
+            mp_bar,
+            text="（可一键将双格漫画拆成独立全幅单图，彻底避免分格失败或画幅减半）",
+            style="Hint.TLabel",
+        ).pack(side=tk.LEFT)
+
+        grid_box = ttk.Frame(top_card, style="Card.TFrame")
+        grid_box.pack(fill=tk.X)
+        grid_box.columnconfigure(0, weight=1)
+        grid_box.columnconfigure(1, weight=1)
+
+        self.scene_btn_refs: Dict[str, tk.Button] = {}
+        self.copy_btn_refs: Dict[str, tk.Button] = {}
+        for idx, ch in enumerate(STORY_CHAPTERS):
+            sid = ch["id"]
+            row_f = ttk.Frame(grid_box, style="Card.TFrame")
+            row_f.grid(row=idx % 6, column=idx // 6, sticky="ew", padx=4, pady=2)
+
+            ttk.Checkbutton(
+                row_f, text="", variable=self.scene_vars[sid], command=self.refresh_output
+            ).pack(side=tk.LEFT)
+
+            btn_sel = tk.Button(
+                row_f,
+                text=ch["title"],
+                anchor="w",
+                bg=BORDER if sid == self.active_scene_id else BG_INPUT,
+                fg=ACCENT if sid == self.active_scene_id else FG_TEXT,
+                activebackground=BORDER,
+                activeforeground=ACCENT,
+                relief=tk.FLAT,
+                padx=6,
+                pady=2,
+                cursor="hand2",
+                font=("Microsoft YaHei UI", 9),
+                command=lambda s=sid: self.select_single_scene(s),
+            )
+            btn_sel.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 4))
+            self.scene_btn_refs[sid] = btn_sel
+
+            btn_gen_row = tk.Button(
+                row_f,
+                text="🎨生成",
+                bg=BORDER,
+                fg=SUCCESS,
+                activebackground=SUCCESS,
+                activeforeground="#11111b",
+                relief=tk.FLAT,
+                padx=5,
+                pady=1,
+                cursor="hand2",
+                font=("Microsoft YaHei UI", 8, "bold"),
+                command=lambda s=sid: self.on_quick_generate_scene(s),
+            )
+            btn_gen_row.pack(side=tk.RIGHT, padx=(3, 0))
+            self.gen_btn_refs[sid] = btn_gen_row
+
+            btn_cp = tk.Button(
+                row_f,
+                text="复制[第一]",
+                bg=BORDER,
+                fg=ACCENT_POV,
+                activebackground=ACCENT_POV,
+                activeforeground="#11111b",
+                relief=tk.FLAT,
+                padx=6,
+                pady=1,
+                cursor="hand2",
+                font=("Microsoft YaHei UI", 8, "bold"),
+                command=lambda s=sid: self.copy_single_scene(s),
+            )
+            btn_cp.pack(side=tk.RIGHT)
+            self.copy_btn_refs[sid] = btn_cp
+
+        out_nb = ttk.Notebook(parent)
+        out_nb.pack(fill=tk.BOTH, expand=True)
+
+        tab_single = ttk.Frame(out_nb, style="Card.TFrame", padding=10)
+        tab_preview_img = ttk.Frame(out_nb, style="Card.TFrame", padding=10)
+        tab_full_pov = ttk.Frame(out_nb, style="Card.TFrame", padding=10)
+        tab_full_3rd = ttk.Frame(out_nb, style="Card.TFrame", padding=10)
+
+        out_nb.add(tab_single, text=" 🎯 单幕精细预览 ")
+        out_nb.add(tab_preview_img, text=" 🖼️ 最新出图预览 (V5 Medium) ")
+        out_nb.add(tab_full_pov, text=" 👁️ 第一人称 (POV) 整套总览 ")
+        out_nb.add(tab_full_3rd, text=" 🎥 第三人称 (客观机位) 整套总览 ")
+        self.out_nb = out_nb
+        self.out_nb.select(0)
+
+        # === Tab 0: 单幕精细预览 ===
+        single_bar = ttk.Frame(tab_single, style="Card.TFrame")
+        single_bar.pack(fill=tk.X, pady=(0, 6))
+
+        self.lbl_single_badge = tk.Label(
+            single_bar,
+            text="👁️ 第一人称视角",
+            bg=ACCENT_POV,
+            fg="#11111b",
+            padx=8,
+            pady=2,
+            font=("Microsoft YaHei UI", 9, "bold"),
+        )
+        self.lbl_single_badge.pack(side=tk.LEFT, padx=(0, 8))
+
+        self.lbl_single_info = ttk.Label(single_bar, text="", style="SubHeader.TLabel")
+        self.lbl_single_info.pack(side=tk.LEFT)
+
+        self.lbl_token_badge = tk.Label(
+            single_bar,
+            text="T5: --/512",
+            bg=BORDER,
+            fg=SUCCESS,
+            padx=7,
+            pady=2,
+            font=("Consolas", 9, "bold"),
+        )
+        self.lbl_token_badge.pack(side=tk.LEFT, padx=(8, 0))
+
+        self.btn_single_generate = ttk.Button(
+            single_bar,
+            text="🎨 生成当前单幕 (V5 Medium · 1张)",
+            style="Generate.TButton",
+            command=self.on_generate_current_preview,
+        )
+        self.btn_single_generate.pack(side=tk.RIGHT, padx=(6, 0))
+
+        ttk.Button(
+            single_bar,
+            text="📋 复制单幕 Prompt",
+            style="Accent.TButton",
+            command=lambda: self.copy_single_scene(self.active_scene_id, use_selected_block=True),
+        ).pack(side=tk.RIGHT)
+
+        self.cb_block_select = ttk.Combobox(
+            single_bar,
+            textvariable=self.var_active_block_choice,
+            values=["第 1 张"],
+            state="disabled",
+            width=26,
+        )
+        self.cb_block_select.pack(side=tk.RIGHT, padx=(8, 8))
+        self.cb_block_select.bind("<<ComboboxSelected>>", self._on_block_selection_changed)
+
+        self.txt_single = self._make_textbox(tab_single)
+        self.txt_single.bind("<KeyRelease>", lambda _e: self._update_token_badge_from_editor())
+
+        # === Tab 1: 最新出图预览 ===
+        self._build_image_preview_tab(tab_preview_img)
+
+        # === Tab 1: 纯第一人称整套总览 ===
+        pov_bar = ttk.Frame(tab_full_pov, style="Card.TFrame")
+        pov_bar.pack(fill=tk.X, pady=(0, 6))
+        ttk.Checkbutton(
+            pov_bar,
+            text="纯跑图队列行模式（每行一条直出 Prompt）",
+            variable=self.var_pure_batch,
+            command=self.refresh_output,
+        ).pack(side=tk.LEFT)
+        ttk.Checkbutton(
+            pov_bar,
+            text="导出 .txt 时上下分卷同时保存第一与第三人称两套",
+            variable=self.var_export_both,
+        ).pack(side=tk.LEFT, padx=(16, 0))
+        ttk.Button(
+            pov_bar,
+            text="📋 复制全部【第一人称】整套",
+            style="Action.TButton",
+            command=lambda: self._copy_specific_suite("pov"),
+        ).pack(side=tk.RIGHT)
+
+        self.txt_full_pov = self._make_textbox(tab_full_pov)
+
+        # === Tab 2: 纯第三人称整套总览 ===
+        trd_bar = ttk.Frame(tab_full_3rd, style="Card.TFrame")
+        trd_bar.pack(fill=tk.X, pady=(0, 6))
+        ttk.Checkbutton(
+            trd_bar,
+            text="纯跑图队列行模式（每行一条直出 Prompt）",
+            variable=self.var_pure_batch,
+            command=self.refresh_output,
+        ).pack(side=tk.LEFT)
+        ttk.Checkbutton(
+            trd_bar,
+            text="导出 .txt 时上下分卷同时保存第一与第三人称两套",
+            variable=self.var_export_both,
+        ).pack(side=tk.LEFT, padx=(16, 0))
+        ttk.Button(
+            trd_bar,
+            text="📋 复制全部【第三人称】整套",
+            style="Accent.TButton",
+            command=lambda: self._copy_specific_suite("3rd"),
+        ).pack(side=tk.RIGHT)
+
+        self.txt_full_3rd = self._make_textbox(tab_full_3rd)
+
+    def _make_textbox(self, parent: ttk.Frame) -> tk.Text:
+        wrap_f = ttk.Frame(parent, style="Card.TFrame")
+        wrap_f.pack(fill=tk.BOTH, expand=True)
+
+        scroll = ttk.Scrollbar(wrap_f, orient=tk.VERTICAL)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        txt = tk.Text(
+            wrap_f,
+            bg=BG_INPUT,
+            fg=FG_TEXT,
+            insertbackground=ACCENT,
+            selectbackground=ACCENT,
+            selectforeground="#11111b",
+            relief=tk.FLAT,
+            wrap=tk.WORD,
+            padx=12,
+            pady=10,
+            font=("Consolas", 10),
+            yscrollcommand=scroll.set,
+        )
+        txt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll.config(command=txt.yview)
+        return txt
+
+    # ------------------------------------------------------------------
+    # 精密参照快捷预设切换与状态管理
+    # ------------------------------------------------------------------
+    def apply_module_switch_preset(self, preset_key: str) -> None:
+        flags = MODULE_SWITCH_PRESETS.get(preset_key, {})
+        for k, val in flags.items():
+            if k in self.module_vars:
+                self.module_vars[k].set(val)
+        self.refresh_output()
+        self.var_status.set(f"🎛️ 已应用模块开关预设：{preset_key}")
+
+    def set_perspective_mode(self, mode: str) -> None:
+        self.var_perspective.set(mode)
+        self._update_perspective_buttons_visual()
+        self.refresh_output()
+        label = "👁️ 第一人称视角 (POV)" if mode == "pov" else "🎥 第三人称视角 (客观机位)"
+        self.var_status.set(f"🔄 已切换单幕精细预览与快捷复制模式为：{label}")
+
+    def _update_perspective_buttons_visual(self) -> None:
+        is_pov = self.var_perspective.get() == "pov"
+        if is_pov:
+            self.btn_mode_pov.config(bg=ACCENT_POV, fg="#11111b")
+            self.btn_mode_3rd.config(bg=BORDER, fg=FG_MUTED)
+            self.lbl_single_badge.config(text="👁️ 当前预览：第一人称 (POV)", bg=ACCENT_POV, fg="#11111b")
+            for btn in self.copy_btn_refs.values():
+                btn.config(text="复制[第一]", fg=ACCENT_POV)
+        else:
+            self.btn_mode_pov.config(bg=BORDER, fg=FG_MUTED)
+            self.btn_mode_3rd.config(bg=ACCENT_3RD, fg="#11111b")
+            self.lbl_single_badge.config(text="🎥 当前预览：第三人称 (客观机位)", bg=ACCENT_3RD, fg="#11111b")
+            for btn in self.copy_btn_refs.values():
+                btn.config(text="复制[第三]", fg=ACCENT_3RD)
+
+    def _collect_config(self) -> CharacterConfig:
+        return CharacterConfig(
+            preset_name=self.var_preset.get(),
+            char_tag=self.var_char_tag.get(),
+            eng_name=self.var_eng_name.get(),
+            eye_color=self.var_eye_color.get(),
+            hair_tags=self.var_hair_tags.get(),
+            canon_neg_tags=self.var_canon_neg.get(),
+            extra_char_tags=self.var_extra_char.get(),
+            body_preset=self.var_body.get(),
+            bust_preset=self.var_bust.get(),
+            skin_preset=self.var_skin.get(),
+            outfit_preset=self.var_outfit.get(),
+            custom_outfit_tags=self.var_custom_outfit.get(),
+            legwear_preset=self.var_legwear.get(),
+            add_cat_ears=self.var_cat_ears.get(),
+            add_horns_tail=self.var_horns.get(),
+            add_glasses=self.var_glasses.get(),
+            add_choker=self.var_choker.get(),
+            add_extra_sweat=self.var_extra_sweat.get(),
+            style_preset=self.var_style.get(),
+            custom_style_pos=self.var_custom_style_pos.get(),
+            custom_style_neg=self.var_custom_style_neg.get(),
+            morph_preset=self.var_morph.get(),
+            pubic_preset=self.var_pubic.get(),
+            pigment_preset=self.var_pigment.get(),
+            fluid_scale=round(self.var_fluid_scale.get(), 2),
+            perspective_mode=self.var_perspective.get(),
+            include_sub_variants=self.var_sub_variants.get(),
+            multi_panel_mode=MULTI_PANEL_MODE_PRESETS.get(self.var_multi_panel_label.get(), "2koma"),
+            enable_quality=self.module_vars["enable_quality"].get(),
+            enable_style=self.module_vars["enable_style"].get(),
+            enable_identity=self.module_vars["enable_identity"].get(),
+            enable_body=self.module_vars["enable_body"].get(),
+            enable_outfit=self.module_vars["enable_outfit"].get(),
+            enable_clothing_state=self.module_vars["enable_clothing_state"].get(),
+            enable_legwear=self.module_vars["enable_legwear"].get(),
+            enable_background=self.module_vars["enable_background"].get(),
+            enable_expression=self.module_vars["enable_expression"].get(),
+            enable_anatomy=self.module_vars["enable_anatomy"].get(),
+            enable_action_fluids=self.module_vars["enable_action_fluids"].get(),
+            enable_remnants=self.module_vars["enable_remnants"].get(),
+            enable_t5_prose=self.module_vars["enable_t5_prose"].get(),
+            enable_negatives=self.module_vars["enable_negatives"].get(),
+        )
+
+    def _on_preset_selected(self, _event=None) -> None:
+        self._load_preset_by_name(self.var_preset.get(), trigger_refresh=True)
+
+    def _load_preset_by_name(self, name: str, trigger_refresh: bool = True) -> None:
+        custom = load_custom_presets()
+        if name in custom:
+            data = custom[name]
+            self.var_char_tag.set(data.get("char_tag", ""))
+            self.var_eng_name.set(data.get("eng_name", "the girl"))
+            self.var_eye_color.set(data.get("eye_color", ""))
+            self.var_hair_tags.set(data.get("hair_tags", ""))
+            self.var_canon_neg.set(data.get("canon_neg_tags", ""))
+            self.var_extra_char.set(data.get("extra_char_tags", ""))
+            if data.get("body_preset") in BODY_PRESETS:
+                self.var_body.set(data["body_preset"])
+            if data.get("bust_preset") in BUST_PRESETS:
+                self.var_bust.set(data["bust_preset"])
+            if data.get("skin_preset") in SKIN_PRESETS:
+                self.var_skin.set(data["skin_preset"])
+            if data.get("outfit_preset") in OUTFIT_PRESETS:
+                self.var_outfit.set(data["outfit_preset"])
+            self.var_custom_outfit.set(data.get("custom_outfit_tags", ""))
+            if data.get("legwear_preset") in LEGWEAR_PRESETS:
+                self.var_legwear.set(data["legwear_preset"])
+            if data.get("style_preset") in STYLE_PRESETS:
+                self.var_style.set(data["style_preset"])
+            if "custom_style_pos" in data:
+                self.var_custom_style_pos.set(data.get("custom_style_pos", ""))
+            if "custom_style_neg" in data:
+                self.var_custom_style_neg.set(data.get("custom_style_neg", ""))
+            saved_mp = data.get("multi_panel_mode")
+            if saved_mp:
+                for lbl, code in MULTI_PANEL_MODE_PRESETS.items():
+                    if code == saved_mp:
+                        self.var_multi_panel_label.set(lbl)
+                        break
+            self.var_cat_ears.set(bool(data.get("add_cat_ears", False)))
+            self.var_horns.set(bool(data.get("add_horns_tail", False)))
+            self.var_glasses.set(bool(data.get("add_glasses", False)))
+            self.var_choker.set(bool(data.get("add_choker", False)))
+            self.var_extra_sweat.set(bool(data.get("add_extra_sweat", False)))
+            for k, bvar in self.module_vars.items():
+                if k in data:
+                    bvar.set(bool(data[k]))
+        elif name in BUILTIN_CHARACTERS:
+            info = BUILTIN_CHARACTERS[name]
+            self.var_char_tag.set(info["char_tag"])
+            self.var_eng_name.set(info["eng_name"])
+            self.var_eye_color.set(info["eye_color"])
+            self.var_hair_tags.set(info["hair_tags"])
+            self.var_canon_neg.set(info["canon_neg_tags"])
+            self.var_extra_char.set("")
+            self.var_body.set(info["body_preset"])
+            self.var_bust.set(info["bust_preset"])
+
+        if trigger_refresh:
+            self.refresh_output()
+            self.var_status.set(f"✅ 已切换角色预设：{name}")
+
+    def on_save_preset(self) -> None:
+        name = simpledialog.askstring(
+            "保存自定义预设",
+            "请输入新预设名称（同时保存角色参数与当前的模块开关状态）：",
+            parent=self.root,
+        )
+        if not name or not name.strip():
+            return
+        clean_name = f"⭐ {name.strip()}" if not name.strip().startswith("⭐") else name.strip()
+        cfg = self._collect_config()
+        save_custom_preset(clean_name, cfg)
+        self.cb_preset["values"] = self._get_all_preset_names()
+        self.var_preset.set(clean_name)
+        self.var_status.set(f"💾 已保存自定义预设「{clean_name}」至本地 character_presets.json")
+
+    def on_delete_preset(self) -> None:
+        cur = self.var_preset.get()
+        if cur in BUILTIN_CHARACTERS:
+            messagebox.showinfo("内置预设保护", "内置角色预设不可删除；您可以删除自己保存的「⭐」自定义预设。")
+            return
+        if messagebox.askyesno("确认删除", f"确定要删除自定义预设「{cur}」吗？"):
+            if delete_custom_preset(cur):
+                names = self._get_all_preset_names()
+                self.cb_preset["values"] = names
+                self.var_preset.set(names[0])
+                self._load_preset_by_name(names[0], trigger_refresh=True)
+                self.var_status.set(f"🗑️ 已删除自定义预设「{cur}」")
+
+    def _on_fluid_slider(self, val_str: str) -> None:
+        val = float(val_str)
+        desc = "清爽克制" if val < 0.9 else ("标准定稿" if val <= 1.08 else "浓稠增量强化")
+        self.lbl_fluid.config(text=f"全局液体与残留痕迹权重倍率：{val:.2f}x（{desc}）")
+        self.refresh_output()
+
+    def _batch_toggle(self, mode: str | None) -> None:
+        for ch in STORY_CHAPTERS:
+            sid = ch["id"]
+            if mode is None:
+                self.scene_vars[sid].set(False)
+            elif mode == "ALL":
+                self.scene_vars[sid].set(True)
+            elif mode == "Solo":
+                self.scene_vars[sid].set(ch["actor_type"] == "Solo")
+            elif mode == "Duo":
+                self.scene_vars[sid].set(ch["actor_type"] in ("Duo", "2koma"))
+        self.refresh_output()
+
+    def select_single_scene(self, scene_id: str) -> None:
+        self.active_scene_id = scene_id
+        for sid, btn in self.scene_btn_refs.items():
+            btn.config(
+                bg=BORDER if sid == scene_id else BG_INPUT,
+                fg=ACCENT if sid == scene_id else FG_TEXT,
+            )
+        self._refresh_single_tab(self._collect_config())
+        self.out_nb.select(0)
+
+    def refresh_output(self) -> None:
+        cfg = self._collect_config()
+        selected_ids = [ch["id"] for ch in STORY_CHAPTERS if self.scene_vars[ch["id"]].get()]
+        pure = self.var_pure_batch.get()
+
+        cfg_pov = self._collect_config()
+        cfg_pov.perspective_mode = "pov"
+        pov_suite = generate_full_suite(cfg_pov, selected_ids, pure_batch_lines=pure, export_both_separated=False)
+
+        cfg_3rd = self._collect_config()
+        cfg_3rd.perspective_mode = "3rd"
+        trd_suite = generate_full_suite(cfg_3rd, selected_ids, pure_batch_lines=pure, export_both_separated=False)
+
+        self.txt_full_pov.delete("1.0", tk.END)
+        self.txt_full_pov.insert("1.0", pov_suite)
+
+        self.txt_full_3rd.delete("1.0", tk.END)
+        self.txt_full_3rd.insert("1.0", trd_suite)
+
+        self._refresh_single_tab(cfg)
+
+    def _get_selected_block_index(self) -> int:
+        if not hasattr(self, "cb_block_select"):
+            return 0
+        idx = self.cb_block_select.current()
+        return idx if idx >= 0 else 0
+
+    def _update_token_badge_from_editor(self) -> None:
+        if not hasattr(self, "lbl_token_badge") or not hasattr(self, "txt_single"):
+            return
+        raw_box = self.txt_single.get("1.0", tk.END)
+        prompt_str = extract_first_prompt_from_preview(raw_box, block_index=self._get_selected_block_index())
+        if not prompt_str:
+            self.lbl_token_badge.config(text="T5: 0/512", fg=FG_MUTED)
+            return
+        info = count_prompt_t5_tokens(prompt_str)
+        pos_tok = info["api_pos_tokens"]
+        neg_tok = info["api_neg_tokens"]
+        web_tok = info["web_single_box_tokens"]
+        if pos_tok > MAX_T5_TOKENS:
+            fg_col = "#f38ba8"  # 超限红警
+            txt = f"⚠️ 正向T5: {pos_tok}/{MAX_T5_TOKENS} (超限!) | 负向: {neg_tok}"
+        elif web_tok > MAX_T5_TOKENS:
+            fg_col = ACCENT_3RD  # API分流后安全，但直接粘贴网页单框会超
+            txt = f"⚡ API正向T5: {pos_tok}/{MAX_T5_TOKENS} (负向已分流:{neg_tok} | 网页单框:{web_tok})"
+        else:
+            fg_col = SUCCESS
+            txt = f"✅ T5分词: {pos_tok}/{MAX_T5_TOKENS} (负向:{neg_tok})"
+        self.lbl_token_badge.config(text=txt, fg=fg_col)
+
+    def _on_block_selection_changed(self, _event=None) -> None:
+        items = getattr(self, "_current_single_items", [])
+        if not items:
+            return
+        idx = min(self._get_selected_block_index(), len(items) - 1)
+        ch_meta = next((c for c in STORY_CHAPTERS if c["id"] == self.active_scene_id), STORY_CHAPTERS[0])
+        canvas_hint = items[idx][1]
+        self._active_canvas_hint = canvas_hint
+        self.lbl_single_info.config(text=f"{ch_meta['title']}  |  推荐画布：{canvas_hint}")
+        self._update_cost_hint_label()
+        self._update_token_badge_from_editor()
+
+    def _refresh_single_tab(self, cfg: CharacterConfig) -> None:
+        ch_meta = next((c for c in STORY_CHAPTERS if c["id"] == self.active_scene_id), STORY_CHAPTERS[0])
+        items = generate_scene_prompts(self.active_scene_id, cfg, pov_override=cfg.perspective_mode)
+        self._current_single_items = items
+
+        prev_idx = self._get_selected_block_index()
+        if len(items) > 1:
+            choices = []
+            for i, (sub_t, _, _) in enumerate(items):
+                short_t = sub_t.split("·", 1)[-1].strip() if "·" in sub_t else sub_t
+                if len(short_t) > 20:
+                    short_t = short_t[:20] + "…"
+                choices.append(f"第{i + 1}张：{short_t}")
+            self.cb_block_select.config(values=choices, state="readonly")
+            sel_idx = prev_idx if prev_idx < len(choices) else 0
+            self.cb_block_select.current(sel_idx)
+        else:
+            self.cb_block_select.config(values=["当前单幕（共 1 张）"], state="disabled")
+            self.cb_block_select.current(0)
+            sel_idx = 0
+
+        canvas_hint = items[sel_idx][1] if items else ""
+        self._active_canvas_hint = canvas_hint
+        self.lbl_single_info.config(text=f"{ch_meta['title']}  |  推荐画布：{canvas_hint}")
+        self._update_cost_hint_label()
+
+        lines: List[str] = []
+        for sub_title, canvas, prompt_text in items:
+            lines.append(f"## {sub_title}（推荐画布：{canvas}）：\n{prompt_text}\n")
+        self.txt_single.delete("1.0", tk.END)
+        self.txt_single.insert("1.0", "\n".join(lines))
+        self._update_token_badge_from_editor()
+
+    def copy_single_scene(self, scene_id: str, use_selected_block: bool = False) -> None:
+        if use_selected_block and scene_id == self.active_scene_id:
+            raw_box_text = self.txt_single.get("1.0", tk.END)
+            blocks = extract_prompt_blocks_from_preview(raw_box_text)
+            if blocks:
+                idx = min(self._get_selected_block_index(), len(blocks) - 1)
+                hdr_line, chosen_prompt = blocks[idx]
+                self.root.clipboard_clear()
+                self.root.clipboard_append(chosen_prompt)
+                self.root.update_idletasks()
+                clean_hdr = hdr_line.lstrip("# ").rstrip("：:")
+                self.var_status.set(f"📋 已复制当前选定子图：{clean_hdr}")
+                return
+
+        cfg = self._collect_config()
+        items = generate_scene_prompts(scene_id, cfg, pov_override=cfg.perspective_mode)
+        if not items:
+            return
+        idx = min(self._get_selected_block_index(), len(items) - 1) if scene_id == self.active_scene_id else 0
+        sub_title, canvas, chosen_prompt = items[idx]
+        self.root.clipboard_clear()
+        self.root.clipboard_append(chosen_prompt)
+        self.root.update_idletasks()
+        self.var_status.set(f"📋 已复制 {sub_title} 至剪贴板！（推荐画布：{canvas}）")
+
+    def _copy_specific_suite(self, track_mode: str) -> None:
+        target_box = self.txt_full_pov if track_mode == "pov" else self.txt_full_3rd
+        content = target_box.get("1.0", tk.END).strip()
+        if not content:
+            messagebox.showwarning("未勾选章节", "请至少勾选一幕要生成的故事线章节！")
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(content)
+        self.root.update_idletasks()
+        selected_cnt = sum(1 for v in self.scene_vars.values() if v.get())
+        label = "第一人称 (POV)" if track_mode == "pov" else "第三人称 (客观机位)"
+        self.var_status.set(f"📋 已一键复制【{label}】全部已勾选的 {selected_cnt} 幕整套提示词！")
+
+    def copy_current_track_suite(self) -> None:
+        self._copy_specific_suite(self.var_perspective.get())
+
+    def export_to_file(self) -> None:
+        cfg = self._collect_config()
+        selected_ids = [ch["id"] for ch in STORY_CHAPTERS if self.scene_vars[ch["id"]].get()]
+        if not selected_ids:
+            messagebox.showwarning("内容为空", "请先勾选要导出的故事线章节！")
+            return
+
+        both = self.var_export_both.get()
+        content = generate_full_suite(
+            cfg, selected_ids, pure_batch_lines=self.var_pure_batch.get(), export_both_separated=both
+        ).strip()
+
+        safe_char = (
+            self.var_eng_name.get().strip().replace(" ", "_")
+            if cfg.enable_identity
+            else "PreciseRef"
+        ) or "custom_char"
+        suffix = "both_tracks" if both else ("POV" if cfg.perspective_mode == "pov" else "3rdPerson")
+        default_name = f"story_suite_{safe_char}_{suffix}.txt"
+        path = filedialog.asksaveasfilename(
+            parent=self.root,
+            title="导出故事线提示词",
+            initialdir=os.path.dirname(os.path.abspath(__file__)),
+            initialfile=default_name,
+            defaultextension=".txt",
+            filetypes=[("Text Files (*.txt)", "*.txt"), ("Markdown Files (*.md)", "*.md"), ("All Files (*.*)", "*.*")],
+        )
+        if not path:
+            return
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content + "\n")
+        self.var_status.set(f"💾 已成功导出提示词文件至：{path}")
+
+    # ------------------------------------------------------------------
+    # NovelAI V5 Full Medium 单张 API 生图与预览逻辑
+    # ------------------------------------------------------------------
+    def _build_image_preview_tab(self, tab_img: ttk.Frame) -> None:
+        bar = ttk.Frame(tab_img, style="Card.TFrame")
+        bar.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(bar, textvariable=self.var_preview_meta, style="SubHeader.TLabel").pack(side=tk.LEFT)
+
+        ttk.Button(
+            bar,
+            text="📂 打开所在文件夹",
+            style="Secondary.TButton",
+            command=self.on_open_output_dir,
+        ).pack(side=tk.RIGHT, padx=(6, 0))
+
+        ttk.Button(
+            bar,
+            text="🔍 系统看图打开原图",
+            style="Action.TButton",
+            command=self.on_open_last_image,
+        ).pack(side=tk.RIGHT, padx=(6, 0))
+
+        self.btn_upscale_folder = ttk.Button(
+            bar,
+            text="📁 文件夹批量放大另存",
+            style="Action.TButton",
+            command=self.on_batch_upscale_folder,
+        )
+        self.btn_upscale_folder.pack(side=tk.RIGHT, padx=(6, 0))
+
+        self.btn_upscale_choose = ttk.Button(
+            bar,
+            text="📂 选图放大 (1点数)",
+            style="Secondary.TButton",
+            command=self.on_upscale_chosen_file,
+        )
+        self.btn_upscale_choose.pack(side=tk.RIGHT, padx=(6, 0))
+
+        self.btn_upscale_last = ttk.Button(
+            bar,
+            text="🔎 高清放大 2x (1点数)",
+            style="Accent.TButton",
+            command=self.on_upscale_last_image,
+        )
+        self.btn_upscale_last.pack(side=tk.RIGHT, padx=(6, 0))
+
+        self.btn_regen_same = ttk.Button(
+            bar,
+            text="🎨 再生成一张 (当前单幕)",
+            style="Generate.TButton",
+            command=self.on_generate_current_preview,
+        )
+        self.btn_regen_same.pack(side=tk.RIGHT)
+
+        self.preview_canvas_frame = tk.Frame(tab_img, bg=BG_INPUT, highlightthickness=1, highlightbackground=BORDER)
+        self.preview_canvas_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.lbl_image_view = tk.Label(
+            self.preview_canvas_frame,
+            text="🖼️ 暂无生成图片\n\n1. 在左侧「🚀 API生图」填入 Persistent API Token (pst-...)\n2. 点击任意章节右侧「🎨生成」或单幕预览栏绿色按钮即可单张出图",
+            bg=BG_INPUT,
+            fg=FG_MUTED,
+            font=("Microsoft YaHei UI", 10),
+            justify=tk.CENTER,
+        )
+        self.lbl_image_view.pack(fill=tk.BOTH, expand=True)
+        self.preview_canvas_frame.bind("<Configure>", self._on_preview_resize)
+
+    def _on_preview_resize(self, _event=None) -> None:
+        if self._preview_pil_img is not None:
+            self._render_pil_to_label()
+
+    def _render_pil_to_label(self) -> None:
+        if self._preview_pil_img is None:
+            return
+        avail_w = max(240, self.preview_canvas_frame.winfo_width() - 24)
+        avail_h = max(240, self.preview_canvas_frame.winfo_height() - 24)
+        src_w, src_h = self._preview_pil_img.size
+        ratio = min(avail_w / src_w, avail_h / src_h, 1.0)
+        new_w = max(1, int(src_w * ratio))
+        new_h = max(1, int(src_h * ratio))
+        resized = self._preview_pil_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        self._preview_tk_img = ImageTk.PhotoImage(resized)
+        self.lbl_image_view.config(image=self._preview_tk_img, text="")
+
+    def _update_cost_hint_label(self) -> None:
+        if not hasattr(self, "lbl_cost_hint"):
+            return
+        hint = getattr(self, "_active_canvas_hint", "竖图 832x1216")
+        w, h = parse_canvas_size(hint, self.var_api_canvas.get())
+        est = estimate_v5_medium_anlas(w, h, steps=14, is_opus_free_eligible=False)
+        self.lbl_cost_hint.config(
+            text=f"📐 当前实际发送尺寸：{w} × {h}  |  单张预计消耗：约 {est} Anlas（Opus 免费额度充足时为 0）"
+        )
+
+    def _collect_api_settings(self) -> NaiApiSettings:
+        try:
+            seed_val = int(self.var_api_seed.get().strip())
+        except ValueError:
+            seed_val = -1
+        return NaiApiSettings(
+            api_token=self.var_api_token.get().strip(),
+            canvas_preset=self.var_api_canvas.get(),
+            scale=round(float(self.var_api_scale.get()), 1),
+            cfg_rescale=round(float(self.var_api_rescale.get()), 2),
+            seed=seed_val,
+            extra_uc=self.var_api_extra_uc.get().strip(),
+            append_v5_quality=bool(self.var_api_quality.get()),
+            proxy=self.var_api_proxy.get().strip(),
+            output_dir=self.var_api_outdir.get().strip() or DEFAULT_OUTPUT_DIR,
+        )
+
+    def on_save_api_config(self) -> None:
+        settings = self._collect_api_settings()
+        save_api_settings(settings)
+        self.var_status.set("💾 已保存 API 配置至本地 nai_api_config.json（已加入 .gitignore 保护）")
+
+    def on_choose_output_dir(self) -> None:
+        chosen = filedialog.askdirectory(
+            parent=self.root,
+            title="选择生图保存目录",
+            initialdir=self.var_api_outdir.get().strip() or DEFAULT_OUTPUT_DIR,
+        )
+        if chosen:
+            self.var_api_outdir.set(chosen)
+            self.on_save_api_config()
+
+    def on_open_output_dir(self) -> None:
+        target = self.var_api_outdir.get().strip() or DEFAULT_OUTPUT_DIR
+        if self.last_generated_path and os.path.exists(os.path.dirname(self.last_generated_path)):
+            target = os.path.dirname(self.last_generated_path)
+        os.makedirs(target, exist_ok=True)
+        try:
+            os.startfile(target)
+        except Exception as exc:
+            messagebox.showerror("打开文件夹失败", str(exc))
+
+    def on_open_last_image(self) -> None:
+        if not self.last_generated_path or not os.path.exists(self.last_generated_path):
+            messagebox.showinfo("尚无图片", "当前还没有已生成的本地图片。")
+            return
+        try:
+            os.startfile(self.last_generated_path)
+        except Exception as exc:
+            messagebox.showerror("打开图片失败", str(exc))
+
+    def on_lock_last_seed(self) -> None:
+        if self.last_generated_seed is None:
+            messagebox.showinfo("尚无上次 Seed", "请先生成至少一张图片，即可一键锁定其 Seed。")
+            return
+        self.var_api_seed.set(str(self.last_generated_seed))
+        self.var_status.set(f"🔒 已锁定上次出图 Seed：{self.last_generated_seed}")
+
+    def on_check_anlas_clicked(self) -> None:
+        settings = self._collect_api_settings()
+        if not settings.api_token:
+            self.left_nb.select(4)
+            messagebox.showwarning(
+                "未填写 Token",
+                "请先在左侧「🚀 API生图」标签页输入 NovelAI Persistent API Token（以 pst- 开头）。",
+            )
+            return
+        save_api_settings(settings)
+        self.btn_check_anlas.config(state="disabled")
+        self.var_status.set("🔍 正在连接 NovelAI 查询账户订阅与 Anlas 点数...")
+
+        def _worker() -> None:
+            try:
+                info = fetch_subscription_info(settings.api_token, proxy=settings.proxy)
+                self.root.after(0, lambda: self._on_anlas_checked_ok(info))
+            except Exception as exc:
+                msg = exc.message if isinstance(exc, NaiApiError) else str(exc)
+                self.root.after(0, lambda: self._on_anlas_checked_err(msg))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_anlas_checked_ok(self, info: SubscriptionInfo) -> None:
+        self.btn_check_anlas.config(state="normal")
+        opus_note = ""
+        if info.opus_usage_percent is not None:
+            state_txt = "已透支(计费)" if info.opus_usage_negative else f"充裕({info.opus_usage_percent}%)"
+            opus_note = f" | V5额度条:{state_txt}"
+        badge = f"💎 套餐：{info.tier_name} ({'激活' if info.active else '未激活'})  |  剩余点数：{info.anlas_left} Anlas{opus_note}"
+        self.var_anlas_badge.set(badge)
+        self.var_status.set(f"✅ Token 验证成功！{badge}")
+
+    def _on_anlas_checked_err(self, err_msg: str) -> None:
+        self.btn_check_anlas.config(state="normal")
+        self.var_anlas_badge.set("❌ 账户验证失败，请检查 Token 或网络代理设置")
+        self.var_status.set(f"❌ 查询失败：{err_msg}")
+        messagebox.showerror("NovelAI 账户查询失败", err_msg)
+
+    def _set_generating_ui_lock(self, locked: bool, allow_cancel_batch: bool = False) -> None:
+        self.is_generating = locked
+        btn_state = "disabled" if locked else "normal"
+        for b in (
+            self.btn_single_generate,
+            self.btn_left_generate,
+            self.btn_regen_same,
+            self.btn_upscale_last,
+            self.btn_upscale_choose,
+            self.btn_upscale_folder,
+            self.btn_left_upscale_last,
+            self.btn_left_upscale_file,
+            self.btn_left_batch_upscale,
+        ):
+            b.config(state=btn_state)
+        for row_btn in self.gen_btn_refs.values():
+            row_btn.config(state=btn_state)
+        if hasattr(self, "btn_cancel_batch"):
+            self.btn_cancel_batch.config(state="normal" if (locked and allow_cancel_batch) else "disabled")
+
+    def on_request_cancel_batch_upscale(self) -> None:
+        if not self.is_generating:
+            return
+        self._cancel_batch_upscale = True
+        self.btn_cancel_batch.config(state="disabled")
+        self.var_status.set("⏹ 正在等待当前这一张放大完成后安全停止批量任务...")
+
+    def on_batch_upscale_folder(self) -> None:
+        """选择源文件夹与独立的目标输出文件夹，批量执行 1 点数官方 Upscale"""
+        if self.is_generating:
+            return
+
+        settings = self._collect_api_settings()
+        if not settings.api_token:
+            self.left_nb.select(4)
+            messagebox.showwarning("需要填写 API Token", "请先在左侧「🚀 API生图」填入 Persistent API Token（pst-...）！")
+            return
+
+        init_src = self.var_api_outdir.get().strip() or DEFAULT_OUTPUT_DIR
+        if self.last_generated_path and os.path.isdir(os.path.dirname(self.last_generated_path)):
+            init_src = os.path.dirname(self.last_generated_path)
+
+        src_dir = filedialog.askdirectory(
+            parent=self.root,
+            title="第 1 步：选择【待放大的源图片文件夹】（例如 outputs/20261112）",
+            initialdir=init_src,
+        )
+        if not src_dir:
+            return
+
+        src_abs = os.path.abspath(src_dir)
+        default_out = os.path.join(
+            os.path.dirname(src_abs),
+            f"{os.path.basename(src_abs)}_upscaled_2x",
+        )
+
+        choose_custom_out = messagebox.askyesnocancel(
+            "选择另存目录方式",
+            f"已选源文件夹：\n{src_abs}\n\n"
+            f"是否直接将放大后的高清图另存至同级新文件夹：\n📂 {default_out} ？\n\n"
+            "• 点击【是 (Yes)】：自动新建并使用上述 `_upscaled_2x` 独立目录（推荐）\n"
+            "• 点击【否 (No)】：手动指定另一个保存文件夹\n"
+            "• 点击【取消 (Cancel)】：放弃本次操作",
+            parent=self.root,
+        )
+        if choose_custom_out is None:
+            return
+        if choose_custom_out is True:
+            out_dir = default_out
+        else:
+            picked_out = filedialog.askdirectory(
+                parent=self.root,
+                title="第 2 步：选择【放大后高清图的另存文件夹】",
+                initialdir=os.path.dirname(src_abs),
+            )
+            if not picked_out:
+                return
+            out_dir = os.path.abspath(picked_out)
+
+        try:
+            plan = scan_folder_for_upscale(src_abs, out_dir)
+        except Exception as exc:
+            messagebox.showerror("扫描文件夹失败", str(exc))
+            return
+
+        if not plan.pending_files:
+            messagebox.showinfo(
+                "无需重复放大",
+                f"源目录：{plan.source_dir}\n目标目录：{plan.output_dir}\n\n"
+                f"未发现需要放大的新原图！\n"
+                f"• 已跳过已完成/带 _upscaled_ 图：{plan.skipped_already_done} 张\n"
+                f"• 已跳过大尺寸图 (>1600px)：{plan.skipped_oversized} 张",
+            )
+            return
+
+        count = len(plan.pending_files)
+        confirm = messagebox.askyesno(
+            "确认批量高清放大 (每张 1 Anlas)",
+            f"📊 预扫描完成：\n\n"
+            f"• 源文件夹：{plan.source_dir}\n"
+            f"• 另存文件夹：{plan.output_dir}\n\n"
+            f"• 待放大原图数量：{count} 张\n"
+            f"• 自动跳过已放大/超尺寸图：{plan.skipped_already_done + plan.skipped_oversized} 张\n"
+            f"• 预计总消耗点数：{count} Anlas（固定 1 点数/张）\n\n"
+            f"确认开始逐张串行放大吗？（中途可随时点击左侧「⏹ 停止批量」中断，已完成的不会重扣）",
+            parent=self.root,
+        )
+        if not confirm:
+            return
+
+        save_api_settings(settings)
+        self._cancel_batch_upscale = False
+        self._set_generating_ui_lock(True, allow_cancel_batch=True)
+        self.out_nb.select(1)
+
+        def _on_prog(idx: int, total: int, fname: str, last_res: Optional[UpscaleResult]) -> None:
+            def _ui_step() -> None:
+                self.var_status.set(
+                    f"📁 批量放大进度 [{idx}/{total}]：正在放大 {fname} -> 另存至 {os.path.basename(plan.output_dir)} (可点「⏹ 停止批量」中断)"
+                )
+                self.var_preview_meta.set(
+                    f"⏳ 批量 2x 高清放大中：第 {idx} / {total} 张 ({fname})  |  目标目录：{plan.output_dir}"
+                )
+                if last_res is not None:
+                    self.last_generated_path = last_res.saved_path
+                    try:
+                        pil_img = Image.open(BytesIO(last_res.image_bytes))
+                        pil_img.load()
+                        self._preview_pil_img = pil_img
+                        self._render_pil_to_label()
+                    except Exception:
+                        pass
+
+            self.root.after(0, _ui_step)
+
+        def _worker() -> None:
+            try:
+                summary = batch_upscale_folder_nai(
+                    api_token=settings.api_token,
+                    plan=plan,
+                    proxy=settings.proxy,
+                    on_progress=_on_prog,
+                    cancel_check=lambda: self._cancel_batch_upscale,
+                )
+                sub_info: Optional[SubscriptionInfo] = None
+                try:
+                    sub_info = fetch_subscription_info(settings.api_token, proxy=settings.proxy)
+                except Exception:
+                    pass
+                self.root.after(0, lambda: self._on_batch_upscale_done(summary, sub_info))
+            except Exception as exc:
+                msg = exc.message if isinstance(exc, NaiApiError) else str(exc)
+                self.root.after(0, lambda: self._on_generate_error(msg))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_batch_upscale_done(self, summary: BatchUpscaleSummary, sub_info: Optional[SubscriptionInfo]) -> None:
+        self._set_generating_ui_lock(False)
+        self._cancel_batch_upscale = False
+
+        if summary.last_result is not None:
+            self.last_generated_path = summary.last_result.saved_path
+            try:
+                pil_img = Image.open(BytesIO(summary.last_result.image_bytes))
+                pil_img.load()
+                self._preview_pil_img = pil_img
+                self._render_pil_to_label()
+            except Exception:
+                pass
+
+        if sub_info is not None:
+            self._on_anlas_checked_ok(sub_info)
+
+        state_word = "⏹ 已手动中断" if summary.cancelled else "🎉 批量放大完成"
+        fail_cnt = len(summary.failed)
+        anlas_tail = f" | 剩余: {sub_info.anlas_left} Anlas" if sub_info else ""
+        meta = (
+            f"{state_word}：成功 {summary.succeeded}/{summary.total_planned} 张"
+            + (f"（失败 {fail_cnt} 张）" if fail_cnt else "")
+            + f"  |  另存目录：{summary.output_dir}"
+        )
+        self.var_preview_meta.set(meta)
+        self.var_status.set(f"{meta}{anlas_tail}")
+
+        detail_msg = (
+            f"{state_word}！\n\n"
+            f"• 成功放大：{summary.succeeded} / {summary.total_planned} 张\n"
+            f"• 独立保存目录：\n  {summary.output_dir}\n"
+        )
+        if summary.failed:
+            preview_errs = "\n".join(f"  - {fn}: {er}" for fn, er in summary.failed[:5])
+            detail_msg += f"\n⚠️ 失败项 ({fail_cnt} 张)：\n{preview_errs}\n"
+        detail_msg += "\n是否立即在资源管理器中打开放大后的新文件夹？"
+
+        if messagebox.askyesno("批量 Upscale 结果", detail_msg, parent=self.root):
+            try:
+                os.startfile(summary.output_dir)
+            except Exception:
+                pass
+
+    def on_upscale_last_image(self) -> None:
+        """将当前最新出图预览中的原图发送至 NovelAI 官方 1 点数 Upscaler 放大 2x"""
+        if self.is_generating:
+            return
+        if not self.last_generated_path or not os.path.exists(self.last_generated_path):
+            messagebox.showinfo(
+                "尚无当前预览图",
+                "当前还没有刚生成的预览图。\n您可以先点击「🎨 生成」出一张图，或点击旁边的「📂 选图放大 (1点数)」挑选任意历史原图放大！",
+            )
+            return
+        self._run_upscale_for_path(self.last_generated_path)
+
+    def on_upscale_chosen_file(self) -> None:
+        """任选本地 outputs 中的一张图片进行 1 点数官方 Upscale 放大"""
+        if self.is_generating:
+            return
+        init_dir = self.var_api_outdir.get().strip() or DEFAULT_OUTPUT_DIR
+        if self.last_generated_path and os.path.exists(os.path.dirname(self.last_generated_path)):
+            init_dir = os.path.dirname(self.last_generated_path)
+        chosen = filedialog.askopenfilename(
+            parent=self.root,
+            title="选择要进行 1 点数高清放大的图片（如 832x1216 / 1216x832）",
+            initialdir=init_dir,
+            filetypes=[("Image Files (*.png;*.webp;*.jpg)", "*.png *.webp *.jpg *.jpeg"), ("All Files (*.*)", "*.*")],
+        )
+        if not chosen:
+            return
+        self._run_upscale_for_path(chosen)
+
+    def _run_upscale_for_path(self, target_path: str) -> None:
+        settings = self._collect_api_settings()
+        if not settings.api_token:
+            self.left_nb.select(4)
+            messagebox.showwarning("需要填写 API Token", "请先在左侧「🚀 API生图」填入 Persistent API Token（pst-...）！")
+            return
+        save_api_settings(settings)
+
+        self._set_generating_ui_lock(True)
+        fname = os.path.basename(target_path)
+        self.var_status.set(f"🔎 正在执行官方 2x 高清放大 (消耗 1 Anlas)：{fname} ... 请稍候约 3~8 秒")
+
+        def _worker() -> None:
+            try:
+                up_res = upscale_single_image_nai(
+                    api_token=settings.api_token,
+                    source_image_path=target_path,
+                    proxy=settings.proxy,
+                )
+                sub_info: Optional[SubscriptionInfo] = None
+                try:
+                    sub_info = fetch_subscription_info(settings.api_token, proxy=settings.proxy)
+                except Exception:
+                    pass
+                self.root.after(0, lambda: self._on_upscale_success(up_res, sub_info))
+            except Exception as exc:
+                msg = exc.message if isinstance(exc, NaiApiError) else str(exc)
+                self.root.after(0, lambda: self._on_generate_error(msg))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_upscale_success(self, up_res: UpscaleResult, sub_info: Optional[SubscriptionInfo]) -> None:
+        self._set_generating_ui_lock(False)
+        self.last_generated_path = up_res.saved_path
+
+        try:
+            pil_img = Image.open(BytesIO(up_res.image_bytes))
+            pil_img.load()
+            self._preview_pil_img = pil_img
+        except Exception as exc:
+            self.var_status.set(f"⚠️ 放大图片已保存至 {up_res.saved_path}，但预览加载失败：{exc}")
+            return
+
+        if sub_info is not None:
+            self._on_anlas_checked_ok(sub_info)
+
+        meta_str = (
+            f"🔎 官方高清放大完成 (1 Anlas)  |  {up_res.src_width}×{up_res.src_height} ➔ {up_res.out_width}×{up_res.out_height}  |  "
+            f"耗时: {up_res.elapsed_sec}s  |  文件: {os.path.basename(up_res.saved_path)}"
+        )
+        self.var_preview_meta.set(meta_str)
+        anlas_tail = f"  |  当前剩余: {sub_info.anlas_left} Anlas" if sub_info else ""
+        self.var_status.set(f"🎉 2x 高清无损放大完成！已保存至：{up_res.saved_path}{anlas_tail}")
+
+        self.out_nb.select(1)
+        self.root.after(30, self._render_pil_to_label)
+
+    def on_quick_generate_scene(self, scene_id: str) -> None:
+        """点击章节列表右侧的「🎨生成」：先切换到该幕，再按当前视角单张生图"""
+        if self.is_generating:
+            return
+        self.select_single_scene(scene_id)
+        self.on_generate_current_preview()
+
+    def on_generate_current_preview(self) -> None:
+        """读取当前单幕精细预览框中的第一条 Prompt 并发起单张 V5 Full Medium 生图"""
+        if self.is_generating:
+            return
+
+        settings = self._collect_api_settings()
+        if not settings.api_token:
+            self.left_nb.select(4)
+            messagebox.showwarning(
+                "需要填写 API Token",
+                "请先在左侧「🚀 API生图」标签页填入 NovelAI Persistent API Token（以 pst- 开头）！\n\n获取位置：NovelAI 网页端 -> User Settings -> Account -> Get Persistent API Token",
+            )
+            return
+
+        raw_box_text = self.txt_single.get("1.0", tk.END)
+        sel_block_idx = self._get_selected_block_index()
+        blocks = extract_prompt_blocks_from_preview(raw_box_text)
+        prompt_to_send = extract_first_prompt_from_preview(raw_box_text, block_index=sel_block_idx)
+        if not prompt_to_send:
+            messagebox.showwarning("提示词为空", "当前「🎯 单幕精细预览」框中没有可生成的提示词内容！")
+            return
+
+        # 自动保存最新 API 设置
+        save_api_settings(settings)
+
+        hint = getattr(self, "_active_canvas_hint", "竖图 832x1216")
+        width, height = parse_canvas_size(hint, settings.canvas_preset)
+        scene_id = self.active_scene_id
+        mode = self.var_perspective.get()
+        sub_tag = f"_P{sel_block_idx + 1}" if len(blocks) > 1 else ""
+        scene_file_tag = f"{scene_id}{sub_tag}"
+        mode_label = ("第一人称(POV)" if mode == "pov" else "第三人称(3rd)") + (
+            f"·第{sel_block_idx + 1}张" if len(blocks) > 1 else ""
+        )
+
+        self._set_generating_ui_lock(True)
+        self.var_status.set(
+            f"🎨 正在单张生成【{scene_id} · {mode_label}】({width}x{height}, V5 Full Medium, 14步)... 请稍候约 4~10 秒"
+        )
+
+        def _worker() -> None:
+            try:
+                res = generate_single_image_v5_medium(
+                    api_token=settings.api_token,
+                    prompt_text=prompt_to_send,
+                    width=width,
+                    height=height,
+                    scale=settings.scale,
+                    cfg_rescale=settings.cfg_rescale,
+                    seed=settings.seed,
+                    extra_uc=settings.extra_uc,
+                    append_v5_quality=settings.append_v5_quality,
+                    proxy=settings.proxy,
+                    output_dir=settings.output_dir,
+                    scene_id=scene_file_tag,
+                    perspective_mode=mode,
+                )
+                # 生图成功后顺便静默刷新一次剩余点数（失败也不影响主图展示）
+                sub_info: Optional[SubscriptionInfo] = None
+                try:
+                    sub_info = fetch_subscription_info(settings.api_token, proxy=settings.proxy)
+                except Exception:
+                    pass
+                self.root.after(0, lambda: self._on_generate_success(res, scene_id, mode_label, sub_info))
+            except Exception as exc:
+                msg = exc.message if isinstance(exc, NaiApiError) else str(exc)
+                self.root.after(0, lambda: self._on_generate_error(msg))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_generate_success(
+        self,
+        res: GenerationResult,
+        scene_id: str,
+        mode_label: str,
+        sub_info: Optional[SubscriptionInfo],
+    ) -> None:
+        self._set_generating_ui_lock(False)
+        self.last_generated_path = res.saved_path
+        self.last_generated_seed = res.seed
+
+        try:
+            pil_img = Image.open(BytesIO(res.image_bytes))
+            pil_img.load()
+            self._preview_pil_img = pil_img
+        except Exception as exc:
+            self.var_status.set(f"⚠️ 图片已保存至 {res.saved_path}，但界面预览解码失败：{exc}")
+            return
+
+        if sub_info is not None:
+            self._on_anlas_checked_ok(sub_info)
+
+        meta_str = (
+            f"✅ {scene_id} [{mode_label}]  |  {res.width}×{res.height}  |  "
+            f"Seed: {res.seed}  |  耗时: {res.elapsed_sec}s  |  文件: {os.path.basename(res.saved_path)}"
+        )
+        self.var_preview_meta.set(meta_str)
+        anlas_tail = f"  |  当前剩余: {sub_info.anlas_left} Anlas" if sub_info else ""
+        self.var_status.set(f"🎉 单张出图完成！已保存至：{res.saved_path}{anlas_tail}")
+
+        # 自动切到「🖼️ 最新出图预览」标签页并渲染缩放图
+        self.out_nb.select(1)
+        self.root.after(30, self._render_pil_to_label)
+
+    def _on_generate_error(self, err_msg: str) -> None:
+        self._set_generating_ui_lock(False)
+        self.var_status.set(f"❌ 生图失败：{err_msg}")
+        messagebox.showerror("NovelAI 单张生图失败", err_msg)
+
+
+def main() -> None:
+    root = tk.Tk()
+    StoryPromptGeneratorApp(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

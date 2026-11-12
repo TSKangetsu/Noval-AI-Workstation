@@ -1,0 +1,11 @@
+# NovelAI API 私密配置与本地生成图片（防止误上传 Token）
+nai_api_config.json
+outputs/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 本地打包归档
+*.7z
