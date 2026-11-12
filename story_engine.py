@@ -9,6 +9,7 @@ NovelAI V4.5 / V5 连续故事线提示词模块化组装引擎 (story_engine.py
 from __future__ import annotations
 import json
 import os
+import re
 from dataclasses import dataclass, asdict
 from typing import Dict, List, Tuple
 
@@ -353,6 +354,19 @@ STYLE_PRESETS: Dict[str, Tuple[str, str]] = {
         "subsurface scattering, backlighting, rim lighting, warm lighting",
         "blurry, out of focus, depth of field, soft focus, cel shading, flat color, oil painting (medium), thick outlines, high contrast, harsh shadows, dark, realistic, 3d",
     ),
+    "🌤️ 柔雾白纱晨光 · 无描边暖杏真肤二次元萌脸（M6 保留款 · 自然光真肤）": (
+        "1.65::no lineart::, 1.5::lineless::, 1.32::realistic::, 0.78::photo (medium)::, 0.48::3d::, "
+        "1.6::anime face::, 1.45::moe::, 1.65::dot nose::, small mouth, soft skin, "
+        "1.55::front lighting::, 1.45::warm lighting::, 1.45::soft lighting::, diffused lighting, gentle chiaroscuro, "
+        "1.6::smooth shading::, soft shadows, hazy, depth of field, 1.15::muted colors::, 1.25::low contrast::, "
+        "1.4::ambient occlusion::, 1.1::subsurface scattering::",
+        "painterly, painting (medium), oil painting (medium), acrylicpaint (medium), impasto, brushstrokes, "
+        "visible brushstrokes, gouache, watercolor (medium), airbrush, cel shading, cel highlight, flat color, "
+        "lineart, outlines, thick outlines, thin outlines, sketch, pen (medium), "
+        "harsh shadows, cold lighting, blue tint, grey skin, neon hair, vibrant purple, oversaturated, "
+        "shiny ass, light spots, wet clothes, blush stickers, oiled, latex, plastic, figure, faux figurine, doll, "
+        "realistic face, 3d face, semi-realistic, realistic eyes, eye sockets, nose bridge, realistic nose, nostrils, lips, thick lips, cosplay, floating heart, sweatdrop",
+    ),
     "真实微距 PVC 涂装手办摄影风（Scale Figurine Photo · 半哑光保留版）": (
         "1.85::figure::, 1.55::faux figurine::, 1.35::photo (medium)::, 1.25::realistic::, 1.2::3d::, "
         "photo background, depth of field, bokeh, studio lighting, soft shadows, subsurface scattering, "
@@ -382,6 +396,21 @@ STYLE_PRESETS: Dict[str, Tuple[str, str]] = {
         "subsurface scattering, painted pvc texture, glossy highlights",
         "doll joints, ball-jointed doll, figma, action figure, flat color, cel shading, lineart, sketch, "
         "watercolor (medium), pen (medium), monochrome, comic, 2d, floating heart, sweatdrop",
+    ),
+    "原生大颗粒 16-bit 像素游戏 CG 风（C5 推荐 · 小画布直出 + 3x 硬邻近方块放大）": (
+        "3.6::pixel art::, 2.8::pixelated::, 2.2::8-bit::, 16-bit, 2.0::dithering::, "
+        "sprite, retro game, dot art, blocky pixels, jagged lines, hard edges, warm lighting",
+        "mosaic censoring, bar censor, censored, crown, tiara, picture frame, painting (object), "
+        "highres, absurdres, smooth, smooth shading, anti-aliasing, cel shading, anime coloring, clean lines, lineart, "
+        "airbrush, soft shading, gradient, watercolor (medium), painterly, realistic, 3d, photo (medium), figure, blurry, soft focus",
+    ),
+    "复古萌系大颗粒点阵 Sprite CG 风（E 保留款 · 1216x832 原生点阵画师风）": (
+        "4.5::pixel art::, 2.5::dithering::, 2.0::retro artstyle::, 16-bit, 8-bit, "
+        "artist:unosavy, artist:apollo_(pixel_art), artist:mota, "
+        "game cg, sprite, dot art, soft colors, warm lighting",
+        "mosaic censoring, bar censor, censored, crown, tiara, "
+        "highres, absurdres, smooth shading, anti-aliasing, anime coloring, cel shading, vector, "
+        "painterly, watercolor (medium), realistic, 3d, photo (medium), figure, blurry",
     ),
     "清透柔光厚涂插画风（柔肤高质感）": (
         "1.3::sharp focus::, fine details, 1.1::painterly::, soft lighting, subsurface scattering, "
@@ -480,8 +509,15 @@ def wrap_neg(level: str, tags_str: str, enabled: bool) -> str:
 
 def build_common_modules(cfg: CharacterConfig, eyes_open: bool, is_sleep_disheveled: bool = False) -> Dict[str, str]:
     """根据精密参照模块开关编译各可选积木层（OFF 的模块直接返回空串，绝不残留多余词条或冲突负向）"""
-    # 1. 质量词与画风词
-    qual_pos = QUALITY_TAGS if cfg.enable_quality else ""
+    # 1. 质量词与画风词（像素画风下自动剥离 masterpiece / very aesthetic / absurdres；M6 无描边真肤下剥离 0.8::very aesthetic:: 防厚涂笔触块）
+    pixel_mode = is_pixel_style_active(cfg)
+    m6_mode = is_m6_soft_morning_skin_active(cfg)
+    if not cfg.enable_quality or pixel_mode:
+        qual_pos = ""
+    elif m6_mode:
+        qual_pos = "masterpiece, best quality, absurdres, year 2025"
+    else:
+        qual_pos = QUALITY_TAGS
 
     if cfg.enable_style:
         if cfg.style_preset == "自定义画风（使用下方自定义画风框）":
@@ -497,10 +533,31 @@ def build_common_modules(cfg: CharacterConfig, eyes_open: bool, is_sleep_disheve
     head_pos = join_tags(qual_pos, style_only_pos)
 
     # 2. 身份模块 (enable_identity)
+    m6_mode = is_m6_soft_morning_skin_active(cfg)
     if cfg.enable_identity:
-        char_id = cfg.char_tag.strip() if cfg.char_tag.strip() else "original"
+        raw_cid = cfg.char_tag.strip()
+        if raw_cid and m6_mode and raw_cid != "original" and "::" not in raw_cid:
+            char_id = f"0.85::{raw_cid}::"
+        else:
+            char_id = raw_cid if raw_cid else "original"
         eye_tag = cfg.eye_color.strip() if eyes_open else ""
+        if m6_mode and eyes_open:
+            if eye_tag == "purple eyes":
+                eye_tag = "tareme, blue-purple eyes"
+            elif "tareme" not in eye_tag:
+                eye_tag = join_tags("tareme", eye_tag)
         hair_tag = cfg.hair_tags.strip()
+        if m6_mode and hair_tag:
+            if "short purple hair" in hair_tag:
+                hair_tag = hair_tag.replace(
+                    "short purple hair", "1.3::light purple hair::, grey-tinted hair, short hair"
+                )
+            elif "purple hair" in hair_tag:
+                hair_tag = hair_tag.replace(
+                    "purple hair", "1.3::light purple hair::, grey-tinted hair"
+                )
+            elif "grey-tinted hair" not in hair_tag:
+                hair_tag = join_tags(hair_tag, "grey-tinted hair")
         if is_sleep_disheveled and "disheveled hair" not in hair_tag:
             hair_tag = join_tags(hair_tag, "disheveled hair")
         eng_name = cfg.eng_name.strip() or "the girl"
@@ -511,8 +568,20 @@ def build_common_modules(cfg: CharacterConfig, eyes_open: bool, is_sleep_disheve
         raw_canon_neg = ""
 
     # 3. 体型、胸围、肤色与萌点配件 (enable_body)
+    wants_sweat_m6 = cfg.add_extra_sweat or ("shiny skin" in SKIN_PRESETS.get(cfg.skin_preset, ""))
+    if m6_mode and wants_sweat_m6 and style_neg:
+        for _w_tag in ("shiny ass, ", "light spots, ", "wet clothes, "):
+            style_neg = style_neg.replace(_w_tag, "")
+
     if cfg.enable_body:
         body_pos, body_neg = BODY_PRESETS.get(cfg.body_preset, ("slender, petite", "plump, thick thighs"))
+        if m6_mode:
+            if "纤细娇小" in cfg.body_preset:
+                body_pos = "1.3::slender::, 1.3::petite::, narrow hips, small ass"
+                body_neg = "plump, thick thighs, wide hips, big ass, huge ass, curvy, voluptuous, mature female"
+            elif "匀称修长少女" in cfg.body_preset:
+                body_pos = "1.25::slender::, narrow waist, narrow hips, long legs"
+                body_neg = "plump, obese, wide hips, huge ass, voluptuous"
         bust_pos, bust_neg = BUST_PRESETS.get(cfg.bust_preset, ("", ""))
         skin_pos = SKIN_PRESETS.get(cfg.skin_preset, "")
         extras: List[str] = []
@@ -547,6 +616,8 @@ def build_common_modules(cfg: CharacterConfig, eyes_open: bool, is_sleep_disheve
             outfit_prose_clause = " below her lifted top"
         else:
             design_pos = outfit_info["design_tags"]
+            if m6_mode and not wants_sweat_m6:
+                design_pos = re.sub(r"(?:,\s*)?wet clothes(?=\s*,|$)", "", design_pos).strip(" ,")
             if is_sleep_disheveled and outfit_info["sleep_extra"]:
                 design_pos = join_tags(design_pos, outfit_info["sleep_extra"])
             outfit_prose_clause = f" below {outfit_info['prose']}"
@@ -571,12 +642,22 @@ def build_common_modules(cfg: CharacterConfig, eyes_open: bool, is_sleep_disheve
         leg_prose = "feet"
 
     # 6. 背景模块 (enable_background)
-    bg_couch = "indoors, couch, lamp" if cfg.enable_background else ""
-    bg_sleep_couch = "indoors, couch, pillow, lamp" if cfg.enable_background else ""
+    if cfg.enable_background:
+        if m6_mode:
+            bg_couch = "indoors, beige couch, window, cream sheer curtains"
+            bg_sleep_couch = "indoors, beige couch, pillow, window, cream sheer curtains"
+            loc_prose = " by cream sheer curtains"
+        else:
+            bg_couch = "indoors, couch, lamp"
+            bg_sleep_couch = "indoors, couch, pillow, lamp"
+            loc_prose = " on the warm-lit couch"
+    else:
+        bg_couch = ""
+        bg_sleep_couch = ""
+        loc_prose = ""
     on_couch_tag = "lying on couch" if cfg.enable_background else ""
     kneel_couch_tag = "kneeling on couch" if cfg.enable_background else "kneeling"
     hands_couch_tag = "hands on couch" if cfg.enable_background else "supporting weight"
-    loc_prose = " on the warm-lit couch" if cfg.enable_background else ""
 
     # 7. 局部四维模块 (enable_anatomy)
     if cfg.enable_anatomy:
@@ -638,28 +719,91 @@ def is_glossy_figure_style_active(cfg: CharacterConfig) -> bool:
     return False
 
 
+def is_pixel_style_active(cfg: CharacterConfig) -> bool:
+    """检测当前是否启用了像素点阵画风（C5 或 E 或自定义 pixel art）"""
+    if not cfg.enable_style:
+        return False
+    if "像素" in cfg.style_preset or "Sprite" in cfg.style_preset or "点阵" in cfg.style_preset:
+        return True
+    if cfg.style_preset == "自定义画风（使用下方自定义画风框）":
+        low = cfg.custom_style_pos.lower()
+        return "pixel art" in low or "pixelated" in low or "dot art" in low
+    return False
+
+
+def is_c5_lowres_pixel_style_active(cfg: CharacterConfig) -> bool:
+    """检测是否为 C5 原生小画布 (512x384 / 384x512) + 3x 硬邻近放大像素风"""
+    if not is_pixel_style_active(cfg):
+        return False
+    return "C5" in cfg.style_preset or "小画布直出" in cfg.style_preset
+
+
+def is_m6_soft_morning_skin_active(cfg: CharacterConfig) -> bool:
+    """检测是否启用了 M6 柔雾白纱晨光 · 无描边暖杏真肤二次元萌脸画风"""
+    if not cfg.enable_style:
+        return False
+    return "M6" in cfg.style_preset or "无描边暖杏真肤" in cfg.style_preset
+
+
 def expr_if(cfg: CharacterConfig, tags: str, essential: str = "") -> str:
-    """表情开关：关闭时仅保留剧情关键睁闭眼状态 essential；真实手办画风下自动剥离平面符号 floating heart"""
+    """表情开关：关闭时仅保留剧情关键睁闭眼状态 essential；真实手办/M6晨光真肤画风下自动剥离平面符号与真人唇眼触发词"""
+    m6_on = is_m6_soft_morning_skin_active(cfg)
+    clean_ess = essential
+    if m6_on and clean_ess:
+        clean_ess = re.sub(r"(?:\d+(?:\.\d+)?::)?half-closed eyes(?:::)?", "0.85::half-closed eyes::", clean_ess)
     if not cfg.enable_expression:
-        return essential
+        return clean_ess
     cleaned_tags = tags
-    if is_figure_style_active(cfg):
-        cleaned_tags = ", ".join(
-            t.strip() for t in tags.split(",") if t.strip() and "floating heart" not in t
-        )
-    return join_tags(essential, cleaned_tags)
+    if is_figure_style_active(cfg) or m6_on:
+        out_tokens: List[str] = []
+        for raw_t in tags.split(","):
+            t = raw_t.strip()
+            if not t or "floating heart" in t or "sweatdrop" in t:
+                continue
+            if m6_on:
+                if "bedroom eyes" in t:
+                    t = "shy"
+                elif "seductive smile" in t:
+                    t = "furrowed brow"
+                elif t == "parted lips":
+                    t = "open mouth"
+                elif "half-closed eyes" in t:
+                    t = "0.85::half-closed eyes::"
+            if t not in out_tokens:
+                out_tokens.append(t)
+        cleaned_tags = ", ".join(out_tokens)
+    return join_tags(clean_ess, cleaned_tags)
 
 
 def prose_if(cfg: CharacterConfig, text: str) -> str:
     if not cfg.enable_t5_prose:
         return ""
     body = text.strip()
-    if is_glossy_figure_style_active(cfg) and body:
+    if not body:
+        return ""
+    if is_c5_lowres_pixel_style_active(cfg):
+        return (
+            "Low-resolution retro pixel art game CG upscaled with nearest-neighbor scaling, "
+            f"large visible square pixels, stepped jagged pixel outlines, crosshatch dithering, zero anti-aliasing: {body}"
+        )
+    if is_pixel_style_active(cfg):
+        return (
+            "Authentic 16-bit pixel art game CG drawn with chunky visible square pixels, "
+            f"stepped pixel-grid outlines, and checkerboard dithering: {body}"
+        )
+    if is_m6_soft_morning_skin_active(cfg):
+        m6_body = body.replace("her lips", "her mouth")
+        return (
+            "Warm morning frontal light by cream sheer curtains, "
+            "lineless rosy-apricot skin with smooth 3D shading, "
+            f"flat 2D moe anime face with big eyes and dot nose: {m6_body}"
+        )
+    if is_glossy_figure_style_active(cfg):
         return (
             "DSLR macro photo of a glossy clear-coated painted PVC scale figurine under studio spotlights, "
             f"with sharp white plastic reflections on molded hair, lacquered skin, rigid PVC clothes, and glossy resin fluids: {body}"
         )
-    if is_figure_style_active(cfg) and body:
+    if is_figure_style_active(cfg):
         return f"Macro product photo of a painted PVC scale figurine with shallow depth of field and bokeh: {body}"
     return body
 
@@ -1304,6 +1448,26 @@ def generate_scene_prompts(
                 wrap_neg("-2", join_tags("male focus", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S11 · 第三人称视角 (客观镜头) · 侧斜全景传教士双腿间拔出外射】", "横图 1216x832", p_3rd))
+
+    if is_m6_soft_morning_skin_active(cfg):
+        wants_sweat = cfg.add_extra_sweat or ("shiny skin" in SKIN_PRESETS.get(cfg.skin_preset, ""))
+        if not wants_sweat:
+            m6_results: List[Tuple[str, str, str]] = []
+            for sub_title, canvas_str, prompt_str in results:
+                cleaned_p = re.sub(r"(?:,\s*)?(?:\d+(?:\.\d+)?::)?sweat(?:::)?(?=\s*,|$)", "", prompt_str)
+                cleaned_p = re.sub(r"^\s*sweat\s*,\s*", "", cleaned_p)
+                m6_results.append((sub_title, canvas_str, cleaned_p))
+            results = m6_results
+
+    if is_c5_lowres_pixel_style_active(cfg):
+        c5_results: List[Tuple[str, str, str]] = []
+        for sub_title, canvas_str, prompt_str in results:
+            if canvas_str.startswith("竖图"):
+                new_canvas = "像素竖图 384x512 (原生直出 ➔ 自动3x硬放大 1152x1536)"
+            else:
+                new_canvas = "像素横图 512x384 (原生直出 ➔ 自动3x硬放大 1536x1152)"
+            c5_results.append((sub_title, new_canvas, prompt_str))
+        return c5_results
 
     return results
 

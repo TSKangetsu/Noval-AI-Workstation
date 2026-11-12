@@ -19,6 +19,7 @@ from typing import Dict, List, Optional
 from PIL import Image, ImageTk
 
 from nai_api import (
+    BatchGenerateSummary,
     BatchUpscaleSummary,
     CANVAS_PRESETS,
     DEFAULT_OUTPUT_DIR,
@@ -28,8 +29,10 @@ from nai_api import (
     MODEL_V5_FULL_MEDIUM,
     NaiApiError,
     NaiApiSettings,
+    SceneBatchTask,
     SubscriptionInfo,
     UpscaleResult,
+    batch_generate_scenes_v5_medium,
     batch_upscale_folder_nai,
     count_prompt_t5_tokens,
     estimate_v5_medium_anlas,
@@ -97,6 +100,7 @@ class StoryPromptGeneratorApp:
         self._build_layout()
         self._load_preset_by_name(self.var_preset.get(), trigger_refresh=False)
         self._update_perspective_buttons_visual()
+        self._on_toggle_s00_seed(persist=False)
         self.refresh_output()
 
     # ------------------------------------------------------------------
@@ -277,6 +281,7 @@ class StoryPromptGeneratorApp:
         self.var_api_scale = tk.DoubleVar(value=api_cfg.scale)
         self.var_api_rescale = tk.DoubleVar(value=api_cfg.cfg_rescale)
         self.var_api_seed = tk.StringVar(value=str(api_cfg.seed))
+        self.var_api_use_s00_seed = tk.BooleanVar(value=api_cfg.use_s00_seed)
         self.var_api_extra_uc = tk.StringVar(value=api_cfg.extra_uc)
         self.var_api_quality = tk.BooleanVar(value=api_cfg.append_v5_quality)
         self.var_api_proxy = tk.StringVar(value=api_cfg.proxy)
@@ -285,13 +290,18 @@ class StoryPromptGeneratorApp:
             value="💎 账户状态：未验证（点击「查点数」检测 Token 与 Anlas 余额）"
         )
         self.var_preview_meta = tk.StringVar(
-            value="尚未生成图片 · 选定章节后点击「🎨 生成当前单幕图片 (V5 Medium · 1张)」即可单张出图"
+            value="尚未生成图片 · 可点击单幕「🎨生成」或右侧「🚀 一键出全套 12 幕」批量连出"
+        )
+        self.var_s00_seed_badge = tk.StringVar(
+            value="（若 Seed=-1：开启后先随机生成 0号幕 S00，后续 S01~S11 自动沿用该 Seed）"
         )
 
         self.is_generating: bool = False
         self._cancel_batch_upscale: bool = False
+        self._cancel_batch_gen: bool = False
         self.last_generated_path: Optional[str] = None
         self.last_generated_seed: Optional[int] = None
+        self.last_s00_seed: Optional[int] = None
         self._preview_pil_img: Optional[Image.Image] = None
         self._preview_tk_img: Optional[ImageTk.PhotoImage] = None
         self.gen_btn_refs: Dict[str, tk.Button] = {}
@@ -581,7 +591,9 @@ class StoryPromptGeneratorApp:
         # === Tab 3: 画风·局部四维 ===
         ttk.Label(tab_style, text="全局画风引擎", style="SubHeader.TLabel").pack(anchor="w")
         ttk.Label(tab_style, text="画风预设：").pack(anchor="w", pady=(4, 2))
-        self._make_combo(tab_style, self.var_style, list(STYLE_PRESETS.keys())).pack(fill=tk.X)
+        self._make_combo(
+            tab_style, self.var_style, list(STYLE_PRESETS.keys()), callback=self._on_style_preset_changed
+        ).pack(fill=tk.X)
 
         ttk.Label(tab_style, text="自定义正向画风词（选“自定义画风”时生效）：").pack(anchor="w", pady=(6, 2))
         self._make_entry(tab_style, self.var_custom_style_pos).pack(fill=tk.X, ipady=3)
@@ -722,17 +734,30 @@ class StoryPromptGeneratorApp:
         ttk.Label(seed_hdr, text="随机种子 Seed（填 -1 为每次随机）：").pack(side=tk.LEFT)
         ttk.Button(
             seed_hdr,
-            text="🎲 设为随机(-1)",
+            text="🎲 随机(-1)",
             style="Secondary.TButton",
             command=lambda: self.var_api_seed.set("-1"),
         ).pack(side=tk.RIGHT, padx=(4, 0))
         ttk.Button(
             seed_hdr,
-            text="🔒 锁定上次 Seed",
+            text="🔒 锁上次",
             style="Secondary.TButton",
             command=self.on_lock_last_seed,
+        ).pack(side=tk.RIGHT, padx=(4, 0))
+        ttk.Button(
+            seed_hdr,
+            text="0️⃣ 锁S00",
+            style="Secondary.TButton",
+            command=self.on_lock_last_s00_seed,
         ).pack(side=tk.RIGHT)
         self._make_api_entry(tab_api, self.var_api_seed).pack(fill=tk.X, ipady=3)
+
+        ttk.Checkbutton(
+            tab_api,
+            text="🔗 连出时使用 0号幕 (S00) 的 Seed（关闭则后续每幕独立随机）",
+            variable=self.var_api_use_s00_seed,
+            command=self._on_toggle_s00_seed,
+        ).pack(anchor="w", pady=(4, 2))
 
         scale_row = ttk.Frame(tab_api, style="Card.TFrame")
         scale_row.pack(fill=tk.X, pady=(8, 2))
@@ -744,7 +769,7 @@ class StoryPromptGeneratorApp:
             scale_row,
             from_=3.0,
             to=9.0,
-            resolution=0.5,
+            resolution=0.1,
             orient=tk.HORIZONTAL,
             variable=self.var_api_scale,
             bg=BG_PANEL,
@@ -787,7 +812,24 @@ class StoryPromptGeneratorApp:
             style="Generate.TButton",
             command=self.on_generate_current_preview,
         )
-        self.btn_left_generate.pack(fill=tk.X, pady=(4, 4))
+        self.btn_left_generate.pack(fill=tk.X, pady=(2, 4))
+
+        batch_gen_left_row = ttk.Frame(tab_api, style="Card.TFrame")
+        batch_gen_left_row.pack(fill=tk.X, pady=(0, 4))
+        self.btn_left_batch_all12 = ttk.Button(
+            batch_gen_left_row,
+            text="🚀 一键连出全套 12 幕",
+            style="Generate.TButton",
+            command=lambda: self.on_batch_generate_scenes(force_all_12=True),
+        )
+        self.btn_left_batch_all12.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        self.btn_left_batch_checked = ttk.Button(
+            batch_gen_left_row,
+            text="🎯 连出已勾选幕",
+            style="Action.TButton",
+            command=lambda: self.on_batch_generate_scenes(force_all_12=False),
+        )
+        self.btn_left_batch_checked.pack(side=tk.LEFT)
 
         up_row = ttk.Frame(tab_api, style="Card.TFrame")
         up_row.pack(fill=tk.X, pady=(0, 4))
@@ -819,7 +861,7 @@ class StoryPromptGeneratorApp:
             batch_up_row,
             text="⏹ 停止批量",
             style="Secondary.TButton",
-            command=self.on_request_cancel_batch_upscale,
+            command=self.on_request_cancel_any_batch,
             state="disabled",
         )
         self.btn_cancel_batch.pack(side=tk.RIGHT, padx=(4, 0))
@@ -876,6 +918,59 @@ class StoryPromptGeneratorApp:
             text="（可一键将双格漫画拆成独立全幅单图，彻底避免分格失败或画幅减半）",
             style="Hint.TLabel",
         ).pack(side=tk.LEFT)
+
+        # === 一键连出 12 幕 & 0号幕 (S00) Seed 锁定控制栏 ===
+        batch_gen_bar = tk.Frame(
+            top_card, bg=BG_INPUT, highlightbackground=BORDER, highlightthickness=1, padx=8, pady=5
+        )
+        batch_gen_bar.pack(fill=tk.X, pady=(0, 6))
+
+        tk.Checkbutton(
+            batch_gen_bar,
+            text="🔗 连出时使用 0号幕 (S00) 的 Seed",
+            variable=self.var_api_use_s00_seed,
+            bg=BG_INPUT,
+            fg=ACCENT,
+            selectcolor=BG_PANEL,
+            activebackground=BG_INPUT,
+            activeforeground=ACCENT,
+            font=("Microsoft YaHei UI", 9, "bold"),
+            cursor="hand2",
+            command=self._on_toggle_s00_seed,
+        ).pack(side=tk.LEFT)
+
+        tk.Label(
+            batch_gen_bar,
+            textvariable=self.var_s00_seed_badge,
+            bg=BG_INPUT,
+            fg=FG_MUTED,
+            font=("Microsoft YaHei UI", 8),
+        ).pack(side=tk.LEFT, padx=(6, 0))
+
+        self.btn_stop_batch_right = ttk.Button(
+            batch_gen_bar,
+            text="⏹ 停止连出",
+            style="Secondary.TButton",
+            command=self.on_request_cancel_any_batch,
+            state="disabled",
+        )
+        self.btn_stop_batch_right.pack(side=tk.RIGHT, padx=(6, 0))
+
+        self.btn_batch_checked_right = ttk.Button(
+            batch_gen_bar,
+            text="🎯 连出已勾选幕",
+            style="Action.TButton",
+            command=lambda: self.on_batch_generate_scenes(force_all_12=False),
+        )
+        self.btn_batch_checked_right.pack(side=tk.RIGHT, padx=(6, 0))
+
+        self.btn_batch_all12_right = ttk.Button(
+            batch_gen_bar,
+            text="🚀 一键出全套 12 幕",
+            style="Generate.TButton",
+            command=lambda: self.on_batch_generate_scenes(force_all_12=True),
+        )
+        self.btn_batch_all12_right.pack(side=tk.RIGHT)
 
         grid_box = ttk.Frame(top_card, style="Card.TFrame")
         grid_box.pack(fill=tk.X)
@@ -1257,6 +1352,23 @@ class StoryPromptGeneratorApp:
                 self._load_preset_by_name(names[0], trigger_refresh=True)
                 self.var_status.set(f"🗑️ 已删除自定义预设「{cur}」")
 
+    def _on_style_preset_changed(self, _event=None) -> None:
+        style_name = self.var_style.get()
+        if "M6" in style_name or "无描边暖杏真肤" in style_name:
+            self.var_api_scale.set(4.8)
+            self.var_api_rescale.set(0.25)
+            if hasattr(self, "lbl_api_scale"):
+                self.lbl_api_scale.config(text="Prompt Guidance (相关性 Scale)：4.8")
+            self.refresh_output()
+            self.var_status.set("🌤️ 已切换至 M6 柔雾白纱晨光真肤预设（已自动同步最佳低反差生图参数 Scale=4.8, Rescale=0.25）")
+        else:
+            if round(float(self.var_api_scale.get()), 1) == 4.8 and round(float(self.var_api_rescale.get()), 2) == 0.25:
+                self.var_api_scale.set(6.0)
+                self.var_api_rescale.set(0.0)
+                if hasattr(self, "lbl_api_scale"):
+                    self.lbl_api_scale.config(text="Prompt Guidance (相关性 Scale)：6.0")
+            self.refresh_output()
+
     def _on_fluid_slider(self, val_str: str) -> None:
         val = float(val_str)
         desc = "清爽克制" if val < 0.9 else ("标准定稿" if val <= 1.08 else "浓稠增量强化")
@@ -1510,6 +1622,15 @@ class StoryPromptGeneratorApp:
         )
         self.btn_regen_same.pack(side=tk.RIGHT)
 
+        self.btn_stop_batch_preview = ttk.Button(
+            bar,
+            text="⏹ 停止批量",
+            style="Secondary.TButton",
+            command=self.on_request_cancel_any_batch,
+            state="disabled",
+        )
+        self.btn_stop_batch_preview.pack(side=tk.RIGHT, padx=(0, 6))
+
         self.preview_canvas_frame = tk.Frame(tab_img, bg=BG_INPUT, highlightthickness=1, highlightbackground=BORDER)
         self.preview_canvas_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -1562,6 +1683,7 @@ class StoryPromptGeneratorApp:
             scale=round(float(self.var_api_scale.get()), 1),
             cfg_rescale=round(float(self.var_api_rescale.get()), 2),
             seed=seed_val,
+            use_s00_seed=bool(self.var_api_use_s00_seed.get()),
             extra_uc=self.var_api_extra_uc.get().strip(),
             append_v5_quality=bool(self.var_api_quality.get()),
             proxy=self.var_api_proxy.get().strip(),
@@ -1609,6 +1731,30 @@ class StoryPromptGeneratorApp:
         self.var_api_seed.set(str(self.last_generated_seed))
         self.var_status.set(f"🔒 已锁定上次出图 Seed：{self.last_generated_seed}")
 
+    def on_lock_last_s00_seed(self) -> None:
+        if self.last_s00_seed is None:
+            messagebox.showinfo("尚无 0号幕 Seed", "当前会话尚未生成过第 00 幕 (S00)，请先生成 S00 或开启连出。")
+            return
+        self.var_api_seed.set(str(self.last_s00_seed))
+        self.var_status.set(f"0️⃣ 已将最近一次第 00 幕 (S00) 的 Seed 填入种子框：{self.last_s00_seed}")
+
+    def _on_toggle_s00_seed(self, persist: bool = True) -> None:
+        use_s00 = bool(self.var_api_use_s00_seed.get())
+        if persist:
+            try:
+                save_api_settings(self._collect_api_settings())
+            except Exception:
+                pass
+        if use_s00:
+            s00_note = f"（最近 S00 Seed: {self.last_s00_seed}）" if self.last_s00_seed else "（Seed=-1 时先随机出 S00，后续自动锁定同 Seed）"
+            self.var_s00_seed_badge.set(s00_note)
+            if persist:
+                self.var_status.set("🔗 已开启「使用 0号幕 (S00) 的 Seed」：批量连出时 S01~S11 将自动统一锁定 S00 的 Seed")
+        else:
+            self.var_s00_seed_badge.set("（已关闭：批量连出时后续每一幕各自独立随机 Seed）")
+            if persist:
+                self.var_status.set("🎲 已关闭「使用 0号幕 (S00) 的 Seed」：批量连出时每一幕将各自独立随机摇号")
+
     def on_check_anlas_clicked(self) -> None:
         settings = self._collect_api_settings()
         if not settings.api_token:
@@ -1654,6 +1800,10 @@ class StoryPromptGeneratorApp:
         for b in (
             self.btn_single_generate,
             self.btn_left_generate,
+            self.btn_left_batch_all12,
+            self.btn_left_batch_checked,
+            self.btn_batch_all12_right,
+            self.btn_batch_checked_right,
             self.btn_regen_same,
             self.btn_upscale_last,
             self.btn_upscale_choose,
@@ -1665,15 +1815,20 @@ class StoryPromptGeneratorApp:
             b.config(state=btn_state)
         for row_btn in self.gen_btn_refs.values():
             row_btn.config(state=btn_state)
-        if hasattr(self, "btn_cancel_batch"):
-            self.btn_cancel_batch.config(state="normal" if (locked and allow_cancel_batch) else "disabled")
+        cancel_state = "normal" if (locked and allow_cancel_batch) else "disabled"
+        for cb in ("btn_cancel_batch", "btn_stop_batch_right", "btn_stop_batch_preview"):
+            if hasattr(self, cb):
+                getattr(self, cb).config(state=cancel_state)
 
-    def on_request_cancel_batch_upscale(self) -> None:
+    def on_request_cancel_any_batch(self) -> None:
         if not self.is_generating:
             return
         self._cancel_batch_upscale = True
-        self.btn_cancel_batch.config(state="disabled")
-        self.var_status.set("⏹ 正在等待当前这一张放大完成后安全停止批量任务...")
+        self._cancel_batch_gen = True
+        for cb in ("btn_cancel_batch", "btn_stop_batch_right", "btn_stop_batch_preview"):
+            if hasattr(self, cb):
+                getattr(self, cb).config(state="disabled")
+        self.var_status.set("⏹ 正在等待当前这一张请求完成后安全中断批量任务（已落盘图片将完整保留）...")
 
     def on_batch_upscale_folder(self) -> None:
         """选择源文件夹与独立的目标输出文件夹，批量执行 1 点数官方 Upscale"""
@@ -2021,6 +2176,10 @@ class StoryPromptGeneratorApp:
         self._set_generating_ui_lock(False)
         self.last_generated_path = res.saved_path
         self.last_generated_seed = res.seed
+        if scene_id == "S00":
+            self.last_s00_seed = res.seed
+            if self.var_api_use_s00_seed.get():
+                self.var_s00_seed_badge.set(f"（最近 S00 Seed: {res.seed}）")
 
         try:
             pil_img = Image.open(BytesIO(res.image_bytes))
@@ -2048,7 +2207,258 @@ class StoryPromptGeneratorApp:
     def _on_generate_error(self, err_msg: str) -> None:
         self._set_generating_ui_lock(False)
         self.var_status.set(f"❌ 生图失败：{err_msg}")
-        messagebox.showerror("NovelAI 单张生图失败", err_msg)
+        messagebox.showerror("NovelAI 生图失败", err_msg)
+
+    def on_batch_generate_scenes(self, force_all_12: bool = True) -> None:
+        """一键串行连出全套 12 幕（或当前已勾选幕），支持可选锁定沿用 0 号幕 (S00) 的 Seed"""
+        if self.is_generating:
+            return
+
+        settings = self._collect_api_settings()
+        if not settings.api_token:
+            self.left_nb.select(4)
+            messagebox.showwarning(
+                "需要填写 API Token",
+                "请先在左侧「🚀 API生图」标签页填入 NovelAI Persistent API Token（以 pst- 开头）！",
+            )
+            return
+
+        if force_all_12:
+            target_chapter_ids = [ch["id"] for ch in STORY_CHAPTERS]
+        else:
+            target_chapter_ids = [ch["id"] for ch in STORY_CHAPTERS if self.scene_vars[ch["id"]].get()]
+            if not target_chapter_ids:
+                messagebox.showwarning("未勾选任何章节", "请先在右侧章节列表中勾选至少 1 个章节，或直接点击「🚀 一键出全套 12 幕」。")
+                return
+
+        mode = self.var_perspective.get()
+        mode_label = "👁️ 第一人称 (POV)" if mode == "pov" else "🎥 第三人称 (客观机位)"
+
+        # 组装待发送任务队列（自动排除备用同义测试变体，仅按用户选定的分镜模式生成每幕正式主图）
+        batch_cfg = self._collect_config()
+        batch_cfg.include_sub_variants = False
+
+        tasks: List[SceneBatchTask] = []
+        for ch in STORY_CHAPTERS:
+            cid = ch["id"]
+            if cid not in target_chapter_ids:
+                continue
+            items = generate_scene_prompts(cid, batch_cfg, pov_override=mode)
+            for idx_item, (sub_title, canvas_hint, prompt_text) in enumerate(items):
+                if not prompt_text or prompt_text.startswith("[Base Prompt]"):
+                    continue
+                w, h = parse_canvas_size(canvas_hint, settings.canvas_preset)
+                sub_suffix = f"_P{idx_item + 1}" if len(items) > 1 else ""
+                tasks.append(
+                    SceneBatchTask(
+                        scene_id=f"{cid}{sub_suffix}",
+                        base_chapter_id=cid,
+                        title=sub_title,
+                        prompt_text=prompt_text,
+                        width=w,
+                        height=h,
+                    )
+                )
+
+        if not tasks:
+            messagebox.showwarning("任务为空", "没有可生成的章节提示词任务。")
+            return
+
+        has_s00 = any(t.base_chapter_id == "S00" for t in tasks)
+        if settings.use_s00_seed:
+            if 0 < settings.seed <= 4294967288:
+                seed_desc = f"✅ 开启 · 全程统一锁定当前指定 Seed: {settings.seed}"
+            elif has_s00:
+                seed_desc = "✅ 开启 · 先随机生成 0号幕 (S00)，随后 S01~S11 自动统一沿用 S00 的 Seed"
+            elif self.last_s00_seed is not None:
+                seed_desc = f"✅ 开启 · 本次不含 S00，将自动沿用最近一次 S00 生成的 Seed: {self.last_s00_seed}"
+            else:
+                seed_desc = "✅ 开启 · 由本批首幕先随机生成 Seed，后续幕次统一锁定沿用该 Seed"
+        else:
+            if 0 < settings.seed <= 4294967288 and has_s00:
+                seed_desc = f"🎲 关闭 · 仅 S00 使用 {settings.seed}，后续 S01~S11 各自独立随机 Seed"
+            else:
+                seed_desc = "🎲 关闭 · 不绑定 0号幕 Seed，每一幕各自独立随机摇号 (-1)"
+
+        total_imgs = len(tasks)
+        total_anlas = sum(
+            estimate_v5_medium_anlas(t.width, t.height, steps=14, is_opus_free_eligible=False)
+            for t in tasks
+        )
+        split_note = (
+            f"（含 S03/S04 前后单图拆分，共 {total_imgs} 张）"
+            if total_imgs > len(target_chapter_ids)
+            else f"（共 {total_imgs} 张）"
+        )
+
+        confirm = messagebox.askyesno(
+            "确认一键批量连出故事线",
+            f"🎬 即将按顺序串行连出 NovelAI V5 Full Medium：\n\n"
+            f"• 视角轨道：{mode_label}\n"
+            f"• 目标范围：{'全套 12 幕 (S00 ~ S11)' if force_all_12 else f'已勾选 {len(target_chapter_ids)} 幕'} {split_note}\n"
+            f"• 0号幕 (S00) Seed 跟随：{seed_desc}\n"
+            f"• 画布策略：{settings.canvas_preset}\n"
+            f"• 预计总消耗：约 {total_anlas} Anlas（若 Opus 免费额度充裕则为 0 点数）\n"
+            f"• 保存位置：{settings.output_dir}/<日期>/suite_.../ 独立套图文件夹\n\n"
+            f"确认立即开始连出吗？（中途可随时点击「⏹ 停止连出 / 停止批量」安全中断）",
+            parent=self.root,
+        )
+        if not confirm:
+            return
+
+        save_api_settings(settings)
+        self._cancel_batch_gen = False
+        self._set_generating_ui_lock(True, allow_cancel_batch=True)
+        self.out_nb.select(1)
+
+        suite_char_tag = batch_cfg.eng_name or batch_cfg.char_tag or "story"
+
+        def _on_prog(
+            phase: str,
+            idx: int,
+            total: int,
+            task: SceneBatchTask,
+            cur_seed: int,
+            s00_seed_now: Optional[int],
+            res_obj: Optional[GenerationResult],
+        ) -> None:
+            def _ui_step() -> None:
+                # 同步高亮当前正在处理的章节按钮
+                for sid_k, btn_k in self.scene_btn_refs.items():
+                    btn_k.config(
+                        bg=BORDER if sid_k == task.base_chapter_id else BG_INPUT,
+                        fg=SUCCESS if sid_k == task.base_chapter_id else FG_TEXT,
+                    )
+
+                if phase == "start":
+                    seed_lbl = f"Seed={cur_seed}" if cur_seed > 0 else "Seed=随机摇号中"
+                    s00_lbl = f" | 0号基准Seed:{s00_seed_now}" if (settings.use_s00_seed and s00_seed_now) else ""
+                    self.var_status.set(
+                        f"🚀 连出进度 [{idx}/{total}]：正在生成【{task.scene_id}】({task.width}×{task.height}, {seed_lbl}{s00_lbl})... 可点「⏹ 停止连出」中断"
+                    )
+                    self.var_preview_meta.set(
+                        f"⏳ 批量连出中 [{idx}/{total}]：正在绘制 {task.scene_id} ({task.width}×{task.height}, {seed_lbl})"
+                    )
+                elif phase == "done" and res_obj is not None:
+                    self.last_generated_path = res_obj.saved_path
+                    self.last_generated_seed = res_obj.seed
+                    if task.base_chapter_id == "S00":
+                        self.last_s00_seed = res_obj.seed
+                        if self.var_api_use_s00_seed.get():
+                            self.var_s00_seed_badge.set(f"（最近 S00 Seed: {res_obj.seed}）")
+                    try:
+                        pil_img = Image.open(BytesIO(res_obj.image_bytes))
+                        pil_img.load()
+                        self._preview_pil_img = pil_img
+                        self._render_pil_to_label()
+                    except Exception:
+                        pass
+                    self.var_preview_meta.set(
+                        f"✅ 已完成 [{idx}/{total}] {task.scene_id}  |  {res_obj.width}×{res_obj.height}  |  "
+                        f"Seed: {res_obj.seed}  |  耗时: {res_obj.elapsed_sec}s"
+                    )
+
+            self.root.after(0, _ui_step)
+
+        def _worker() -> None:
+            try:
+                summary = batch_generate_scenes_v5_medium(
+                    api_token=settings.api_token,
+                    tasks=tasks,
+                    scale=settings.scale,
+                    cfg_rescale=settings.cfg_rescale,
+                    initial_seed=settings.seed,
+                    use_s00_seed=settings.use_s00_seed,
+                    fallback_s00_seed=self.last_s00_seed,
+                    extra_uc=settings.extra_uc,
+                    append_v5_quality=settings.append_v5_quality,
+                    proxy=settings.proxy,
+                    output_dir=settings.output_dir,
+                    perspective_mode=mode,
+                    suite_tag=suite_char_tag,
+                    on_progress=_on_prog,
+                    cancel_check=lambda: self._cancel_batch_gen,
+                )
+                sub_info: Optional[SubscriptionInfo] = None
+                try:
+                    sub_info = fetch_subscription_info(settings.api_token, proxy=settings.proxy)
+                except Exception:
+                    pass
+                self.root.after(0, lambda: self._on_batch_generate_done(summary, mode_label, sub_info))
+            except Exception as exc:
+                msg = exc.message if isinstance(exc, NaiApiError) else str(exc)
+                self.root.after(0, lambda: self._on_generate_error(msg))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_batch_generate_done(
+        self,
+        summary: BatchGenerateSummary,
+        mode_label: str,
+        sub_info: Optional[SubscriptionInfo],
+    ) -> None:
+        self._set_generating_ui_lock(False)
+        self._cancel_batch_gen = False
+
+        # 恢复当前选中章节高亮色
+        for sid_k, btn_k in self.scene_btn_refs.items():
+            btn_k.config(
+                bg=BORDER if sid_k == self.active_scene_id else BG_INPUT,
+                fg=ACCENT if sid_k == self.active_scene_id else FG_TEXT,
+            )
+
+        if summary.s00_seed_used is not None and self.var_api_use_s00_seed.get():
+            self.last_s00_seed = summary.s00_seed_used
+            self.var_s00_seed_badge.set(f"（最近 S00 Seed: {summary.s00_seed_used}）")
+
+        if summary.last_result is not None:
+            self.last_generated_path = summary.last_result.saved_path
+            self.last_generated_seed = summary.last_result.seed
+            try:
+                pil_img = Image.open(BytesIO(summary.last_result.image_bytes))
+                pil_img.load()
+                self._preview_pil_img = pil_img
+                self._render_pil_to_label()
+            except Exception:
+                pass
+
+        if sub_info is not None:
+            self._on_anlas_checked_ok(sub_info)
+
+        state_word = "⏹ 连出已手动停止" if summary.cancelled else "🎉 故事线批量连出完成"
+        fail_cnt = len(summary.failed)
+        s00_note = (
+            f" | 锁定0号Seed: {summary.s00_seed_used}"
+            if (self.var_api_use_s00_seed.get() and summary.s00_seed_used)
+            else " | 每幕独立Seed"
+        )
+        anlas_tail = f" | 剩余: {sub_info.anlas_left} Anlas" if sub_info else ""
+        meta = (
+            f"{state_word} [{mode_label}]：成功 {summary.succeeded}/{summary.total_planned} 张"
+            + (f"（失败 {fail_cnt} 张）" if fail_cnt else "")
+            + f"{s00_note}  |  套图目录：{summary.output_dir}"
+        )
+        self.var_preview_meta.set(meta)
+        self.var_status.set(f"{meta}{anlas_tail}")
+
+        detail_msg = (
+            f"{state_word}！\n\n"
+            f"• 视角轨道：{mode_label}\n"
+            f"• 成功出图：{summary.succeeded} / {summary.total_planned} 张\n"
+            f"• Seed 记录：{'全程沿用 0号幕 Seed ' + str(summary.s00_seed_used) if (self.var_api_use_s00_seed.get() and summary.s00_seed_used) else '每幕独立随机 Seed'}\n"
+            f"• 独立套图文件夹：\n  {summary.output_dir}\n"
+            f"（提示：可直接点击「📁 文件夹批量放大另存」将该套图一键全套 2x 高清放大！）\n"
+        )
+        if summary.failed:
+            preview_errs = "\n".join(f"  - {fn}: {er}" for fn, er in summary.failed[:5])
+            detail_msg += f"\n⚠️ 失败项 ({fail_cnt} 张)：\n{preview_errs}\n"
+        detail_msg += "\n是否立即打开本次生成的套图文件夹？"
+
+        if messagebox.askyesno("批量连出结果", detail_msg, parent=self.root):
+            try:
+                os.startfile(summary.output_dir)
+            except Exception:
+                pass
 
 
 def main() -> None:

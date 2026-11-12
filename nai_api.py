@@ -187,6 +187,7 @@ class NaiApiSettings:
     scale: float = 6.0
     cfg_rescale: float = 0.0
     seed: int = -1
+    use_s00_seed: bool = True
     extra_uc: str = ""
     append_v5_quality: bool = True
     proxy: str = ""
@@ -245,6 +246,8 @@ def load_api_settings() -> NaiApiSettings:
                 settings.cfg_rescale = float(data["cfg_rescale"])
             if "seed" in data:
                 settings.seed = int(data["seed"])
+            if "use_s00_seed" in data:
+                settings.use_s00_seed = bool(data["use_s00_seed"])
             if "extra_uc" in data:
                 settings.extra_uc = str(data["extra_uc"])
             if "append_v5_quality" in data:
@@ -460,12 +463,17 @@ def build_v5_medium_payload(
         char_inline_negs_list.append(cc_negs)
     char_captions = cleaned_char_captions
 
-    # 若启用 V5 质量后缀，且提示词中尚未包含核心质量词，则温和补充在头部/尾部
+    # 若启用 V5 质量后缀，且提示词中尚未包含核心质量词（且非像素画风 / R5 纯单反实拍去滤镜模式），则温和补充在尾部
     lower_check = base_caption.lower()
     has_quality_already = any(
         kw in lower_check for kw in ("masterpiece", "very aesthetic", "best quality")
     )
-    if append_v5_quality and not has_quality_already:
+    suppress_anime_quality = any(
+        kw in lower_check
+        for kw in ("pixel art", "raw photo", "gravure", "2.8::photorealistic::", "no lineart")
+    )
+    use_std_quality_preset = bool(append_v5_quality and not suppress_anime_quality)
+    if use_std_quality_preset and not has_quality_already:
         base_caption = f"{base_caption.rstrip(', ')}, {V5_QUALITY_SUFFIX}"
 
     # 处理 V5 Medium 固定的 Heavy UC 预设（若正向包含 nsfw/explicit，自动移除负向预设开头的 nsfw）
@@ -519,7 +527,7 @@ def build_v5_medium_payload(
         "steps": 14,  # V5 Full Medium 锁定 14 步
         "n_samples": 1,  # 严格单次生成 1 张
         "ucPresetId": "heavy",  # V5 Full Medium 锁定 heavy 预设槽位
-        "qualityPresetId": "standard" if append_v5_quality else "none",
+        "qualityPresetId": "standard" if use_std_quality_preset else "none",
         "autoSmea": False,
         "dynamic_thresholding": False,
         "controlnet_strength": 1.0,
@@ -691,6 +699,7 @@ def generate_single_image_v5_medium(
     append_v5_quality: bool = True,
     proxy: str = "",
     output_dir: str = DEFAULT_OUTPUT_DIR,
+    custom_target_dir: Optional[str] = None,
     scene_id: str = "S00",
     perspective_mode: str = "pov",
 ) -> GenerationResult:
@@ -728,8 +737,11 @@ def generate_single_image_v5_medium(
     image_bytes = _unpack_image_bytes(resp.content)
     elapsed = round(time.perf_counter() - t0, 2)
 
-    date_folder = datetime.now().strftime("%Y%m%d")
-    target_dir = os.path.join(output_dir or DEFAULT_OUTPUT_DIR, date_folder)
+    if custom_target_dir:
+        target_dir = custom_target_dir
+    else:
+        date_folder = datetime.now().strftime("%Y%m%d")
+        target_dir = os.path.join(output_dir or DEFAULT_OUTPUT_DIR, date_folder)
     os.makedirs(target_dir, exist_ok=True)
 
     safe_scene = re.sub(r"[^A-Za-z0-9_-]", "", scene_id or "Custom") or "Custom"
@@ -751,6 +763,183 @@ def generate_single_image_v5_medium(
         height=height,
         elapsed_sec=elapsed,
         estimated_anlas=est_cost,
+    )
+
+
+@dataclass
+class SceneBatchTask:
+    """批量故事线连出单张任务描述"""
+
+    scene_id: str  # 如 "S00", "S01", "S03_P1"
+    base_chapter_id: str  # 如 "S00", "S01", "S03"
+    title: str
+    prompt_text: str
+    width: int
+    height: int
+
+
+@dataclass
+class BatchGenerateSummary:
+    """批量故事线连出结果汇总"""
+
+    output_dir: str
+    total_planned: int
+    succeeded: int
+    failed: List[Tuple[str, str]]
+    cancelled: bool
+    s00_seed_used: Optional[int] = None
+    results: Optional[List[GenerationResult]] = None
+    last_result: Optional[GenerationResult] = None
+
+
+def batch_generate_scenes_v5_medium(
+    api_token: str,
+    tasks: List[SceneBatchTask],
+    *,
+    scale: float = 6.0,
+    cfg_rescale: float = 0.0,
+    initial_seed: int = -1,
+    use_s00_seed: bool = True,
+    fallback_s00_seed: Optional[int] = None,
+    extra_uc: str = "",
+    append_v5_quality: bool = True,
+    proxy: str = "",
+    output_dir: str = DEFAULT_OUTPUT_DIR,
+    perspective_mode: str = "pov",
+    suite_tag: str = "",
+    on_progress: Optional[Any] = None,
+    cancel_check: Optional[Any] = None,
+) -> BatchGenerateSummary:
+    """
+    串行批量生成全套 12 幕（或选定章节）V5 Full Medium 图片：
+    - Seed 控制逻辑：
+      1. 若 `use_s00_seed=True`（勾选「使用 0 号幕 Seed」）：
+         - 当列表含 S00 时，S00 使用 `initial_seed`（填 -1 则先随机摇出一个新 Seed，填固定正数则使用该数），
+           随后 S01~S11 自动锁定沿用 S00 实际产出的 Seed；
+         - 当列表不含 S00（仅勾选后续幕次）时，优先使用固定正数 `initial_seed`，否则使用 `fallback_s00_seed`（最近一次生成的 S00 Seed），
+           若均无则由本批第 1 幕产出的 Seed 统一锁定后续幕次。
+      2. 若 `use_s00_seed=False`（未勾选「使用 0 号幕 Seed」）：
+         - S00 使用 `initial_seed`，后续所有非 S00 幕次均各自独立随机 Seed (-1)，互不绑定。
+    - 防限流保护：严格单张串行发送，遇到 HTTP 429 自动退避重试一次，遇到 401/402 立即安全终止。
+    """
+    token = _normalize_token(api_token)
+    if not token:
+        raise NaiApiError("未填写 API Token！请先在左侧「🚀 API生图」填入 Persistent API Token (pst-...)")
+    if not tasks:
+        raise NaiApiError("待生成的章节任务列表为空！")
+
+    date_folder = datetime.now().strftime("%Y%m%d")
+    safe_mode = "POV" if perspective_mode == "pov" else "3rd"
+    safe_tag = re.sub(r"[^A-Za-z0-9_-]", "", suite_tag)[:24]
+    tag_part = f"_{safe_tag}" if safe_tag else ""
+    run_stamp = datetime.now().strftime("%H%M%S")
+    suite_dir = os.path.join(
+        output_dir or DEFAULT_OUTPUT_DIR,
+        date_folder,
+        f"suite_{safe_mode}{tag_part}_{run_stamp}",
+    )
+    os.makedirs(suite_dir, exist_ok=True)
+
+    locked_s00_seed: Optional[int] = None
+    if use_s00_seed:
+        if isinstance(initial_seed, int) and 0 < initial_seed <= 4294967288:
+            locked_s00_seed = initial_seed
+        elif not any(t.base_chapter_id == "S00" for t in tasks) and fallback_s00_seed:
+            locked_s00_seed = int(fallback_s00_seed)
+
+    succeeded = 0
+    failed: List[Tuple[str, str]] = []
+    results: List[GenerationResult] = []
+    last_res: Optional[GenerationResult] = None
+    cancelled = False
+    total = len(tasks)
+
+    for idx, task in enumerate(tasks, start=1):
+        if callable(cancel_check) and cancel_check():
+            cancelled = True
+            break
+
+        # 决定当前幕使用的 Seed
+        if task.base_chapter_id == "S00":
+            cur_seed = locked_s00_seed if (use_s00_seed and locked_s00_seed is not None) else initial_seed
+        else:
+            if use_s00_seed:
+                cur_seed = locked_s00_seed if locked_s00_seed is not None else initial_seed
+            else:
+                cur_seed = -1
+
+        if callable(on_progress):
+            on_progress("start", idx, total, task, cur_seed, locked_s00_seed, last_res)
+
+        res: Optional[GenerationResult] = None
+        for attempt in range(2):
+            try:
+                res = generate_single_image_v5_medium(
+                    api_token=token,
+                    prompt_text=task.prompt_text,
+                    width=task.width,
+                    height=task.height,
+                    scale=scale,
+                    cfg_rescale=cfg_rescale,
+                    seed=cur_seed,
+                    extra_uc=extra_uc,
+                    append_v5_quality=append_v5_quality,
+                    proxy=proxy,
+                    output_dir=output_dir,
+                    custom_target_dir=suite_dir,
+                    scene_id=task.scene_id,
+                    perspective_mode=perspective_mode,
+                )
+                break
+            except NaiApiError as exc:
+                if exc.status_code == 429 and attempt == 0:
+                    time.sleep(3.0)
+                    continue
+                if exc.status_code in (401, 402):
+                    failed.append((task.scene_id, exc.message))
+                    return BatchGenerateSummary(
+                        output_dir=suite_dir,
+                        total_planned=total,
+                        succeeded=succeeded,
+                        failed=failed,
+                        cancelled=False,
+                        s00_seed_used=locked_s00_seed,
+                        results=results,
+                        last_result=last_res,
+                    )
+                failed.append((task.scene_id, exc.message))
+                break
+            except Exception as exc:
+                failed.append((task.scene_id, str(exc)))
+                break
+
+        if res is not None:
+            succeeded += 1
+            results.append(res)
+            last_res = res
+            if task.base_chapter_id == "S00":
+                locked_s00_seed = res.seed
+            elif use_s00_seed and locked_s00_seed is None:
+                locked_s00_seed = res.seed
+
+            if callable(on_progress):
+                on_progress("done", idx, total, task, res.seed, locked_s00_seed, res)
+
+        if idx < total:
+            if callable(cancel_check) and cancel_check():
+                cancelled = True
+                break
+            time.sleep(0.45)
+
+    return BatchGenerateSummary(
+        output_dir=suite_dir,
+        total_planned=total,
+        succeeded=succeeded,
+        failed=failed,
+        cancelled=cancelled,
+        s00_seed_used=locked_s00_seed,
+        results=results,
+        last_result=last_res,
     )
 
 
