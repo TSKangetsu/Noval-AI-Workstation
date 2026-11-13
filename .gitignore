@@ -9,3 +9,5 @@ __pycache__/
 
 # 本地打包归档
 *.7z
+sample/
+favorite/

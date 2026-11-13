@@ -33,7 +33,9 @@ class CharacterConfig:
     bust_preset: str = "默认随角色原设"
     skin_preset: str = "自然暖透肤（原版默认）"
     outfit_preset: str = "宽松滑肩白T恤·下身真空（故事线默认）"
+    outfit_state_mode: str = "🔄 智能适配穿脱（原设/裙装自动撩裙拨内裤 · 单件上衣自动真空）"
     custom_outfit_tags: str = ""
+    keep_canon_elements: bool = False
     legwear_preset: str = "赤足裸腿（barefoot 默认）"
 
     # 额外萌点开关
@@ -81,6 +83,7 @@ class CharacterConfig:
     enable_remnants: bool = True        # 12. 跨幕历史累积残留痕迹 (前几幕留下的脸颊/发丝/小腹旧积液)
     enable_t5_prose: bool = True        # 13. 句尾英文自然语言锚点句 (开启时也会自动剔除已 OFF 的模块信息)
     enable_negatives: bool = True       # 14. 动作与画面防崩负向词块
+    enable_multi_angle_nsfw: bool = False  # 15. 多角度套图 NSFW 类词条开关（默认 OFF 纯 SFW）
 
 
 # 快捷精密参照开关预设组
@@ -162,6 +165,10 @@ BUILTIN_CHARACTERS: Dict[str, Dict[str, str]] = {
         "eye_color": "purple eyes",
         "hair_tags": "short purple hair, hair ribbon, x hair ornament, pointy hair, stray hair",
         "canon_neg_tags": "neckerchief, serafuku, plaid, gloves, crown",
+        "canon_outfit": "serafuku, white crop top, neckerchief, purple plaid skirt, pleated skirt, white gloves",
+        "canon_top_only": "serafuku, white crop top, neckerchief, white gloves",
+        "canon_bottom_neg": "skirt, pleated skirt, plaid skirt",
+        "canon_prose": "her canonical sailor crop top and purple plaid skirt",
         "body_preset": "纤细娇小（原版默认 slender, petite）",
         "bust_preset": "默认随角色原设",
     },
@@ -171,6 +178,10 @@ BUILTIN_CHARACTERS: Dict[str, Dict[str, str]] = {
         "eye_color": "red eyes",
         "hair_tags": "white hair, twintails, bunny hair ornament, fake animal ears, messy hair, stray hair",
         "canon_neg_tags": "red jacket, neckerchief, cuffs, skirt",
+        "canon_outfit": "red open jacket, white dress, neckerchief, detached cuffs, pleated skirt",
+        "canon_top_only": "red open jacket, white top, neckerchief, detached cuffs",
+        "canon_bottom_neg": "skirt, pleated skirt",
+        "canon_prose": "her canonical red jacket and white outfit",
         "body_preset": "纤细娇小（原版默认 slender, petite）",
         "bust_preset": "平胸贫乳（flat chest, small breasts）",
     },
@@ -180,6 +191,10 @@ BUILTIN_CHARACTERS: Dict[str, Dict[str, str]] = {
         "eye_color": "red eyes",
         "hair_tags": "white hair, long hair, ponytail, mechanical ears, hairband, stray hair",
         "canon_neg_tags": "serafuku, neckerchief, navel cutout, gloves, sword",
+        "canon_outfit": "white serafuku, yellow neckerchief, navel cutout, black pleated skirt, white gloves",
+        "canon_top_only": "white serafuku, yellow neckerchief, navel cutout, white gloves",
+        "canon_bottom_neg": "skirt, pleated skirt",
+        "canon_prose": "her canonical white naval uniform and black skirt",
         "body_preset": "纤细娇小（原版默认 slender, petite）",
         "bust_preset": "小巧适中（small breasts）",
     },
@@ -189,6 +204,10 @@ BUILTIN_CHARACTERS: Dict[str, Dict[str, str]] = {
         "eye_color": "purple eyes",
         "hair_tags": "long purple hair, lowbraided sidelocks, hairband, stray hair",
         "canon_neg_tags": "white dress, capelet, detached sleeves, plushie",
+        "canon_outfit": "white dress, purple capelet, detached sleeves",
+        "canon_top_only": "purple capelet, white top, detached sleeves",
+        "canon_bottom_neg": "skirt, long skirt",
+        "canon_prose": "her canonical white dress and purple capelet",
         "body_preset": "纤细娇小（原版默认 slender, petite）",
         "bust_preset": "小巧适中（small breasts）",
     },
@@ -198,6 +217,10 @@ BUILTIN_CHARACTERS: Dict[str, Dict[str, str]] = {
         "eye_color": "blue eyes",
         "hair_tags": "short white hair, wavy hair, swept bangs, stray hair",
         "canon_neg_tags": "maid headdress, maid apron, black dress, detached sleeves, gloves",
+        "canon_outfit": "maid headdress, maid apron, black dress, detached sleeves, white gloves",
+        "canon_top_only": "maid headdress, maid collar, detached sleeves, white gloves, open clothes",
+        "canon_bottom_neg": "skirt, long dress",
+        "canon_prose": "her canonical maid outfit",
         "body_preset": "成熟高挑丰满（tall female, curvy, narrow waist）",
         "bust_preset": "丰满巨乳（large breasts, cleavage）",
     },
@@ -207,6 +230,10 @@ BUILTIN_CHARACTERS: Dict[str, Dict[str, str]] = {
         "eye_color": "red eyes",
         "hair_tags": "silver hair, very long hair, twintails, hair ribbon, stray hair",
         "canon_neg_tags": "gothic lolita, black dress, frills, maid headdress",
+        "canon_outfit": "gothic lolita, black dress, frills, maid headdress",
+        "canon_top_only": "gothic lolita, black bodice, frills, maid headdress",
+        "canon_bottom_neg": "skirt, long skirt",
+        "canon_prose": "her canonical black gothic lolita dress",
         "body_preset": "丰满肉感微胖（plump, curvy, wide hips, thick thighs）",
         "bust_preset": "夸张爆乳（huge breasts, heavy breasts）",
     },
@@ -216,6 +243,10 @@ BUILTIN_CHARACTERS: Dict[str, Dict[str, str]] = {
         "eye_color": "teal eyes, gradient eyes",
         "hair_tags": "long silver hair, black hairband, hair intakes, stray hair",
         "canon_neg_tags": "jacket, neckerchief, green dress, gloves, thigh strap",
+        "canon_outfit": "jacket, neckerchief, green dress, white gloves, thigh strap",
+        "canon_top_only": "jacket, neckerchief, white gloves",
+        "canon_bottom_neg": "skirt, green skirt",
+        "canon_prose": "her canonical jacket and green dress",
         "body_preset": "匀称修长少女（slender, narrow waist, long legs）",
         "bust_preset": "饱满中等（medium breasts）",
     },
@@ -225,6 +256,10 @@ BUILTIN_CHARACTERS: Dict[str, Dict[str, str]] = {
         "eye_color": "grey eyes",
         "hair_tags": "grey hair, drill hair, high ponytail, hairclip, tinted sunglasses on head, stray hair",
         "canon_neg_tags": "crop jacket, shorts, fingerless gloves, boots",
+        "canon_outfit": "crop jacket, black crop top, shorts, fingerless gloves",
+        "canon_top_only": "crop jacket, black crop top, fingerless gloves",
+        "canon_bottom_neg": "shorts, denim shorts",
+        "canon_prose": "her canonical crop jacket and shorts",
         "body_preset": "纤细娇小（原版默认 slender, petite）",
         "bust_preset": "小巧适中（small breasts）",
     },
@@ -234,6 +269,10 @@ BUILTIN_CHARACTERS: Dict[str, Dict[str, str]] = {
         "eye_color": "green eyes",
         "hair_tags": "white hair, twintails, pointy ears, elf, striped earrings, stray hair",
         "canon_neg_tags": "capelet, white jacket, gold trim, skirt, boots, staff",
+        "canon_outfit": "white capelet, white jacket, gold trim, white skirt",
+        "canon_top_only": "white capelet, white jacket, gold trim",
+        "canon_bottom_neg": "skirt, white skirt",
+        "canon_prose": "her canonical white mage capelet and skirt",
         "body_preset": "纤细娇小（原版默认 slender, petite）",
         "bust_preset": "平胸贫乳（flat chest, small breasts）",
     },
@@ -243,6 +282,10 @@ BUILTIN_CHARACTERS: Dict[str, Dict[str, str]] = {
         "eye_color": "aqua eyes",
         "hair_tags": "aqua hair, very long twintails, hair ornament, stray hair",
         "canon_neg_tags": "necktie, sleeveless shirt, detached sleeves, headset, pleated skirt",
+        "canon_outfit": "sleeveless grey shirt, cyan necktie, detached sleeves, black pleated skirt",
+        "canon_top_only": "sleeveless grey shirt, cyan necktie, detached sleeves",
+        "canon_bottom_neg": "skirt, pleated skirt",
+        "canon_prose": "her canonical sleeveless shirt, cyan tie, and pleated skirt",
         "body_preset": "匀称修长少女（slender, narrow waist, long legs）",
         "bust_preset": "小巧适中（small breasts）",
     },
@@ -252,6 +295,10 @@ BUILTIN_CHARACTERS: Dict[str, Dict[str, str]] = {
         "eye_color": "golden eyes",
         "hair_tags": "silver hair, messy bob cut, sidelocks, ahoge, cat ears, animal ear fluff, stray hair",
         "canon_neg_tags": "",
+        "canon_outfit": "frilled blouse, ribbon, pleated skirt",
+        "canon_top_only": "frilled blouse, ribbon",
+        "canon_bottom_neg": "skirt, pleated skirt",
+        "canon_prose": "her frilled blouse and pleated skirt",
         "body_preset": "纤细娇小（原版默认 slender, petite）",
         "bust_preset": "小巧适中（small breasts）",
     },
@@ -288,58 +335,138 @@ SKIN_PRESETS: Dict[str, str] = {
 }
 
 OUTFIT_PRESETS: Dict[str, Dict[str, str]] = {
+    "🌟 角色标签原设默认服装（自动解锁角色原皮 · 推荐）": {
+        "design_tags": "",
+        "state_tags": "clothes lift, skirt lift, panties aside",
+        "sleep_extra": "disheveled clothes",
+        "prose": "",
+        "intact_prose": "",
+        "allow_canon": "1",
+        "kind": "canon_full",
+        "bottom_type": "skirt_or_canon",
+    },
+    "🎽 角色原设上衣与配件保留 · 下身真空半脱": {
+        "design_tags": "",
+        "state_tags": "clothes lift, bottomless, no panties",
+        "sleep_extra": "disheveled clothes",
+        "prose": "her lifted top",
+        "intact_prose": "",
+        "allow_canon": "1",
+        "kind": "canon_top",
+        "bottom_type": "none",
+    },
     "宽松滑肩白T恤·下身真空（故事线默认）": {
         "design_tags": "oversized shirt, white t-shirt, off-shoulder, single bare shoulder, wet clothes",
         "state_tags": "clothes lift, bottomless, no panties",
         "sleep_extra": "disheveled clothes",
         "prose": "her lifted off-shoulder oversized white t-shirt",
+        "intact_prose": "an off-shoulder oversized white t-shirt",
         "allow_canon": "0",
+        "kind": "preset",
+        "bottom_type": "none",
+    },
+    "学院百褶短裙套装（白衬衫+百褶裙 · 撩裙不脱裙）": {
+        "design_tags": "white collared shirt, necktie, pleated skirt, miniskirt",
+        "state_tags": "clothes lift, skirt lift, panties aside",
+        "sleep_extra": "disheveled clothes",
+        "prose": "her lifted pleated skirt",
+        "intact_prose": "a white collared shirt and pleated miniskirt",
+        "allow_canon": "0",
+        "kind": "preset",
+        "bottom_type": "skirt",
+    },
+    "连体兔女郎紧身衣（Bunny Suit · 拨档互动）": {
+        "design_tags": "playboy bunny, black leotard, strapless, bare shoulders, wrist cuffs, bowtie",
+        "state_tags": "clothes lift, leotard aside",
+        "sleep_extra": "disheveled clothes",
+        "prose": "her shifted bunny leotard",
+        "intact_prose": "a strapless black bunny leotard with wrist cuffs and bowtie",
+        "allow_canon": "0",
+        "kind": "preset",
+        "bottom_type": "leotard",
+    },
+    "系带微距比基尼泳装（Micro Bikini · 拨开互动）": {
+        "design_tags": "bikini, micro bikini, string bikini, side-tie bikini bottom",
+        "state_tags": "bikini aside, swimsuit aside",
+        "sleep_extra": "disheveled clothes",
+        "prose": "her pushed-aside bikini strings",
+        "intact_prose": "a string micro bikini",
+        "allow_canon": "0",
+        "kind": "preset",
+        "bottom_type": "swimsuit",
     },
     "全裸无衣（nude · 全程无遮挡）": {
         "design_tags": "nude, completely nude, bare shoulders, nipples",
         "state_tags": "nude",
         "sleep_extra": "",
         "prose": "her bare chest",
+        "intact_prose": "completely nude",
         "allow_canon": "0",
+        "kind": "nude",
+        "bottom_type": "nude",
     },
     "宽松男友白衬衫半敞·下身真空": {
         "design_tags": "oversized shirt, white collared shirt, unbuttoned, open clothes, off-shoulder, wet clothes",
         "state_tags": "clothes lift, bottomless, no panties",
         "sleep_extra": "disheveled clothes",
         "prose": "her unbuttoned oversized white collared shirt",
+        "intact_prose": "an unbuttoned oversized white collared shirt",
         "allow_canon": "0",
+        "kind": "preset",
+        "bottom_type": "none",
     },
     "半脱凌乱水手服上衣·下身真空": {
         "design_tags": "serafuku, sailor collar, neckerchief, open clothes, disheveled clothes, wet clothes",
         "state_tags": "clothes lift, bottomless, no panties",
         "sleep_extra": "",
         "prose": "her disheveled lifted sailor uniform top",
+        "intact_prose": "a disheveled open sailor uniform top",
         "allow_canon": "1",
+        "kind": "preset",
+        "bottom_type": "none",
     },
     "轻薄吊带睡裙掀起·下身真空": {
         "design_tags": "nightgown, camisole, white babydoll, spaghetti strap, see-through, off-shoulder",
         "state_tags": "clothes lift, bottomless, no panties",
         "sleep_extra": "disheveled clothes",
         "prose": "her lifted sheer white camisole nightgown",
+        "intact_prose": "a sheer white camisole nightgown",
         "allow_canon": "0",
+        "kind": "preset",
+        "bottom_type": "none",
     },
     "紧身运动背心掀起·下身真空": {
         "design_tags": "tank top, white sports bra, crop top, breasts out, wet clothes",
         "state_tags": "clothes lift, bottomless, no panties",
         "sleep_extra": "disheveled clothes",
         "prose": "her pushed-up white sports tank top",
+        "intact_prose": "a white sports tank top",
         "allow_canon": "0",
+        "kind": "preset",
+        "bottom_type": "none",
     },
     "自定义穿搭（使用下方自定义穿搭框）": {
         "design_tags": "",
-        "state_tags": "clothes lift, bottomless, no panties",
+        "state_tags": "",
         "sleep_extra": "",
-        "prose": "her lifted top",
+        "prose": "her outfit",
+        "intact_prose": "her outfit",
         "allow_canon": "0",
+        "kind": "custom",
+        "bottom_type": "none",
     },
 }
 
+OUTFIT_STATE_PRESETS: Dict[str, str] = {
+    "🔄 智能适配穿脱（原设/裙装自动撩裙拨内裤 · 单件上衣自动真空）": "auto",
+    "👗 保留下装 · 撩裙/拨开内裤互动（skirt lift + panties aside · 不删裙装）": "keep_bottom_aside",
+    "👙 半脱凌乱 · 敞衣露肩 + 内裤挂单腿（open clothes + panties around one leg）": "half_off",
+    "👕 掀衣 + 下身全真空（clothes lift + bottomless, no panties · 经典模式）": "bottomless",
+    "🔒 全程完整穿戴不掀脱（不自动加掀衣/脱裤辅助词）": "intact",
+}
+
 LEGWEAR_PRESETS: Dict[str, Tuple[str, str, str]] = {
+    "🌟 随角色原设鞋袜 / 不强制赤足": ("", "no shoes, socks", "feet"),
     "赤足裸腿（barefoot 默认）": ("barefoot", "barefoot", "bare feet"),
     "裸足配精致脚链（barefoot, anklet）": ("barefoot, anklet", "barefoot, anklet", "anklet-adorned bare feet"),
     "白色过膝丝袜（white thighhighs）": ("white thighhighs", "white thighhighs, clothed feet", "white-stockinged feet"),
@@ -366,6 +493,14 @@ STYLE_PRESETS: Dict[str, Tuple[str, str]] = {
         "harsh shadows, cold lighting, blue tint, grey skin, neon hair, vibrant purple, oversaturated, "
         "shiny ass, light spots, wet clothes, blush stickers, oiled, latex, plastic, figure, faux figurine, doll, "
         "realistic face, 3d face, semi-realistic, realistic eyes, eye sockets, nose bridge, realistic nose, nostrils, lips, thick lips, cosplay, floating heart, sweatdrop",
+    ),
+    "🎨 柔雾白纱无界油画 · 点鼻小嘴内联锁脸款（M6-Tune2 保留款 · 无界油画感）": (
+        "1.65::no lineart::, 1.5::lineless::, 1.32::realistic::, 0.78::photo (medium)::, 0.48::3d::, "
+        "1.6::anime face::, 1.45::moe::, 1.85::dot nose::, 1.45::small mouth::, :o, soft skin, "
+        "1.55::front lighting::, 1.45::warm lighting::, 1.45::soft lighting::, diffused lighting, gentle chiaroscuro, "
+        "1.6::smooth shading::, soft shadows, hazy, depth of field, 1.15::muted colors::, 1.25::low contrast::, "
+        "1.4::ambient occlusion::, 1.1::subsurface scattering::",
+        "nose bridge, nostrils, lips, thick lips, philtrum, crown, text, signature, copyright name, watermark",
     ),
     "真实微距 PVC 涂装手办摄影风（Scale Figurine Photo · 半哑光保留版）": (
         "1.85::figure::, 1.55::faux figurine::, 1.35::photo (medium)::, 1.25::realistic::, 1.2::3d::, "
@@ -461,6 +596,7 @@ PIGMENT_PRESETS: Dict[str, str] = {
 
 
 STORY_CHAPTERS: List[Dict[str, str]] = [
+    {"id": "F00", "title": "✨ 正脸试妆 · 晨光白床跪坐前倾（正面状态校验）", "actor_type": "Solo"},
     {"id": "S00", "title": "第 00 幕 · 沙发跪爬吐舌回眸", "actor_type": "Solo"},
     {"id": "S01", "title": "第 01 幕 · 沙发跪爬口部互动进行中", "actor_type": "Duo"},
     {"id": "S02", "title": "第 02 幕 · 口部事后松口拉丝 + 发丝沾染", "actor_type": "Duo"},
@@ -474,6 +610,121 @@ STORY_CHAPTERS: List[Dict[str, str]] = [
     {"id": "S10", "title": "第 10 幕 · 单手轻拢脖颈 + 传教士位压身深入（全痕迹保留）", "actor_type": "Duo"},
     {"id": "S11", "title": "第 11 幕 · 传教士位双腿间拔出外射至小腹（全痕迹叠加）", "actor_type": "Duo"},
 ]
+
+MULTI_ANGLE_CHAPTERS: List[Dict[str, str]] = [
+    {"id": "MA0", "title": "00 三视图设定表 · 正/侧/背全身 (1216x832)", "actor_type": "MultiAngle"},
+    {"id": "MA1", "title": "01 仰视站立 · 低机位背手微倾", "actor_type": "MultiAngle"},
+    {"id": "MA2", "title": "02 俯视抱膝 · 地板坐姿仰望", "actor_type": "MultiAngle"},
+    {"id": "MA3", "title": "03 侧三分之四 · 窗边拂发回望", "actor_type": "MultiAngle"},
+    {"id": "MA4", "title": "04 背后回眸 · 沙发跪坐转身", "actor_type": "MultiAngle"},
+    {"id": "MA5", "title": "05 平视伸懒腰 · 举臂开心微笑", "actor_type": "MultiAngle"},
+    {"id": "MA6", "title": "06 侧卧撑头 · 床面手肘倚枕 (1216x832)", "actor_type": "MultiAngle"},
+    {"id": "MA7", "title": "07 近景特写 · 歪头比耶俏皮眨眼", "actor_type": "MultiAngle"},
+    {"id": "MA8", "title": "08 盘腿托腮 · 柔毯前倾好奇凝视", "actor_type": "MultiAngle"},
+]
+
+MULTI_ANGLE_TEMPLATES: Dict[str, Dict[str, object]] = {
+    "MA0": {
+        "title": "MA0 · 三视图设定表 (Three-View Sheet)",
+        "canvas": "横图 1216x832",
+        "allow_multi_views": True,
+        "scene": (
+            "1.4::character sheet::, 1.4::turnaround::, 1.35::multiple views::, "
+            "three views, front view, side view, back view, full body, standing, "
+            "relaxed neutral pose, simple white background, clean reference sheet, "
+            "looking at viewer, slight smile"
+        ),
+        "prose": "standing in a clean three-view character turnaround reference sheet showing front, side, and back views on a simple light background.",
+    },
+    "MA1": {
+        "title": "MA1 · 仰视站立 (Low Angle Standing)",
+        "canvas": "竖图 832x1216",
+        "allow_multi_views": False,
+        "scene": (
+            "1.35::low angle::, 1.3::from below::, full body, standing, "
+            "hands clasped behind back, slight tilt forward, looking down at viewer, "
+            "foreshortening, indoors, cozy sunlit bedroom"
+        ),
+        "prose": "standing indoors in a cozy sunlit bedroom, hands clasped behind her back and leaning slightly forward while looking down at the viewer from a low angle.",
+    },
+    "MA2": {
+        "title": "MA2 · 俯视抱膝 (High Angle Hugging Knees)",
+        "canvas": "竖图 832x1216",
+        "allow_multi_views": False,
+        "scene": (
+            "1.35::high angle::, 1.3::from above::, sitting on warm wooden floor, "
+            "knees up, hugging own knees, looking up at viewer, gentle shy expression, "
+            "indoors, cozy room"
+        ),
+        "prose": "sitting on a warm wooden floor hugging her knees and looking up gently at the viewer from a high angle.",
+    },
+    "MA3": {
+        "title": "MA3 · 侧三分之四窗边拂发 (Side 3/4 Window)",
+        "canvas": "竖图 832x1216",
+        "allow_multi_views": False,
+        "scene": (
+            "three-quarter side view, upper body, standing beside sunlit window, "
+            "gentle breeze, wind-blown hair, hand tucking hair behind ear, "
+            "gazing out the window, soft golden afternoon glow"
+        ),
+        "prose": "standing beside a sunlit window in three-quarter side view, tucking wind-blown hair behind her ear in soft golden glow.",
+    },
+    "MA4": {
+        "title": "MA4 · 背后回眸沙发跪坐 (Back Over Shoulder)",
+        "canvas": "竖图 832x1216",
+        "allow_multi_views": False,
+        "scene": (
+            "1.3::from behind::, back, 1.35::looking back::, over shoulder, "
+            "upper body, kneeling on soft beige sofa, turning head toward viewer, "
+            "indoors, soft cushions"
+        ),
+        "prose": "kneeling on a soft beige sofa seen from behind, turning her head over her shoulder toward the viewer.",
+    },
+    "MA5": {
+        "title": "MA5 · 平视伸懒腰 (Morning Stretch)",
+        "canvas": "竖图 832x1216",
+        "allow_multi_views": False,
+        "scene": (
+            "eye-level, cowboy shot, arms raised overhead, morning stretch, "
+            "leaning slightly back, relaxed cheerful smile, looking at viewer, "
+            "indoors, sunlit bedroom"
+        ),
+        "prose": "stretching both arms overhead with a relaxed cheerful smile in an eye-level cowboy shot inside a sunlit bedroom.",
+    },
+    "MA6": {
+        "title": "MA6 · 侧卧撑头床面倚枕 (Lying On Side)",
+        "canvas": "横图 1216x832",
+        "allow_multi_views": False,
+        "scene": (
+            "1.3::lying on side::, lying on bed, white bedsheet, head propped on hand, "
+            "elbow resting on pillow, upper body, legs bent comfortably, looking at viewer, "
+            "gentle relaxed gaze"
+        ),
+        "prose": "lying on her side on a white bedsheet with her head propped on one hand and elbow resting on a pillow, gazing gently at the viewer.",
+    },
+    "MA7": {
+        "title": "MA7 · 近景歪头比耶特写 (Close-Up Peace Sign)",
+        "canvas": "竖图 832x1216",
+        "allow_multi_views": False,
+        "scene": (
+            "1.3::close-up::, portrait, head tilt, peace sign near cheek, "
+            "playful cheerful expression, one eye slightly narrowed, looking at viewer, "
+            "blurred warm indoor background"
+        ),
+        "prose": "in a close-up portrait tilting her head and making a playful peace sign near her cheek with a cheerful expression.",
+    },
+    "MA8": {
+        "title": "MA8 · 盘腿托腮柔毯前倾 (Cross-Legged Chin Rest)",
+        "canvas": "竖图 832x1216",
+        "allow_multi_views": False,
+        "scene": (
+            "slight three-quarter angle, sitting cross-legged on soft rug, "
+            "leaning forward, chin resting on both hands, elbows on knees, "
+            "curious bright gaze, looking at viewer, cozy sunlit living room"
+        ),
+        "prose": "sitting cross-legged on a soft rug, leaning forward with her chin resting on both hands and gazing curiously at the viewer.",
+    },
+}
 
 
 def scale_weight(base_weight: float, factor: float) -> str:
@@ -507,6 +758,16 @@ def wrap_neg(level: str, tags_str: str, enabled: bool) -> str:
     return f"{level}::{cleaned}::" if cleaned else ""
 
 
+def wrap_tail_neg(m: Dict[str, str], tags_str: str, enabled: bool) -> str:
+    """包装通用尾部负向块；M6-Tune2 额外保留器官级 -2.5::...:: 内联负向块于正向末尾"""
+    base_neg = wrap_neg("-2", tags_str, enabled)
+    tune2_inline = m.get("tune2_inline_neg", "")
+    if enabled and tune2_inline:
+        tune2_block = wrap_neg("-2.5", tune2_inline, True)
+        return join_tags(base_neg, tune2_block)
+    return base_neg
+
+
 def build_common_modules(cfg: CharacterConfig, eyes_open: bool, is_sleep_disheveled: bool = False) -> Dict[str, str]:
     """根据精密参照模块开关编译各可选积木层（OFF 的模块直接返回空串，绝不残留多余词条或冲突负向）"""
     # 1. 质量词与画风词（像素画风下自动剥离 masterpiece / very aesthetic / absurdres；M6 无描边真肤下剥离 0.8::very aesthetic:: 防厚涂笔触块）
@@ -532,12 +793,31 @@ def build_common_modules(cfg: CharacterConfig, eyes_open: bool, is_sleep_disheve
 
     head_pos = join_tags(qual_pos, style_only_pos)
 
-    # 2. 身份模块 (enable_identity)
+    # 2. 身份模块 & 原设解锁预判 (enable_identity)
+    outfit_info = OUTFIT_PRESETS.get(cfg.outfit_preset, OUTFIT_PRESETS["宽松滑肩白T恤·下身真空（故事线默认）"])
+    outfit_kind = outfit_info.get("kind", "preset")
+    allow_canon = (outfit_info.get("allow_canon", "0") == "1") or bool(cfg.keep_canon_elements)
+
+    matched_builtin = (
+        BUILTIN_CHARACTERS.get(cfg.preset_name)
+        if (
+            cfg.preset_name in BUILTIN_CHARACTERS
+            and cfg.char_tag.strip() == BUILTIN_CHARACTERS[cfg.preset_name].get("char_tag", "").strip()
+        )
+        else None
+    )
+
     m6_mode = is_m6_soft_morning_skin_active(cfg)
+    has_explicit_canon = bool(
+        matched_builtin and (matched_builtin.get("canon_outfit") or matched_builtin.get("canon_top_only"))
+    )
     if cfg.enable_identity:
         raw_cid = cfg.char_tag.strip()
         if raw_cid and m6_mode and raw_cid != "original" and "::" not in raw_cid:
-            char_id = f"0.85::{raw_cid}::"
+            if not allow_canon or has_explicit_canon or outfit_kind not in ("canon_full", "canon_top"):
+                char_id = f"0.85::{raw_cid}::"
+            else:
+                char_id = f"0.9::{raw_cid}::"
         else:
             char_id = raw_cid if raw_cid else "original"
         eye_tag = cfg.eye_color.strip() if eyes_open else ""
@@ -556,7 +836,7 @@ def build_common_modules(cfg: CharacterConfig, eyes_open: bool, is_sleep_disheve
                 hair_tag = hair_tag.replace(
                     "purple hair", "1.3::light purple hair::, grey-tinted hair"
                 )
-            elif "grey-tinted hair" not in hair_tag:
+            elif not any(c in hair_tag for c in ("grey-tinted hair", "grey hair", "white hair", "silver hair")):
                 hair_tag = join_tags(hair_tag, "grey-tinted hair")
         if is_sleep_disheveled and "disheveled hair" not in hair_tag:
             hair_tag = join_tags(hair_tag, "disheveled hair")
@@ -580,8 +860,8 @@ def build_common_modules(cfg: CharacterConfig, eyes_open: bool, is_sleep_disheve
                 body_pos = "1.3::slender::, 1.3::petite::, narrow hips, small ass"
                 body_neg = "plump, thick thighs, wide hips, big ass, huge ass, curvy, voluptuous, mature female"
             elif "匀称修长少女" in cfg.body_preset:
-                body_pos = "1.25::slender::, narrow waist, narrow hips, long legs"
-                body_neg = "plump, obese, wide hips, huge ass, voluptuous"
+                body_pos = "1.25::slender::, narrow waist, long legs"
+                body_neg = "plump, obese"
         bust_pos, bust_neg = BUST_PRESETS.get(cfg.bust_preset, ("", ""))
         skin_pos = SKIN_PRESETS.get(cfg.skin_preset, "")
         extras: List[str] = []
@@ -607,39 +887,195 @@ def build_common_modules(cfg: CharacterConfig, eyes_open: bool, is_sleep_disheve
     char_rest = join_tags(eye_tag, hair_tag, body_full_pos)
     char_core = join_tags(char_id, char_rest)
 
-    # 4. 服装款式词 (enable_outfit) vs 动作掀衣/下身暴露辅助词 (enable_clothing_state)
-    outfit_info = OUTFIT_PRESETS.get(cfg.outfit_preset, OUTFIT_PRESETS["宽松滑肩白T恤·下身真空（故事线默认）"])
-    allow_canon = False
+    # 4. 服装款式 × 穿脱暴露方式 × 场景物理需求（三维动态解耦）
+    custom_outfit = cfg.custom_outfit_tags.strip()
     if cfg.enable_outfit:
-        if cfg.outfit_preset == "自定义穿搭（使用下方自定义穿搭框）":
-            design_pos = cfg.custom_outfit_tags.strip()
-            outfit_prose_clause = " below her lifted top"
-        else:
-            design_pos = outfit_info["design_tags"]
-            if m6_mode and not wants_sweat_m6:
-                design_pos = re.sub(r"(?:,\s*)?wet clothes(?=\s*,|$)", "", design_pos).strip(" ,")
-            if is_sleep_disheveled and outfit_info["sleep_extra"]:
-                design_pos = join_tags(design_pos, outfit_info["sleep_extra"])
+        if outfit_kind == "canon_full":
+            design_intact = join_tags("clothed", custom_outfit)
+            outfit_prose_clause = f" below {custom_outfit}" if custom_outfit else ""
+            front_shirt_prose = f" wearing {custom_outfit}" if custom_outfit else ""
+        elif outfit_kind == "canon_top":
+            design_intact = custom_outfit
+            outfit_prose_clause = f" below {custom_outfit}" if custom_outfit else " below her lifted top"
+            front_shirt_prose = f" wearing {custom_outfit}" if custom_outfit else ""
+        elif outfit_kind == "custom":
+            design_intact = custom_outfit
+            outfit_prose_clause = f" below {custom_outfit}" if custom_outfit else " below her outfit"
+            front_shirt_prose = f" wearing {custom_outfit}" if custom_outfit else " in her outfit"
+        elif outfit_kind == "nude":
+            design_intact = outfit_info["design_tags"]
             outfit_prose_clause = f" below {outfit_info['prose']}"
-            allow_canon = outfit_info["allow_canon"] == "1"
+            front_shirt_prose = " completely nude"
+        else:
+            design_intact = join_tags(outfit_info["design_tags"], custom_outfit)
+            if m6_mode and not wants_sweat_m6:
+                design_intact = re.sub(r"(?:,\s*)?wet clothes(?=\s*,|$)", "", design_intact).strip(" ,")
+            outfit_prose_clause = f" below {outfit_info['prose']}"
+            if cfg.outfit_preset == "宽松滑肩白T恤·下身真空（故事线默认）":
+                front_shirt_prose = " in an off-shoulder oversized white t-shirt"
+            else:
+                front_shirt_prose = f" wearing {outfit_info.get('intact_prose', outfit_info['prose'])}"
+
+        design_pos = (
+            join_tags(design_intact, outfit_info.get("sleep_extra", ""))
+            if (is_sleep_disheveled and outfit_info.get("sleep_extra"))
+            else design_intact
+        )
     else:
+        design_intact = ""
         design_pos = ""
         outfit_prose_clause = ""
+        front_shirt_prose = ""
 
-    state_pos = outfit_info["state_tags"] if cfg.enable_clothing_state else ""
-    outfit_pos = join_tags(design_pos, state_pos)
-    canon_neg = "" if (allow_canon or not cfg.enable_identity) else raw_canon_neg
+    raw_bottom = outfit_info.get("bottom_type", "none")
+    d_low = design_intact.lower()
+    if outfit_kind == "nude":
+        bottom_type = "nude"
+    elif outfit_kind == "canon_full":
+        if any(k in d_low for k in ("shorts", "pants", "jeans")):
+            bottom_type = "shorts"
+        elif any(k in d_low for k in ("leotard", "bodysuit")):
+            bottom_type = "leotard"
+        elif any(k in d_low for k in ("bikini", "swimsuit")):
+            bottom_type = "swimsuit"
+        else:
+            bottom_type = "skirt"
+    elif raw_bottom == "auto" and outfit_kind != "custom":
+        if any(k in d_low for k in ("leotard", "bodysuit")):
+            bottom_type = "leotard"
+        elif any(k in d_low for k in ("bikini", "swimsuit")):
+            bottom_type = "swimsuit"
+        elif any(k in d_low for k in ("shorts", "pants", "jeans")):
+            bottom_type = "shorts"
+        elif any(k in d_low for k in ("skirt", "dress", "serafuku", "maid", "panties", "underwear")):
+            bottom_type = "skirt"
+        else:
+            bottom_type = "none"
+    else:
+        bottom_type = raw_bottom
 
-    # 5. 鞋袜外观词 (enable_legwear) —— 抓脚动作本身的 soles, toes, soles together 始终归动作骨架保留！
+    req_state = OUTFIT_STATE_PRESETS.get(cfg.outfit_state_mode, "auto")
+    if not cfg.enable_clothing_state or req_state == "intact":
+        eff_state = "intact"
+    elif outfit_kind == "nude":
+        eff_state = "nude"
+    elif outfit_kind == "custom" and req_state == "auto":
+        eff_state = "intact"
+    elif req_state == "auto":
+        eff_state = (
+            "keep_bottom_aside"
+            if bottom_type in ("skirt", "shorts", "leotard", "swimsuit", "skirt_or_canon")
+            else "bottomless"
+        )
+    else:
+        eff_state = req_state
+
+    if eff_state == "intact":
+        state_pos = ""
+    elif eff_state == "nude":
+        state_pos = "nude"
+    elif eff_state == "keep_bottom_aside":
+        if bottom_type == "leotard":
+            state_pos = "clothes lift, leotard aside"
+        elif bottom_type == "swimsuit":
+            state_pos = "bikini aside, swimsuit aside"
+        elif bottom_type == "shorts":
+            state_pos = "unbuttoned, open shorts, panties aside"
+        else:
+            state_pos = "clothes lift, skirt lift, panties aside"
+    elif eff_state == "half_off":
+        if bottom_type == "shorts":
+            state_pos = "disheveled clothes, open clothes, open shorts, panties around one leg"
+        elif bottom_type in ("skirt", "leotard", "swimsuit", "skirt_or_canon"):
+            state_pos = "disheveled clothes, open clothes, skirt lift, panties around one leg"
+        else:
+            state_pos = "disheveled clothes, open clothes, clothes lift, bottomless, panties around one leg"
+    else:
+        state_pos = "clothes lift, bottomless, no panties"
+
+    seen_o = set()
+    dedup_o: List[str] = []
+    for _t in [x.strip() for x in join_tags(design_pos, state_pos).split(",") if x.strip()]:
+        if _t.lower() not in seen_o:
+            seen_o.add(_t.lower())
+            dedup_o.append(_t)
+    outfit_pos = ", ".join(dedup_o)
+    outfit_intact = design_intact
+    if eff_state in ("intact", "keep_bottom_aside") and bottom_type in ("skirt", "shorts", "leotard", "swimsuit", "skirt_or_canon"):
+        outfit_upper_oral = outfit_intact
+    else:
+        outfit_upper_oral = outfit_pos
+
+    if not cfg.enable_identity:
+        canon_neg = ""
+    elif outfit_kind == "canon_top" and not cfg.keep_canon_elements and eff_state in ("bottomless", "half_off"):
+        canon_neg = (
+            matched_builtin.get("canon_bottom_neg", "skirt, pants, shorts")
+            if matched_builtin
+            else "skirt, pants, shorts"
+        )
+    elif allow_canon:
+        canon_neg = ""
+    else:
+        canon_neg = raw_canon_neg
+
+    # 判断该穿搭在仰躺/传教士幕次是否遮盖腰腹（避免把连衣裙/兔女郎硬挖破成裸露肚脐）
+    is_bare_midriff_canon = any(k in d_low for k in ("crop top", "navel", "bikini", "midriff"))
+    is_dress_or_bodysuit = any(k in d_low for k in ("dress", "leotard", "bodysuit", "nightgown")) or (
+        outfit_kind == "canon_full" and matched_builtin is None
+    )
+    covers_midriff = bool(
+        cfg.enable_outfit
+        and eff_state not in ("nude", "bottomless")
+        and is_dress_or_bodysuit
+        and not is_bare_midriff_canon
+    )
+    belly_tags = "" if covers_midriff else "midriff, stomach, navel"
+    belly_tags_s06_11 = "stomach" if covers_midriff else "midriff, stomach, navel"
+    stomach_rem_tag = "cum on clothes" if covers_midriff else "cum on stomach"
+    stomach_rem_prose = (
+        f" on her outfit{outfit_prose_clause}" if covers_midriff else " on her bare lower stomach"
+    )
+    stomach_pool_prose = (
+        ", exposing thick white cum soaking her outfit and thighs"
+        if covers_midriff
+        else f", exposing a thick pool of white cum resting on her bare lower stomach and navel{outfit_prose_clause}"
+    )
+
+    # F00 正面试妆专属组合：完整默认不加掀脱，主动选掀脱模式时同步响应穿脱状态
+    if cfg.enable_outfit and cfg.outfit_preset == "宽松滑肩白T恤·下身真空（故事线默认）":
+        front_design = join_tags("oversized white t-shirt, off-shoulder, single bare shoulder", custom_outfit)
+    else:
+        front_design = outfit_intact
+    f00_active_undress = cfg.enable_clothing_state and (req_state in ("keep_bottom_aside", "half_off", "bottomless"))
+    front_outfit_tags = join_tags(front_design, state_pos) if f00_active_undress else front_design
+    if f00_active_undress and cfg.enable_outfit and outfit_kind == "preset":
+        front_shirt_prose = f" wearing {outfit_info['prose']}"
+
+    # 5. 鞋袜外观词 (enable_legwear) —— 解耦原设鞋袜与赤足，避免强迫穿靴/穿袜角色裸足露脚趾
+    is_canon_legwear = cfg.legwear_preset == "🌟 随角色原设鞋袜 / 不强制赤足"
     if cfg.enable_legwear:
         leg_normal, leg_foot_look, leg_prose = LEGWEAR_PRESETS.get(
             cfg.legwear_preset, LEGWEAR_PRESETS["赤足裸腿（barefoot 默认）"]
         )
-        leg_foot_full = join_tags(leg_foot_look, "soles, toes, soles together")
+        if is_canon_legwear:
+            foot_hold_tags = "no shoes, socks, clothed feet, soles, soles together"
+            soles_rear = ""
+            front_leg_tags = ""
+        elif "barefoot" in leg_foot_look:
+            foot_hold_tags = join_tags(leg_foot_look, "soles, toes, soles together")
+            soles_rear = "soles"
+            front_leg_tags = "bare thighs"
+        else:
+            foot_hold_tags = join_tags(leg_foot_look, "soles, soles together")
+            soles_rear = "soles"
+            front_leg_tags = leg_normal
     else:
         leg_normal = ""
-        leg_foot_full = "soles, toes, soles together"
+        foot_hold_tags = "soles, toes, soles together"
+        soles_rear = "soles"
         leg_prose = "feet"
+        front_leg_tags = "bare thighs"
 
     # 6. 背景模块 (enable_background)
     if cfg.enable_background:
@@ -672,7 +1108,16 @@ def build_common_modules(cfg: CharacterConfig, eyes_open: bool, is_sleep_disheve
         anat_pos = "groin, pussy"
         anat_neg = ""
 
-    common_tail_neg = join_tags(style_neg, body_full_neg, anat_neg, canon_neg)
+    intact_neg = (
+        "nude, topless, bottomless"
+        if (cfg.enable_outfit and eff_state == "intact" and outfit_kind not in ("nude", "custom"))
+        else ""
+    )
+    is_tune2 = "M6-Tune2" in cfg.style_preset
+    if is_tune2:
+        common_tail_neg = join_tags(anat_neg, canon_neg, intact_neg)
+    else:
+        common_tail_neg = join_tags(style_neg, body_full_neg, anat_neg, canon_neg, intact_neg)
 
     return {
         "head_pos": head_pos,
@@ -680,9 +1125,23 @@ def build_common_modules(cfg: CharacterConfig, eyes_open: bool, is_sleep_disheve
         "char_rest": char_rest,
         "char_core": char_core,
         "outfit_pos": outfit_pos,
+        "outfit_intact": outfit_intact,
+        "outfit_upper_oral": outfit_upper_oral,
         "outfit_prose_clause": outfit_prose_clause,
+        "front_outfit_tags": front_outfit_tags,
+        "front_leg_tags": front_leg_tags,
+        "front_shirt_prose": front_shirt_prose,
+        "outfit_kind": outfit_kind,
+        "f00_active_undress": "1" if f00_active_undress else "",
+        "covers_midriff": "1" if covers_midriff else "",
+        "belly_tags": belly_tags,
+        "belly_tags_s06_11": belly_tags_s06_11,
+        "stomach_rem_tag": stomach_rem_tag,
+        "stomach_rem_prose": stomach_rem_prose,
+        "stomach_pool_prose": stomach_pool_prose,
+        "soles_rear": soles_rear,
         "leg_normal": leg_normal,
-        "leg_foot": leg_foot_full,
+        "leg_foot": foot_hold_tags,
         "leg_prose": leg_prose,
         "bg_couch": bg_couch,
         "bg_sleep_couch": bg_sleep_couch,
@@ -692,6 +1151,7 @@ def build_common_modules(cfg: CharacterConfig, eyes_open: bool, is_sleep_disheve
         "loc_prose": loc_prose,
         "anat_pos": anat_pos,
         "common_tail_neg": common_tail_neg,
+        "tune2_inline_neg": style_neg if is_tune2 else "",
         "canon_neg": canon_neg,
         "name": eng_name,
     }
@@ -739,10 +1199,10 @@ def is_c5_lowres_pixel_style_active(cfg: CharacterConfig) -> bool:
 
 
 def is_m6_soft_morning_skin_active(cfg: CharacterConfig) -> bool:
-    """检测是否启用了 M6 柔雾白纱晨光 · 无描边暖杏真肤二次元萌脸画风"""
+    """检测是否启用了柔雾晨光暖杏柔肤家族画风（M6 保留款）"""
     if not cfg.enable_style:
         return False
-    return "M6" in cfg.style_preset or "无描边暖杏真肤" in cfg.style_preset
+    return any(k in cfg.style_preset for k in ("M6", "无描边暖杏真肤"))
 
 
 def expr_if(cfg: CharacterConfig, tags: str, essential: str = "") -> str:
@@ -824,9 +1284,93 @@ def generate_scene_prompts(
     results: List[Tuple[str, str, str]] = []
 
     # ==========================================
+    # MA0..MA8: 多角度套图（9 镜头 · 与故事线并列独立运作）
+    # ==========================================
+    if scene_id in MULTI_ANGLE_TEMPLATES:
+        tpl = MULTI_ANGLE_TEMPLATES[scene_id]
+        m = build_common_modules(cfg, eyes_open=True)
+        ma_outfit = m["front_outfit_tags"]
+        ma_shirt_prose = m["front_shirt_prose"]
+        ma_leg = m["front_leg_tags"]
+        nsfw_on = cfg.enable_multi_angle_nsfw
+        nsfw_prefix = "rating:explicit, nsfw, uncensored" if nsfw_on else ""
+        anat_ma = m["anat_pos"] if (nsfw_on and cfg.enable_anatomy) else ""
+        ma_tail_neg = m["common_tail_neg"]
+        if ma_tail_neg:
+            neg_tokens = [t.strip() for t in ma_tail_neg.split(",") if t.strip()]
+            if tpl["allow_multi_views"]:
+                neg_tokens = [t for t in neg_tokens if t.lower() != "multiple views"]
+            if nsfw_on:
+                neg_tokens = [t for t in neg_tokens if t.lower() != "nsfw"]
+            elif "nude" not in ma_outfit and "nsfw" not in [t.lower() for t in neg_tokens]:
+                neg_tokens.insert(0, "nsfw")
+            ma_tail_neg = ", ".join(neg_tokens)
+        elif not nsfw_on and "nude" not in ma_outfit:
+            ma_tail_neg = "nsfw"
+        p_ma = join_tags(
+            m["head_pos"],
+            "1girl, solo",
+            m["char_core"],
+            ma_outfit,
+            ma_leg,
+            nsfw_prefix,
+            anat_ma,
+            str(tpl["scene"]),
+            prose_if(cfg, f"{m['name']}{ma_shirt_prose} {tpl['prose']}"),
+            wrap_tail_neg(m, ma_tail_neg, neg_on),
+        )
+        results.append((f"【{tpl['title']}】", str(tpl["canvas"]), p_ma))
+        return results
+
+    # ==========================================
+    # F00: 晨光白床正面跪坐前倾（正脸与身材状态校验）
+    # ==========================================
+    if scene_id == "F00":
+        m = build_common_modules(cfg, eyes_open=True)
+        bg_bed = "indoors, bedroom, bed, white bedsheet, wooden headboard, window, cream sheer curtains" if cfg.enable_background else ""
+        bed_prose = " on a white bedsheet in front of a wooden headboard" if cfg.enable_background else ""
+
+        front_outfit = m["front_outfit_tags"]
+        shirt_prose = m["front_shirt_prose"]
+        leg_front = m["front_leg_tags"]
+
+        fo_low = front_outfit.lower()
+        if m.get("outfit_kind") == "custom":
+            has_explicit_outfit = bool(m["f00_active_undress"])
+            anat_front = m["anat_pos"] if m["f00_active_undress"] else ""
+        else:
+            has_explicit_outfit = ("nude" in fo_low) or ("breasts out" in fo_low) or bool(m["f00_active_undress"])
+            anat_front = m["anat_pos"] if (("nude" in fo_low) or m["f00_active_undress"]) else ""
+        nsfw_prefix = "rating:explicit, nsfw, uncensored" if has_explicit_outfit else ""
+
+        exp_tags = expr_if(cfg, "furrowed brow, shy, soft blush")
+        kneel_tag = "kneeling on bed" if cfg.enable_background else "kneeling"
+
+        if is_pov:
+            p_pov = join_tags(
+                m["head_pos"], "1girl, solo", m["char_core"],
+                front_outfit, leg_front, nsfw_prefix, anat_front,
+                bg_bed, kneel_tag, "leaning forward, arms in front, looking at viewer",
+                exp_tags,
+                prose_if(cfg, f"{m['name']} kneeling{bed_prose}, leaning forward with her arms in front{shirt_prose} while gazing shyly at the viewer."),
+                wrap_tail_neg(m, m["common_tail_neg"], neg_on),
+            )
+            results.append(("【F00 · 第一人称视角 (POV) · 晨光白床正面跪坐前倾（正脸状态校验）】", "竖图 832x1216", p_pov))
+        else:
+            p_3rd = join_tags(
+                m["head_pos"], "1girl, solo", m["char_core"],
+                front_outfit, leg_front, nsfw_prefix, anat_front,
+                bg_bed, "front view, cowboy shot", kneel_tag, "knees apart, leaning forward, arms in front, looking at viewer",
+                exp_tags,
+                prose_if(cfg, f"Frontal cowboy shot of {m['name']} kneeling with knees apart{bed_prose}, leaning forward with her arms in front{shirt_prose} while gazing shyly at the viewer."),
+                wrap_tail_neg(m, join_tags("from behind, back, profile", m["common_tail_neg"]), neg_on),
+            )
+            results.append(("【F00 · 第三人称视角 (客观镜头) · 正面七分身跪床前倾（正脸与比例校验）】", "竖图 832x1216", p_3rd))
+
+    # ==========================================
     # S00: 沙发跪爬吐舌回眸
     # ==========================================
-    if scene_id == "S00":
+    elif scene_id == "S00":
         m = build_common_modules(cfg, eyes_open=True)
         rem_tags = join_tags("after vaginal, cum", wtag("cum in pussy", 1.0, f), wtag("cumdrip", 1.0, f), "cum on thighs, sweat") if rem else ""
         exp_tags = expr_if(cfg, ":p, tongue out, smug, furrowed brow, half-closed eyes, watery eyes, blush, floating heart")
@@ -834,22 +1378,22 @@ def generate_scene_prompts(
             p = join_tags(
                 m["head_pos"], "1girl, solo", m["char_core"], m["bg_couch"],
                 "1.45::pov::, 1.4::from behind::, close-up, foreshortening, low angle",
-                "all fours, arched back, knees apart", m["leg_normal"], "soles, looking back, looking at viewer",
+                "all fours, arched back, knees apart", m["leg_normal"], m["soles_rear"], "looking back, looking at viewer",
                 m["outfit_pos"], exp_tags,
                 "rating:explicit, nsfw, uncensored, ass", m["anat_pos"], rem_tags,
                 prose_if(cfg, f"Close-up first-person POV standing right behind {m['name']} kneeling on all fours{m['loc_prose']} as she arches her back and looks back over her shoulder right at the viewer."),
-                wrap_neg("-2", join_tags("sitting, wide shot, distant", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("sitting, wide shot, distant", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S00 · 第一人称视角 (POV) · 贴近臀后俯看跪爬回眸】", "竖图 832x1216 或 横图 1216x832", p))
         else:
             p = join_tags(
                 m["head_pos"], "1girl, solo", m["char_core"], m["bg_couch"],
                 "full body, 1.3::from behind::, from side, low angle, perspective",
-                "all fours, arched back, knees apart", m["leg_normal"], "soles, looking back, looking at viewer",
+                "all fours, arched back, knees apart", m["leg_normal"], m["soles_rear"], "looking back, looking at viewer",
                 m["outfit_pos"], exp_tags,
                 "rating:explicit, nsfw, uncensored, ass", m["anat_pos"], rem_tags,
                 prose_if(cfg, f"Full-body angled rear-side view of {m['name']} kneeling on all fours{m['loc_prose']} as she arches her back and looks back over her shoulder at the viewer."),
-                wrap_neg("-2", join_tags("pov, close-up, sitting", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("pov, close-up, sitting", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S00 · 第三人称视角 (客观镜头) · 侧后 30° 全景跪爬回眸】", "横图 1216x832", p))
 
@@ -866,21 +1410,21 @@ def generate_scene_prompts(
                 m["head_pos"], "1girl, 1boy, hetero", m["char_core"], "faceless male", m["bg_couch"],
                 "1.5::pov::, 1.4::pov crotch::, 1.35::from above::, foreshortening",
                 "all fours", m["kneel_couch_tag"], "leaning forward, arched back, looking up, looking at viewer",
-                m["outfit_pos"], exp_tags,
+                m["outfit_upper_oral"], exp_tags,
                 "rating:explicit, nsfw, uncensored, 1.4::oral::, 1.4::fellatio::, penis", fluid_act,
                 prose_if(cfg, f"First-person POV looking down{m['loc_prose']} as {m['name']} kneels forward on all fours performing fellatio while gazing up at the viewer."),
-                wrap_neg("-2", join_tags("from behind, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("from behind, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S01 · 第一人称视角 (POV) · 男方俯视口部互动进行中】", "竖图 832x1216", p))
         else:
             p = join_tags(
                 m["head_pos"], "1girl, 1boy, hetero", m["char_core"], "faceless male, head out of frame", m["bg_couch"],
                 "1.6::from behind::, low angle, foreshortening, dynamic perspective",
-                "all fours, arched back, knees apart", m["leg_normal"], "soles, looking back, sidelong glance, looking at viewer",
+                "all fours, arched back, knees apart", m["leg_normal"], m["soles_rear"], "looking back, sidelong glance, looking at viewer",
                 m["outfit_pos"], exp_tags,
                 "rating:explicit, nsfw, uncensored, oral, fellatio, penis", fluid_act, "ass", m["anat_pos"], rem_tags,
                 prose_if(cfg, f"Rear three-quarter low-angle perspective angled 30 degrees along {m['name']}'s spine, looking past her hips in the right foreground toward her head and the faceless man's lower body in the left midground."),
-                wrap_neg("-2", join_tags("pov, from side, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("pov, from side, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S01 · 第三人称视角 (客观镜头) · 侧后 30° 跪爬 + 左侧男方进行中】", "横图 1216x832", p))
 
@@ -900,23 +1444,23 @@ def generate_scene_prompts(
                 m["head_pos"], "1girl, 1boy, hetero", m["char_core"], "faceless male", m["bg_couch"],
                 "1.5::pov::, 1.4::pov crotch::, 1.35::from above::, foreshortening",
                 "all fours", m["kneel_couch_tag"], "leaning forward, looking up, looking at viewer",
-                m["outfit_pos"], exp_tags,
+                m["outfit_upper_oral"], exp_tags,
                 "rating:explicit, nsfw, uncensored, 1.4::after fellatio::, 0.6::oral, fellatio::, penis, erection",
                 oral_fluids,
                 prose_if(cfg, f"First-person POV looking down as {m['name']} pulls her lips slightly back right after fellatio{m['loc_prose']}, gazing up at the viewer{fluid_clause}."),
-                wrap_neg("-2", join_tags("from behind, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("from behind, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S02 · 第一人称视角 (POV) · 男方俯视刚松口拉丝 + 发丝沾染】", "竖图 832x1216", p))
         else:
             p = join_tags(
                 m["head_pos"], "1girl, 1boy, hetero", m["char_core"], "faceless male, head out of frame", m["bg_couch"],
                 "1.6::from behind::, low angle, foreshortening, dynamic perspective",
-                "all fours, arched back, knees apart", m["leg_normal"], "soles, looking back, sidelong glance, looking at viewer",
+                "all fours, arched back, knees apart", m["leg_normal"], m["soles_rear"], "looking back, sidelong glance, looking at viewer",
                 m["outfit_pos"], exp_tags,
                 "rating:explicit, nsfw, uncensored, after fellatio, 0.6::oral, fellatio::, penis",
                 oral_fluids, "ass", m["anat_pos"], rem_lower,
                 prose_if(cfg, f"Rear three-quarter low-angle perspective angled 30 degrees along {m['name']}'s spine, looking past her hips in the right foreground toward her head pulling back{fluid_clause} from the faceless man's lower body in the left midground."),
-                wrap_neg("-2", join_tags("pov, from side, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("pov, from side, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S02 · 第三人称视角 (客观镜头) · 侧后 30° 松口拉丝 + 发丝沾染】", "横图 1216x832", p))
 
@@ -939,10 +1483,10 @@ def generate_scene_prompts(
                     m["head_pos"], m["char_core"], "faceless male", m["bg_couch"],
                     "1.5::pov::, 1.4::pov crotch::, 1.35::from above::, foreshortening",
                     m["kneel_couch_tag"], "leaning forward, looking up, looking at viewer",
-                    m["outfit_pos"], exp_tags,
+                    m["outfit_upper_oral"], exp_tags,
                     "rating:explicit, nsfw, uncensored, oral, fellatio, after fellatio, penis", act_fluids,
                     prose_if(cfg, f"Two side-by-side first-person POV panels looking down at {m['name']}{m['loc_prose']}: in the left panel she performs fellatio; in the right panel she pulls back right after{after_clause}."),
-                    wrap_neg("-2", join_tags("1girl, solo, single panel, from behind, profile, male focus, 4koma, speech bubble", m["common_tail_neg"]), neg_on),
+                    wrap_tail_neg(m, join_tags("1girl, solo, single panel, from behind, profile, male focus, 4koma, speech bubble", m["common_tail_neg"]), neg_on),
                 )
                 results.append(("【S03 · 第一人称视角 (POV) · 左右双格俯视口部事前 vs 事后】", "横图 1216x832", p_pov))
             else:
@@ -950,12 +1494,12 @@ def generate_scene_prompts(
                     "2.5::2koma::, 2.5::horizontal split screen::, comic, two panels, horizontal border, dividing line, gutter, 2girls, 2boys, same character, hetero",
                     m["head_pos"], m["char_core"], "faceless male, head out of frame", m["bg_couch"],
                     "1.5::from behind::, low angle, foreshortening",
-                    "all fours, arched back, knees apart", m["leg_normal"], "soles, looking back, sidelong glance, looking at viewer",
+                    "all fours, arched back, knees apart", m["leg_normal"], m["soles_rear"], "looking back, sidelong glance, looking at viewer",
                     m["outfit_pos"], exp_tags,
                     "rating:explicit, nsfw, uncensored, oral, fellatio, after fellatio, penis", act_fluids,
                     "ass", m["anat_pos"], rem_lower,
                     prose_if(cfg, f"Two stacked horizontal panels from the same 30-degree rear low-angle view of {m['name']}{m['loc_prose']}: in the top panel she performs fellatio; in the bottom panel she pulls back right after{after_clause}."),
-                    wrap_neg("-2", join_tags("pov, 1girl, solo, single panel, profile, sitting, male focus, 4koma, speech bubble", m["common_tail_neg"]), neg_on),
+                    wrap_tail_neg(m, join_tags("pov, 1girl, solo, single panel, profile, sitting, male focus, 4koma, speech bubble", m["common_tail_neg"]), neg_on),
                 )
                 results.append(("【S03 · 第三人称视角 (客观镜头) · 上下横构图双格 30° 侧后事前 vs 事后】", "竖图 832x1216", p_3rd))
         else:
@@ -965,19 +1509,19 @@ def generate_scene_prompts(
                     m["head_pos"], "1girl, 1boy, hetero", m["char_core"], "faceless male", m["bg_couch"],
                     "1.5::pov::, 1.4::pov crotch::, 1.35::from above::, foreshortening",
                     "all fours", m["kneel_couch_tag"], "leaning forward, arched back, looking up, looking at viewer",
-                    m["outfit_pos"], exp_tags,
+                    m["outfit_upper_oral"], exp_tags,
                     "rating:explicit, nsfw, uncensored, 1.45::oral::, 1.45::fellatio::, deepthroat, penis", before_fluids,
                     prose_if(cfg, f"Single full-frame first-person POV looking down at {m['name']}{m['loc_prose']} kneeling forward performing deep fellatio while gazing up at the viewer."),
-                    wrap_neg("-2", join_tags(no_split_neg, "from behind, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
+                    wrap_tail_neg(m, join_tags(no_split_neg, "from behind, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
                 )
                 p_b = join_tags(
                     m["head_pos"], "1girl, 1boy, hetero", m["char_core"], "faceless male", m["bg_couch"],
                     "1.5::pov::, 1.4::pov crotch::, 1.35::from above::, foreshortening",
                     "all fours", m["kneel_couch_tag"], "leaning forward, looking up, looking at viewer",
-                    m["outfit_pos"], exp_tags,
+                    m["outfit_upper_oral"], exp_tags,
                     "rating:explicit, nsfw, uncensored, 1.45::after fellatio::, 0.55::oral::, penis, erection", act_fluids,
                     prose_if(cfg, f"Single full-frame first-person POV looking down at {m['name']}{m['loc_prose']} pulling her lips slightly back right after fellatio{after_clause}."),
-                    wrap_neg("-2", join_tags(no_split_neg, "from behind, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
+                    wrap_tail_neg(m, join_tags(no_split_neg, "from behind, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
                 )
                 if mp_mode in ("single_a", "single_pair"):
                     results.append(("【S03 单图A · 第一人称 (POV) · 口部深入进行中单幅】", "竖图 832x1216", p_a))
@@ -987,22 +1531,22 @@ def generate_scene_prompts(
                 p_a = join_tags(
                     m["head_pos"], "1girl, 1boy, hetero", m["char_core"], "faceless male, head out of frame", m["bg_couch"],
                     "1.6::from behind::, low angle, foreshortening, dynamic perspective",
-                    "all fours, arched back, knees apart", m["leg_normal"], "soles, looking back, sidelong glance, looking at viewer",
+                    "all fours, arched back, knees apart", m["leg_normal"], m["soles_rear"], "looking back, sidelong glance, looking at viewer",
                     m["outfit_pos"], exp_tags,
                     "rating:explicit, nsfw, uncensored, 1.4::oral::, 1.4::fellatio::, penis", before_fluids,
                     "ass", m["anat_pos"], rem_lower,
                     prose_if(cfg, f"Single full-frame 30-degree rear low-angle view of {m['name']}{m['loc_prose']} kneeling on all fours performing fellatio on the faceless man in the left midground."),
-                    wrap_neg("-2", join_tags(no_split_neg, "pov, from side, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
+                    wrap_tail_neg(m, join_tags(no_split_neg, "pov, from side, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
                 )
                 p_b = join_tags(
                     m["head_pos"], "1girl, 1boy, hetero", m["char_core"], "faceless male, head out of frame", m["bg_couch"],
                     "1.6::from behind::, low angle, foreshortening, dynamic perspective",
-                    "all fours, arched back, knees apart", m["leg_normal"], "soles, looking back, sidelong glance, looking at viewer",
+                    "all fours, arched back, knees apart", m["leg_normal"], m["soles_rear"], "looking back, sidelong glance, looking at viewer",
                     m["outfit_pos"], exp_tags,
                     "rating:explicit, nsfw, uncensored, 1.45::after fellatio::, 0.55::oral::, penis", act_fluids,
                     "ass", m["anat_pos"], rem_lower,
                     prose_if(cfg, f"Single full-frame 30-degree rear low-angle view of {m['name']}{m['loc_prose']} pulling her head slightly back right after fellatio{after_clause}."),
-                    wrap_neg("-2", join_tags(no_split_neg, "pov, from side, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
+                    wrap_tail_neg(m, join_tags(no_split_neg, "pov, from side, profile, sitting, male focus", m["common_tail_neg"]), neg_on),
                 )
                 if mp_mode in ("single_a", "single_pair"):
                     results.append(("【S03 单图A · 第三人称 (客观镜头) · 30°侧后口部进行中单幅】", "横图 1216x832", p_a))
@@ -1022,8 +1566,8 @@ def generate_scene_prompts(
         ) if af else ""
         c1_f = join_tags("cum on penis, internal cumshot", wtag("cum overflow", 1.4, f), wtag("cum in pussy", 1.3, f), wtag("cumdrip", 1.3, f), "sweat") if af else ""
         c2_f = join_tags("after ejaculation, cum on penis", wtag("cum in pussy", 1.4, f), wtag("cumdrip", 1.5, f), wtag("cum string", 1.4, f), wtag("excessive cum", 1.2, f), "cum on thighs, sweat") if af else ""
-        left_f_clause = " while thick white cum overflows around the joined base" if af else ""
-        right_f_clause = " so cum flows and strings down onto his now flaccid soft penis below" if af else " above his now flaccid soft penis below"
+        left_f_clause = " as thick white cum overflows at the joined base" if af else ""
+        right_f_clause = " with cum stringing onto his flaccid penis below" if af else " above his flaccid penis below"
         mp_mode = cfg.multi_panel_mode
 
         if mp_mode == "2koma":
@@ -1036,9 +1580,9 @@ def generate_scene_prompts(
                     m["outfit_pos"], exp_tags, "rating:explicit, nsfw, uncensored",
                     rem_face, "cowgirl position, vaginal, insertion, after vaginal, penis, flaccid",
                     m["anat_pos"], act_fluids,
-                    prose_if(cfg, f"Two side-by-side first-person POV panels with {m['name']} kneeling astraddle on top: on the left panel she sits down in deep cowgirl insertion{left_f_clause}; on the right panel still kneeling she lifts her hips just slightly upward by a few inches after pulling out{right_f_clause}."),
+                    prose_if(cfg, f"Two side-by-side POV panels of {m['name']} kneeling astraddle: left panel, seated in deep cowgirl insertion{left_f_clause}; right panel, lifting her hips slightly upward after pulling out{right_f_clause}."),
                     wrap_neg("-2.5", "open mouth, cum in mouth, drooling, standing", neg_on),
-                    wrap_neg("-2", join_tags("1girl, solo, single panel, from behind, reverse cowgirl, all fours, profile, male focus, 4koma, speech bubble", m["common_tail_neg"]), neg_on),
+                    wrap_tail_neg(m, join_tags("1girl, solo, single panel, from behind, reverse cowgirl, all fours, profile, male focus, 4koma, speech bubble", m["common_tail_neg"]), neg_on),
                 )
                 results.append(("【S04 · 第一人称视角 (POV) · 仰视骑乘左右双格（左深坐溢流 ➔ 右微抬疲软）】", "横图 1216x832", p_single))
 
@@ -1048,7 +1592,7 @@ def generate_scene_prompts(
                         m["head_pos"], m["bg_couch"],
                         "1.5::pov::, 1.4::pov crotch::, 1.3::from below::, low angle, rating:explicit, nsfw, uncensored",
                         wrap_neg("-2.5", "open mouth, cum in mouth, drooling", neg_on),
-                        wrap_neg("-2", join_tags("from behind, reverse cowgirl, all fours, profile, male focus, 4koma, speech bubble", m["common_tail_neg"]), neg_on),
+                        wrap_tail_neg(m, join_tags("from behind, reverse cowgirl, all fours, profile, male focus, 4koma, speech bubble", m["common_tail_neg"]), neg_on),
                     )
                     c1 = join_tags(
                         "girl, 1boy, faceless male", m["char_core"],
@@ -1073,9 +1617,9 @@ def generate_scene_prompts(
                     "1.4::girl on top::, 1.4::cowgirl position::, kneeling, straddling", m["leg_normal"],
                     m["outfit_pos"], exp_tags, "rating:explicit, nsfw, uncensored",
                     rem_face, "vaginal, insertion, after vaginal, penis, flaccid", m["anat_pos"], act_fluids,
-                    prose_if(cfg, f"Two side-by-side angled third-person panels of {m['name']} straddling a faceless man{m['loc_prose']}: on the left panel she sits deeply joined{left_f_clause}; on the right panel she lifts her hips slightly off right after pulling out{right_f_clause}."),
+                    prose_if(cfg, f"Two side-by-side angled panels of {m['name']} straddling a faceless man{m['loc_prose']}: left panel, seated deeply joined{left_f_clause}; right panel, lifting her hips slightly after pulling out{right_f_clause}."),
                     wrap_neg("-2.5", "pov, pov crotch, open mouth, cum in mouth, drooling, standing", neg_on),
-                    wrap_neg("-2", join_tags("1girl, solo, single panel, all fours, male focus, 4koma, speech bubble", m["common_tail_neg"]), neg_on),
+                    wrap_tail_neg(m, join_tags("1girl, solo, single panel, all fours, male focus, 4koma, speech bubble", m["common_tail_neg"]), neg_on),
                 )
                 results.append(("【S04 · 第三人称视角 (客观镜头) · 侧斜旁观骑乘左右双格】", "横图 1216x832", p_3rd))
         else:
@@ -1090,7 +1634,7 @@ def generate_scene_prompts(
                     m["anat_pos"], c1_f,
                     prose_if(cfg, f"Single full-frame first-person POV looking up at {m['name']} kneeling astraddle on top{m['loc_prose']} seated deeply in cowgirl insertion{left_f_clause}."),
                     wrap_neg("-2.5", "open mouth, cum in mouth, drooling, standing, flaccid, after vaginal", neg_on),
-                    wrap_neg("-2", join_tags(no_split_neg, "from behind, reverse cowgirl, all fours, profile, male focus", m["common_tail_neg"]), neg_on),
+                    wrap_tail_neg(m, join_tags(no_split_neg, "from behind, reverse cowgirl, all fours, profile, male focus", m["common_tail_neg"]), neg_on),
                 )
                 p_b = join_tags(
                     m["head_pos"], "1girl, 1boy, hetero", m["char_core"], "faceless male", m["bg_couch"],
@@ -1101,7 +1645,7 @@ def generate_scene_prompts(
                     m["anat_pos"], c2_f,
                     prose_if(cfg, f"Single full-frame first-person POV looking up at {m['name']} kneeling astraddle{m['loc_prose']} lifting her hips slightly upward by a few inches right after pulling out{right_f_clause}."),
                     wrap_neg("-2.5", "open mouth, cum in mouth, drooling, standing, insertion, penetration, erection", neg_on),
-                    wrap_neg("-2", join_tags(no_split_neg, "from behind, reverse cowgirl, all fours, profile, male focus", m["common_tail_neg"]), neg_on),
+                    wrap_tail_neg(m, join_tags(no_split_neg, "from behind, reverse cowgirl, all fours, profile, male focus", m["common_tail_neg"]), neg_on),
                 )
                 if mp_mode in ("single_a", "single_pair"):
                     results.append(("【S04 单图A · 第一人称 (POV) · 骑乘深坐结合溢流单幅】", "竖图 832x1216", p_a))
@@ -1117,7 +1661,7 @@ def generate_scene_prompts(
                     m["anat_pos"], c1_f,
                     prose_if(cfg, f"Single full-frame angled third-person view of {m['name']} straddling a faceless man{m['loc_prose']} seated deeply in cowgirl insertion{left_f_clause}."),
                     wrap_neg("-2.5", "pov, pov crotch, open mouth, cum in mouth, drooling, standing, flaccid, after vaginal", neg_on),
-                    wrap_neg("-2", join_tags(no_split_neg, "all fours, male focus", m["common_tail_neg"]), neg_on),
+                    wrap_tail_neg(m, join_tags(no_split_neg, "all fours, male focus", m["common_tail_neg"]), neg_on),
                 )
                 p_b = join_tags(
                     m["head_pos"], "1girl, 1boy, hetero", m["char_core"], "faceless male, head out of frame", m["on_couch_tag"], m["bg_couch"],
@@ -1128,7 +1672,7 @@ def generate_scene_prompts(
                     m["anat_pos"], c2_f,
                     prose_if(cfg, f"Single full-frame angled third-person view of {m['name']} straddling a faceless man{m['loc_prose']} lifting her hips slightly off right after pulling out{right_f_clause}."),
                     wrap_neg("-2.5", "pov, pov crotch, open mouth, cum in mouth, drooling, standing, insertion, penetration, erection", neg_on),
-                    wrap_neg("-2", join_tags(no_split_neg, "all fours, male focus", m["common_tail_neg"]), neg_on),
+                    wrap_tail_neg(m, join_tags(no_split_neg, "all fours, male focus", m["common_tail_neg"]), neg_on),
                 )
                 if mp_mode in ("single_a", "single_pair"):
                     results.append(("【S04 单图A · 第三人称 (客观镜头) · 侧斜旁观骑乘深坐溢流单幅】", "横图 1216x832", p_a))
@@ -1158,7 +1702,7 @@ def generate_scene_prompts(
                 m["outfit_pos"], exp_tags, "rating:explicit, nsfw, uncensored",
                 rem_face, "ass", m["anat_pos"], act_pee,
                 prose_if(cfg, f"Close-up first-person POV right behind {m['name']}{m['loc_prose']} leaning on her hands and left knee while raising her bent right knee high out to the side like a dog peeing, looking back at the viewer{pee_clause}."),
-                wrap_neg("-2", join_tags("knees up, all fours, knees together, standing, sitting, seiza, 1boy, penis, profile", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("knees up, all fours, knees together, standing, sitting, seiza, 1boy, penis, profile", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S05 · 第一人称视角 (POV) · 近距俯看犬式单腿屈膝高抬】", "横图 1216x832 或 竖图 832x1216", p_pov))
         else:
@@ -1171,7 +1715,7 @@ def generate_scene_prompts(
                 m["outfit_pos"], exp_tags, "rating:explicit, nsfw, uncensored",
                 rem_face, "ass", m["anat_pos"], act_pee,
                 prose_if(cfg, f"Rear three-quarter low-angle perspective angled 30 degrees along {m['name']}'s spine, leaning forward on her hands and left knee{m['loc_prose']} while raising her bent right knee high out to the side like a dog peeing, looking back over her shoulder{pee_clause}."),
-                wrap_neg("-2", join_tags("pov, knees up, all fours, knees together, standing, sitting, seiza, 1boy, penis, profile", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("pov, knees up, all fours, knees together, standing, sitting, seiza, 1boy, penis, profile", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S05 · 第三人称视角 (客观镜头) · 侧后 30° 全景犬式屈膝高抬】", "横图 1216x832", p_couch))
 
@@ -1181,9 +1725,13 @@ def generate_scene_prompts(
     elif scene_id == "S06":
         m = build_common_modules(cfg, eyes_open=False, is_sleep_disheveled=True)
         exp_tags = expr_if(cfg, "exhausted, parted lips, heavy blush", essential="1.5::sleeping::, 1.4::closed eyes::, relaxed")
-        stomach_fluid = join_tags(wtag("cum on stomach", 1.55, f), "after vaginal, cum", wtag("cum in pussy", 1.3, f), wtag("cumdrip", 1.3, f), "cum on thighs, sweat") if af else ""
+        stomach_fluid = join_tags(
+            wtag("cum on stomach", 1.55, f),
+            wtag("cum on clothes", 1.45, f) if m["covers_midriff"] else "",
+            "after vaginal, cum", wtag("cum in pussy", 1.3, f), wtag("cumdrip", 1.3, f), "cum on thighs, sweat",
+        ) if af else ""
         rem_face = join_tags(wtag("cum on face", 1.3, f), wtag("cum in hair", 0.9, f)) if rem else ""
-        pool_clause = f", exposing a thick pool of white cum resting on her bare lower stomach and navel{m['outfit_prose_clause']} while cum oozes between her relaxed parted thighs" if af else ""
+        pool_clause = f"{m['stomach_pool_prose']} while cum oozes between her relaxed parted thighs" if af else ""
 
         if is_pov:
             p_pov = join_tags(
@@ -1191,11 +1739,11 @@ def generate_scene_prompts(
                 "1.45::pov::, 1.4::from above::, foreshortening",
                 "1.4::lying::, 1.3::on back::", m["on_couch_tag"], exp_tags,
                 "spread legs, knees slightly bent", m["leg_normal"],
-                m["outfit_pos"], "midriff, stomach, navel, rating:explicit, nsfw, uncensored",
+                m["outfit_pos"], m["belly_tags_s06_11"], "rating:explicit, nsfw, uncensored",
                 rem_face, stomach_fluid, m["anat_pos"],
                 prose_if(cfg, f"First-person POV looking directly down over {m['name']} fast asleep lying on her back{m['loc_prose']} with closed eyes{pool_clause}."),
                 wrap_neg("-2.5", "open eyes, half-closed eyes, looking at viewer, sitting, standing, all fours, kneeling, peeing", neg_on),
-                wrap_neg("-2", join_tags("1boy, penis", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("1boy, penis", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S06 · 第一人称视角 (POV) · 近距俯视仰躺熟睡与小腹积液】", "竖图 832x1216", p_pov))
         else:
@@ -1203,11 +1751,11 @@ def generate_scene_prompts(
                 m["head_pos"], "1girl, solo", m["char_core"], m["bg_sleep_couch"],
                 "full body, angled view, 1.4::lying::, 1.3::on back::", m["on_couch_tag"], exp_tags,
                 "spread legs, knees slightly bent", m["leg_normal"],
-                m["outfit_pos"], "midriff, stomach, navel, rating:explicit, nsfw, uncensored",
+                m["outfit_pos"], m["belly_tags_s06_11"], "rating:explicit, nsfw, uncensored",
                 rem_face, stomach_fluid, m["anat_pos"],
                 prose_if(cfg, f"Full-body angled third-person view of {m['name']} fast asleep lying on her back{m['loc_prose']} with closed eyes{pool_clause}."),
                 wrap_neg("-2.5", "pov, open eyes, half-closed eyes, looking at viewer, sitting, standing, all fours, kneeling, peeing", neg_on),
-                wrap_neg("-2", join_tags("1boy, penis", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("1boy, penis", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S06 · 第三人称视角 (客观镜头) · 全景仰卧熟睡 + 小腹积液】", "横图 1216x832", p_back))
 
@@ -1217,15 +1765,19 @@ def generate_scene_prompts(
     elif scene_id == "S07":
         m = build_common_modules(cfg, eyes_open=False, is_sleep_disheveled=True)
         exp_tags = expr_if(cfg, "exhausted, parted lips, heavy blush", essential="1.5::sleeping::, 1.4::closed eyes::, sleep, relaxed")
+        is_barefoot_hold = "barefoot" in m["leg_foot"]
         foot_fluids = join_tags(
-            wtag("cum on feet", 1.6, f), wtag("cum on toes", 1.4, f), "cum on penis", wtag("cum string", 1.4, f), wtag("excessive cum", 1.3, f), "sweat"
+            wtag("cum on feet", 1.6, f),
+            wtag("cum on toes, cum string", 1.4, f) if is_barefoot_hold else wtag("cum string", 1.4, f),
+            "cum on penis", wtag("excessive cum", 1.3, f), "sweat",
         ) if af else ""
         rem_all = join_tags(
-            wtag("cum on face", 1.3, f), wtag("cum in hair", 0.9, f), wtag("cum on stomach", 1.4, f),
-            "after vaginal, cum", wtag("cum in pussy", 1.3, f), wtag("cumdrip", 1.3, f)
+            wtag("cum on face, cum in pussy, cumdrip", 1.3, f),
+            wtag("cum in hair", 0.9, f), wtag(m["stomach_rem_tag"], 1.4, f),
+            "after vaginal, cum",
         ) if rem else ""
-        foot_f_clause = ", with both of her soles and toes heavily coated and dripping with thick white cum and sticky cum strings" if af else ""
-        rem_clause = ", alongside a pool of white cum on her bare lower stomach" if rem else ""
+        foot_f_clause = ", coated in cum strings" if af else ""
+        rem_clause = f", with cum{m['stomach_rem_prose']}" if rem else ""
 
         if is_pov:
             p_fpv = join_tags(
@@ -1234,11 +1786,11 @@ def generate_scene_prompts(
                 "1.4::lying::, 1.3::on back::", m["on_couch_tag"], exp_tags,
                 "1.3::indian style::, knees apart, bent knees", m["leg_foot"],
                 "1.5::footjob::, 1.4::holding feet::, grabbing another's foot, penis, erection",
-                m["outfit_pos"], "midriff, stomach, navel, rating:explicit, nsfw, uncensored",
+                m["outfit_pos"], m["belly_tags"], "rating:explicit, nsfw, uncensored",
                 foot_fluids, rem_all, m["anat_pos"],
-                prose_if(cfg, f"First-person POV: the man's hands firmly grab both of sleeping {m['name']}'s {m['leg_prose']} pressed soles-together in a cross-legged diamond pose for a footjob{foot_f_clause}{rem_clause}, looking toward her sleeping face with closed eyes."),
+                prose_if(cfg, f"First-person POV grabbing sleeping {m['name']}'s {m['leg_prose']} soles-together in a cross-legged pose for a footjob{foot_f_clause}{rem_clause}."),
                 wrap_neg("-2.5", "open eyes, half-closed eyes, looking at viewer, sitting, standing, all fours", neg_on),
-                wrap_neg("-2", join_tags("male focus", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("male focus", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S07 · 第一人称视角 (POV) · 男方脚端双手抓握双脚足交】", "竖图 832x1216", p_fpv))
         else:
@@ -1247,11 +1799,11 @@ def generate_scene_prompts(
                 "full body, angled view, from side, 1.4::lying::, 1.3::on back::", m["on_couch_tag"], exp_tags,
                 "1.3::indian style::, knees apart, bent knees", m["leg_foot"],
                 "1.5::footjob::, 1.4::holding feet::, grabbing another's foot, penis, erection",
-                m["outfit_pos"], "midriff, stomach, navel, rating:explicit, nsfw, uncensored",
+                m["outfit_pos"], m["belly_tags"], "rating:explicit, nsfw, uncensored",
                 foot_fluids, rem_all, m["anat_pos"],
-                prose_if(cfg, f"Angled third-person view{m['loc_prose']}: {m['name']} lies fast asleep on her back with closed eyes and legs bent outward cross-legged with soles pressed together, while a faceless man grabs both of her {m['leg_prose']} with his hands for a footjob{foot_f_clause}{rem_clause}."),
+                prose_if(cfg, f"Angled view{m['loc_prose']}: sleeping {m['name']} lies cross-legged on her back while a faceless man grabs her {m['leg_prose']} soles-together for a footjob{foot_f_clause}{rem_clause}."),
                 wrap_neg("-2.5", "pov, pov hands, open eyes, half-closed eyes, looking at viewer, sitting, standing, all fours", neg_on),
-                wrap_neg("-2", join_tags("male focus", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("male focus", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S07 · 第三人称视角 (客观镜头) · 侧斜全景熟睡盘腿抓脚足交】", "横图 1216x832", p_3rd))
 
@@ -1262,18 +1814,21 @@ def generate_scene_prompts(
         m = build_common_modules(cfg, eyes_open=True, is_sleep_disheveled=True)
         exp_tags = expr_if(
             cfg,
-            "1.3::bedroom eyes::, 1.2::seductive smile::, slight smile, parted lips, heavy blush, exhausted",
+            "1.3::bedroom eyes::, 1.2::seductive smile::, parted lips, heavy blush, exhausted",
             essential="waking up, 1.35::sleepy::, 1.45::half-closed eyes::",
         )
+        is_barefoot_hold = "barefoot" in m["leg_foot"]
         foot_fluids = join_tags(
-            wtag("cum on feet", 1.6, f), wtag("cum on toes", 1.4, f), "cum on penis", wtag("cum string", 1.4, f), wtag("excessive cum", 1.3, f), "sweat"
+            wtag("cum on feet", 1.6, f),
+            wtag("cum on toes", 1.4, f) if is_barefoot_hold else "",
+            wtag("cum string", 1.4, f),
+            "cum on penis", wtag("excessive cum", 1.3, f), "sweat",
         ) if af else ""
         rem_all = join_tags(
-            wtag("cum on face", 1.3, f), wtag("cum in hair", 0.9, f), wtag("cum on stomach", 1.4, f),
-            "after vaginal, cum", wtag("cum in pussy", 1.3, f), wtag("cumdrip", 1.3, f)
+            wtag("cum on face", 1.3, f), wtag("cum in hair", 0.9, f), wtag(m["stomach_rem_tag"], 1.4, f),
+            "after vaginal, cum", wtag("cum in pussy", 1.3, f), wtag("cumdrip", 1.3, f),
         ) if rem else ""
-        foot_f_clause = ", coated with thick cum strings" if af else ""
-        rem_clause = " past cum pooled on her stomach" if rem else ""
+        foot_f_clause = ", coated in cum strings" if af else ""
 
         if is_pov:
             p_fpv = join_tags(
@@ -1282,11 +1837,11 @@ def generate_scene_prompts(
                 "1.4::lying::, 1.3::on back::", m["on_couch_tag"], "relaxed", exp_tags, "looking at viewer, looking down",
                 "1.3::indian style::, knees apart, bent knees", m["leg_foot"],
                 "1.5::footjob::, 1.4::holding feet::, grabbing another's foot, penis, erection",
-                m["outfit_pos"], "midriff, stomach, navel, rating:explicit, nsfw, uncensored",
+                m["outfit_pos"], m["belly_tags"], "rating:explicit, nsfw, uncensored",
                 foot_fluids, rem_all, m["anat_pos"],
-                prose_if(cfg, f"First-person POV: the man's hands grab {m['name']}'s {m['leg_prose']} pressed soles-together in a cross-legged pose for a footjob{foot_f_clause}, while she stirs awake gazing drowsily down{rem_clause} at the viewer."),
+                prose_if(cfg, f"First-person POV grabbing {m['name']}'s {m['leg_prose']} soles-together for a footjob{foot_f_clause} as she stirs awake gazing drowsily down."),
                 wrap_neg("-2.5", "closed eyes, sleeping, wide-eyed, ahegao, sitting, standing, all fours", neg_on),
-                wrap_neg("-2", join_tags("male focus", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("male focus", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S08 · 第一人称视角 (POV) · 抓脚互动中刚醒迷离睡眼望向你】", "竖图 832x1216", p_fpv))
         else:
@@ -1296,11 +1851,11 @@ def generate_scene_prompts(
                 exp_tags, "looking at another, looking down, sideways glance",
                 "1.3::indian style::, knees apart, bent knees", m["leg_foot"],
                 "1.5::footjob::, 1.4::holding feet::, grabbing another's foot, penis, erection",
-                m["outfit_pos"], "midriff, stomach, navel, rating:explicit, nsfw, uncensored",
+                m["outfit_pos"], m["belly_tags"], "rating:explicit, nsfw, uncensored",
                 foot_fluids, rem_all, m["anat_pos"],
-                prose_if(cfg, f"Angled third-person view{m['loc_prose']}: stirred awake on her back with soles pressed together, {m['name']} gazes drowsily down while a faceless man grabs her {m['leg_prose']} for a footjob{foot_f_clause}."),
+                prose_if(cfg, f"Angled view{m['loc_prose']}: stirred awake on her back, {m['name']} gazes drowsily down as a faceless man grabs her {m['leg_prose']} soles-together for a footjob{foot_f_clause}."),
                 wrap_neg("-2.5", "pov, pov hands, closed eyes, sleeping, wide-eyed, ahegao, sitting, standing, all fours", neg_on),
-                wrap_neg("-2", join_tags("male focus", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("male focus", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S08 · 第三人称视角 (客观镜头) · 侧斜全景被弄醒睡眼朝脚端瞥去】", "横图 1216x832", p_3rd))
 
@@ -1315,11 +1870,11 @@ def generate_scene_prompts(
             essential="1.3::sleepy::, 1.4::half-closed eyes::",
         )
         rem_all = join_tags(
-            "cum", wtag("excessive cum", 1.6, f), wtag("cum on face", 1.6, f), wtag("cum in hair", 1.2, f),
-            wtag("cum on stomach", 1.7, f), "cum on body", wtag("cum string", 1.5, f), wtag("cumdrip", 1.5, f),
-            "after vaginal", wtag("cum in pussy", 1.5, f), wtag("cum overflow", 1.5, f), "sweat"
+            "cum", wtag("excessive cum, cum on face", 1.6, f), wtag("cum in hair", 1.2, f),
+            wtag(m["stomach_rem_tag"], 1.7, f), "cum on body",
+            "after vaginal", wtag("cum string, cumdrip, cum in pussy, cum overflow", 1.5, f), "sweat"
         ) if rem else ""
-        rem_clause = f", with cum on her cheek and pooled on her bare stomach{m['outfit_prose_clause']}" if rem else ""
+        rem_clause = f", with cum on her cheek and pooled{m['stomach_rem_prose']}" if rem else ""
 
         if is_pov:
             p_pov = join_tags(
@@ -1327,11 +1882,11 @@ def generate_scene_prompts(
                 "1.5::pov::, 1.4::from above::, pov hands, reaching out",
                 "1.4::lying::, 1.3::on back::", m["on_couch_tag"], "neck, collarbone, 1.55::hand on another's neck::",
                 exp_tags, "looking at viewer, looking up, head tilt",
-                m["outfit_pos"], "midriff, stomach, navel, rating:explicit, nsfw, uncensored",
+                m["outfit_pos"], m["belly_tags"], "rating:explicit, nsfw, uncensored",
                 rem_all, m["anat_pos"],
-                prose_if(cfg, f"First-person POV from above {m['name']} lying on her back{m['loc_prose']}: a hand reaches in to gently clasp her bare neck as she gazes up with drowsy half-closed eyes{rem_clause}."),
+                prose_if(cfg, f"First-person POV from above {m['name']} lying on her back{m['loc_prose']}: a hand reaches in to gently clasp her neck as she gazes up with drowsy half-closed eyes{rem_clause}."),
                 wrap_neg("-2.5", "closed eyes, sleeping, wide-eyed, ahegao, tongue out, sitting, standing, all fours, footjob", neg_on),
-                wrap_neg("-2", join_tags("male focus", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("male focus", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S09 · 第一人称视角 (POV) · 正上方俯视单手轻拢脖颈】", "竖图 832x1216", p_pov))
         else:
@@ -1339,11 +1894,11 @@ def generate_scene_prompts(
                 m["head_pos"], "1girl, 1boy, hetero", m["char_core"], "faceless male, head out of frame, leaning over", m["bg_sleep_couch"],
                 "three-quarter view, from side, 1.4::lying::, 1.3::on back::", m["on_couch_tag"], "neck, collarbone, 1.55::hand on another's neck::",
                 exp_tags, "looking at another, looking up, head tilt",
-                m["outfit_pos"], "midriff, stomach, navel, rating:explicit, nsfw, uncensored",
+                m["outfit_pos"], m["belly_tags"], "rating:explicit, nsfw, uncensored",
                 rem_all, m["anat_pos"],
-                prose_if(cfg, f"Angled side view{m['loc_prose']}: a faceless man leans over {m['name']} and gently clasps one hand around her bare neck as she gazes up drowsily{rem_clause}."),
+                prose_if(cfg, f"Angled side view{m['loc_prose']}: a faceless man leans over {m['name']} and gently clasps one hand around her neck as she gazes up drowsily{rem_clause}."),
                 wrap_neg("-2.5", "pov, pov hands, closed eyes, sleeping, wide-eyed, ahegao, tongue out, sitting, standing, all fours, footjob", neg_on),
-                wrap_neg("-2", join_tags("male focus", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("male focus", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S09 · 第三人称视角 (客观镜头) · 侧斜近景男方欺身单手轻拢脖颈】", "横图 1216x832", p_3rd))
 
@@ -1357,25 +1912,29 @@ def generate_scene_prompts(
             "1.35::bedroom eyes::, 1.15::seductive smile::, parted lips, heavy blush",
             essential="1.3::sleepy::, 1.4::half-closed eyes::",
         )
-        act_f = join_tags(wtag("cum overflow", 1.5, f), wtag("cum string", 1.5, f), wtag("cumdrip", 1.5, f), "sweat") if af else ""
+        act_f = join_tags(wtag("cum overflow, cum string, cumdrip", 1.5, f), "sweat") if af else ""
+        is_barefoot_hold = "barefoot" in m["leg_foot"]
         rem_all = join_tags(
             "cum", wtag("excessive cum", 1.65, f), wtag("cum on face", 1.6, f), wtag("cum in hair", 1.2, f),
-            wtag("cum on stomach", 1.7, f), "cum on body", wtag("cum on feet", 1.55, f), wtag("cum on toes", 1.35, f)
+            wtag(m["stomach_rem_tag"], 1.7, f), "cum on body",
+            wtag("cum on feet", 1.55, f),
+            wtag("cum on toes", 1.35, f) if is_barefoot_hold else "",
         ) if rem else ""
-        rem_clause = f", with cum on her cheek, stomach{m['outfit_prose_clause']}, and {m['leg_prose']}" if rem else ""
+        rem_mid_word = "clothes" if m["covers_midriff"] else "stomach"
+        rem_clause = f", with cum on her cheek, {rem_mid_word}{m['outfit_prose_clause']}, and {m['leg_prose']}" if rem else ""
 
         if is_pov:
             p_pov = join_tags(
                 m["head_pos"], "1girl, 1boy, hetero", m["char_core"], "faceless male", m["bg_sleep_couch"],
                 "1.5::pov::, 1.4::from above::, pov hands, pov crotch, foreshortening",
                 "1.4::lying::, 1.3::on back::", m["on_couch_tag"], "1.35::missionary::, spread legs, bent knees",
-                m["leg_normal"], "soles, toes, neck, collarbone, 1.55::hand on another's neck::",
+                m["leg_normal"], "neck, collarbone, 1.55::hand on another's neck::",
                 exp_tags, "looking at viewer, looking up",
-                m["outfit_pos"], "midriff, stomach, navel, rating:explicit, nsfw, uncensored, sex, vaginal, penis, insertion",
+                m["outfit_pos"], m["belly_tags"], "rating:explicit, nsfw, uncensored, sex, vaginal, penis, insertion",
                 rem_all, act_f, m["anat_pos"],
-                prose_if(cfg, f"First-person missionary POV above {m['name']} on her back{m['loc_prose']}: pressing between her open legs while one hand gently clasps her bare neck as she gazes up drowsily{rem_clause}."),
+                prose_if(cfg, f"First-person missionary POV above {m['name']} on her back{m['loc_prose']}: pressing between her open legs while one hand gently clasps her neck as she gazes up drowsily{rem_clause}."),
                 wrap_neg("-2.5", "closed eyes, sleeping, wide-eyed, ahegao, tongue out, sitting, standing, all fours, footjob", neg_on),
-                wrap_neg("-2", join_tags("male focus", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("male focus", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S10 · 第一人称视角 (POV) · 传教士俯视压身深入 + 单手轻拢脖颈】", "竖图 832x1216", p_pov))
         else:
@@ -1383,13 +1942,13 @@ def generate_scene_prompts(
                 m["head_pos"], "1girl, 1boy, hetero", m["char_core"], "faceless male, head out of frame, boy on top", m["bg_sleep_couch"],
                 "three-quarter view, from side, 1.4::lying::, 1.3::on back::", m["on_couch_tag"],
                 "1.5::missionary::, spread legs, bent knees",
-                m["leg_normal"], "soles, toes, neck, collarbone, 1.55::hand on another's neck::",
+                m["leg_normal"], "neck, collarbone, 1.55::hand on another's neck::",
                 exp_tags, "looking at another, looking up",
-                m["outfit_pos"], "midriff, stomach, navel, rating:explicit, nsfw, uncensored, sex, vaginal, penis, insertion",
+                m["outfit_pos"], m["belly_tags"], "rating:explicit, nsfw, uncensored, sex, vaginal, penis, insertion",
                 rem_all, act_f, m["anat_pos"],
-                prose_if(cfg, f"Angled side view{m['loc_prose']}: a faceless man presses between {m['name']}'s open bent legs in missionary while one hand gently clasps her bare neck{rem_clause}."),
+                prose_if(cfg, f"Angled side view{m['loc_prose']}: a faceless man presses between {m['name']}'s open bent legs in missionary while one hand gently clasps her neck{rem_clause}."),
                 wrap_neg("-2.5", "pov, pov hands, pov crotch, closed eyes, sleeping, wide-eyed, ahegao, tongue out, sitting, standing, all fours, footjob", neg_on),
-                wrap_neg("-2", join_tags("male focus", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("male focus", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S10 · 第三人称视角 (客观镜头) · 侧斜全景传教士深入 + 单手轻拢脖颈】", "横图 1216x832", p_3rd))
 
@@ -1404,48 +1963,56 @@ def generate_scene_prompts(
             essential="1.25::sleepy::, 1.4::half-closed eyes::",
         )
         act_ejac = join_tags(
-            wtag("ejaculation", 1.65, f), wtag("projectile cum", 1.55, f),
-            wtag("excessive cum", 1.75, f), wtag("cum on pussy", 1.6, f), wtag("cum on stomach", 1.85, f),
+            wtag("ejaculation", 1.65, f), wtag("projectile cum", 1.55, f), wtag("excessive cum", 1.75, f),
+            wtag("cum on pussy", 1.6, f), wtag("cum on stomach", 1.85, f),
+            wtag("cum on clothes", 1.55, f) if m["covers_midriff"] else "",
             wtag("cum string", 1.55, f), wtag("cumdrip", 1.5, f), "sweat"
         ) if af else ""
+        is_barefoot_hold = "barefoot" in m["leg_foot"]
         rem_old = join_tags(
-            wtag("cum on face", 1.3, f), wtag("cum in hair", 1.1, f), wtag("cum on feet", 1.5, f), wtag("cum on toes", 1.3, f),
+            wtag("cum on face", 1.3, f), wtag("cum in hair", 1.1, f), wtag("cum on feet", 1.5, f),
+            wtag("cum on toes", 1.3, f) if is_barefoot_hold else "",
             wtag("cum in pussy", 1.45, f), wtag("cum overflow", 1.45, f)
         ) if rem else ""
-        ejac_clause = f" and shoots cum onto her vulva and bare stomach{m['outfit_prose_clause']}" if af else ""
-        rem_clause = f", with cum on her cheek and {m['leg_prose']}" if rem else ""
+        if af:
+            ejac_clause = (
+                " shooting cum onto her vulva and outfit"
+                if m["covers_midriff"]
+                else " shooting cum onto her vulva and bare stomach"
+            )
+        else:
+            ejac_clause = ""
 
         if is_pov:
             p_std = join_tags(
                 m["head_pos"], "1girl, 1boy, hetero", m["char_core"], "faceless male", m["bg_sleep_couch"],
                 "1.6::missionary::, 1.45::pov::, 1.35::from above::, 1.4::pov crotch::, pov hands, foreshortening",
                 "1.4::lying::, 1.3::on back::", m["on_couch_tag"], "1.4::spread legs::, bent knees",
-                m["leg_normal"], "soles, toes, neck, 1.5::hand on another's neck::",
+                m["leg_normal"], "neck, 1.5::hand on another's neck::",
                 exp_tags, "looking at viewer, looking up",
-                m["outfit_pos"], "stomach, navel, rating:explicit, nsfw, uncensored, after vaginal, pull out, penis, erection, twitching penis",
+                m["outfit_pos"], m["belly_tags_s06_11"], "rating:explicit, nsfw, uncensored, after vaginal, pull out, penis, erection, twitching penis",
                 act_ejac, rem_old, m["anat_pos"],
-                prose_if(cfg, f"First-person missionary POV between {m['name']}'s open bent legs{m['loc_prose']}: clasping her neck with one hand, he pulls out at the bottom center{ejac_clause}{rem_clause}."),
+                prose_if(cfg, f"First-person missionary POV between {m['name']}'s open legs{m['loc_prose']}: clasping her neck, he pulls out{ejac_clause}."),
                 wrap_neg("-2.5", "facial, penis on face, oral, fellatio, internal cumshot, insertion, closed eyes, sleeping, wide-eyed, ahegao, tongue out, sitting, standing, all fours, footjob", neg_on),
-                wrap_neg("-2", join_tags("male focus", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("male focus", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S11 · 第一人称视角 (POV) · 传教士双腿间刚拔出外射标准版】", "竖图 832x1216", p_std))
             if cfg.include_sub_variants:
                 p_legsup = p_std.replace("1.6::missionary::", "1.65::missionary::").replace(
-                    "bent knees", "1.3::legs up::, knees up"
+                    "1.4::spread legs::, bent knees", "1.4::spread legs::, 1.3::legs up::, knees up"
                 )
                 results.append(("【S11 · 第一人称备选 · 双腿抬高环腰强化版 (`legs up`)】", "竖图 832x1216", p_legsup))
         else:
             p_3rd = join_tags(
                 m["head_pos"], "1girl, 1boy, hetero", m["char_core"], "faceless male, head out of frame, boy on top", m["bg_sleep_couch"],
-                "three-quarter view, from side, 1.4::lying::, 1.3::on back::", m["on_couch_tag"],
-                "1.55::missionary::, 1.4::spread legs::, bent knees",
-                m["leg_normal"], "soles, toes, neck, 1.5::hand on another's neck::",
+                "three-quarter view, from side, 1.55::missionary::, 1.4::lying::, 1.3::on back::", m["on_couch_tag"], "1.4::spread legs::, bent knees",
+                m["leg_normal"], "neck, 1.5::hand on another's neck::",
                 exp_tags, "looking at another, looking up",
-                m["outfit_pos"], "stomach, navel, rating:explicit, nsfw, uncensored, after vaginal, pull out, penis, erection, twitching penis",
+                m["outfit_pos"], m["belly_tags_s06_11"], "rating:explicit, nsfw, uncensored, after vaginal, pull out, penis, erection, twitching penis",
                 act_ejac, rem_old, m["anat_pos"],
-                prose_if(cfg, f"Angled side view{m['loc_prose']}: between {m['name']}'s open bent legs in missionary while clasping her neck, the faceless man pulls just outside{ejac_clause}{rem_clause}."),
+                prose_if(cfg, f"Angled missionary view{m['loc_prose']}: clasping {m['name']}'s neck between her open legs, the faceless man pulls out{ejac_clause}."),
                 wrap_neg("-2.5", "pov, pov hands, pov crotch, facial, penis on face, oral, fellatio, internal cumshot, insertion, closed eyes, sleeping, wide-eyed, ahegao, tongue out, sitting, standing, all fours, footjob", neg_on),
-                wrap_neg("-2", join_tags("male focus", m["common_tail_neg"]), neg_on),
+                wrap_tail_neg(m, join_tags("male focus", m["common_tail_neg"]), neg_on),
             )
             results.append(("【S11 · 第三人称视角 (客观镜头) · 侧斜全景传教士双腿间拔出外射】", "横图 1216x832", p_3rd))
 
@@ -1500,9 +2067,10 @@ def _describe_active_modules(cfg: CharacterConfig) -> str:
 
 def _build_single_track_blocks(cfg: CharacterConfig, selected_ids: List[str], track_mode: str, pure_batch: bool) -> List[str]:
     track_label = "👁️ 第一人称视角卷 (First-Person POV)" if track_mode == "pov" else "🎥 第三人称视角卷 (Third-Person Objective)"
+    all_chapters = STORY_CHAPTERS + MULTI_ANGLE_CHAPTERS
     if pure_batch:
         lines: List[str] = []
-        for ch in STORY_CHAPTERS:
+        for ch in all_chapters:
             if ch["id"] not in selected_ids:
                 continue
             for _sub_title, _canvas, prompt_text in generate_scene_prompts(ch["id"], cfg, pov_override=track_mode):
@@ -1518,7 +2086,7 @@ def _build_single_track_blocks(cfg: CharacterConfig, selected_ids: List[str], tr
         f"# 🎛️ 模块状态：{_describe_active_modules(cfg)}",
         "# ==========================================================================\n",
     ]
-    for ch in STORY_CHAPTERS:
+    for ch in all_chapters:
         if ch["id"] not in selected_ids:
             continue
         items = generate_scene_prompts(ch["id"], cfg, pov_override=track_mode)

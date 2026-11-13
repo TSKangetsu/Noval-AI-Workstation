@@ -52,6 +52,7 @@ from story_engine import (
     BUST_PRESETS,
     SKIN_PRESETS,
     OUTFIT_PRESETS,
+    OUTFIT_STATE_PRESETS,
     LEGWEAR_PRESETS,
     STYLE_PRESETS,
     MULTI_PANEL_MODE_PRESETS,
@@ -59,6 +60,7 @@ from story_engine import (
     PUBIC_PRESETS,
     PIGMENT_PRESETS,
     STORY_CHAPTERS,
+    MULTI_ANGLE_CHAPTERS,
     MODULE_SWITCH_PRESETS,
     CharacterConfig,
     generate_scene_prompts,
@@ -221,7 +223,9 @@ class StoryPromptGeneratorApp:
         self.var_bust = tk.StringVar(value=cfg.bust_preset)
         self.var_skin = tk.StringVar(value=cfg.skin_preset)
         self.var_outfit = tk.StringVar(value=cfg.outfit_preset)
+        self.var_outfit_state = tk.StringVar(value=cfg.outfit_state_mode)
         self.var_custom_outfit = tk.StringVar(value=cfg.custom_outfit_tags)
+        self.var_keep_canon = tk.BooleanVar(value=cfg.keep_canon_elements)
         self.var_legwear = tk.StringVar(value=cfg.legwear_preset)
 
         self.var_cat_ears = tk.BooleanVar(value=False)
@@ -269,9 +273,13 @@ class StoryPromptGeneratorApp:
         )
 
         self.scene_vars: Dict[str, tk.BooleanVar] = {
-            ch["id"]: tk.BooleanVar(value=True) for ch in STORY_CHAPTERS
+            ch["id"]: tk.BooleanVar(value=(ch["id"] != "F00")) for ch in STORY_CHAPTERS
         }
-        self.active_scene_id: str = "S00"
+        self.multi_angle_vars: Dict[str, tk.BooleanVar] = {
+            ch["id"]: tk.BooleanVar(value=True) for ch in MULTI_ANGLE_CHAPTERS
+        }
+        self.var_ma_nsfw = tk.BooleanVar(value=cfg.enable_multi_angle_nsfw)
+        self.active_scene_id: str = "F00"
 
         # === NovelAI V5 Full Medium 单张 API 生图状态 ===
         api_cfg = load_api_settings()
@@ -406,6 +414,8 @@ class StoryPromptGeneratorApp:
             font=("Consolas", 10),
         )
         ent.bind("<KeyRelease>", lambda _e: self.refresh_output())
+        ent.bind("<<Paste>>", lambda _e: self.after(10, self.refresh_output))
+        ent.bind("<FocusOut>", lambda _e: self.refresh_output())
         return ent
 
     def _make_combo(self, parent: tk.Widget, var: tk.StringVar, values: List[str], callback=None) -> ttk.Combobox:
@@ -565,11 +575,23 @@ class StoryPromptGeneratorApp:
 
         ttk.Label(tab_look, text="服装与鞋袜搭配", style="SubHeader.TLabel").pack(anchor="w", pady=(14, 2))
 
-        ttk.Label(tab_look, text="上装 / 穿搭款式预设：").pack(anchor="w", pady=(4, 2))
-        self._make_combo(tab_look, self.var_outfit, list(OUTFIT_PRESETS.keys())).pack(fill=tk.X)
+        ttk.Label(tab_look, text="上装 / 穿搭款式预设（支持原设原皮与混搭）：").pack(anchor="w", pady=(4, 2))
+        self._make_combo(
+            tab_look, self.var_outfit, list(OUTFIT_PRESETS.keys()), callback=self._on_outfit_preset_changed
+        ).pack(fill=tk.X)
 
-        ttk.Label(tab_look, text="自定义穿搭 Tags（上方选“自定义穿搭”时生效）：").pack(anchor="w", pady=(6, 2))
+        ttk.Label(tab_look, text="穿脱与动作暴露方式（解耦服装款式与暴露程度）：").pack(anchor="w", pady=(6, 2))
+        self._make_combo(tab_look, self.var_outfit_state, list(OUTFIT_STATE_PRESETS.keys())).pack(fill=tk.X)
+
+        ttk.Label(tab_look, text="追加自定义服饰 / 混搭单品 Tags（可叠加到任意预设）：").pack(anchor="w", pady=(6, 2))
         self._make_entry(tab_look, self.var_custom_outfit).pack(fill=tk.X, ipady=4)
+
+        ttk.Checkbutton(
+            tab_look,
+            text="🔓 允许保留/混搭角色原设服饰配件（不强行屏蔽原皮负向词）",
+            variable=self.var_keep_canon,
+            command=self.refresh_output,
+        ).pack(anchor="w", pady=(6, 2))
 
         ttk.Label(tab_look, text="足部 / 丝袜款式（自动联动 S07/S08 抓脚足部幕）：").pack(anchor="w", pady=(6, 2))
         self._make_combo(tab_look, self.var_legwear, list(LEGWEAR_PRESETS.keys())).pack(fill=tk.X)
@@ -874,10 +896,18 @@ class StoryPromptGeneratorApp:
         ).pack(anchor="w", pady=(4, 0))
 
     def _build_right_panel(self, parent: ttk.Frame) -> None:
-        top_card = ttk.Frame(parent, style="Card.TFrame", padding=10)
+        top_card = ttk.Frame(parent, style="Card.TFrame", padding=6)
         top_card.pack(fill=tk.X, pady=(0, 8))
 
-        hdr = ttk.Frame(top_card, style="Card.TFrame")
+        self.scene_nb = ttk.Notebook(top_card)
+        self.scene_nb.pack(fill=tk.X)
+        tab_story_list = ttk.Frame(self.scene_nb, style="Card.TFrame", padding=6)
+        tab_ma_list = ttk.Frame(self.scene_nb, style="Card.TFrame", padding=6)
+        self.scene_nb.add(tab_story_list, text=" 📖 剧情故事线 (F00 + 12幕) ")
+        self.scene_nb.add(tab_ma_list, text=" 📷 多角度套图 (9 镜头 · 独立运作) ")
+        self.scene_nb.bind("<<NotebookTabChanged>>", lambda _e: self.refresh_output())
+
+        hdr = ttk.Frame(tab_story_list, style="Card.TFrame")
         hdr.pack(fill=tk.X, pady=(0, 6))
         ttk.Label(
             hdr, text="📌 故事线 12 幕章节列表（点击任意幕在下方精细预览 · 右上角切换第一 / 第三人称）", style="SubHeader.TLabel"
@@ -897,7 +927,7 @@ class StoryPromptGeneratorApp:
         )
 
         # 多格分镜幕 (S03/S04) 快捷出图模式切换栏（与左侧「🎨 画风局部」双向同步）
-        mp_bar = ttk.Frame(top_card, style="Card.TFrame")
+        mp_bar = ttk.Frame(tab_story_list, style="Card.TFrame")
         mp_bar.pack(fill=tk.X, pady=(0, 6))
         ttk.Label(
             mp_bar,
@@ -921,7 +951,7 @@ class StoryPromptGeneratorApp:
 
         # === 一键连出 12 幕 & 0号幕 (S00) Seed 锁定控制栏 ===
         batch_gen_bar = tk.Frame(
-            top_card, bg=BG_INPUT, highlightbackground=BORDER, highlightthickness=1, padx=8, pady=5
+            tab_story_list, bg=BG_INPUT, highlightbackground=BORDER, highlightthickness=1, padx=8, pady=5
         )
         batch_gen_bar.pack(fill=tk.X, pady=(0, 6))
 
@@ -972,17 +1002,18 @@ class StoryPromptGeneratorApp:
         )
         self.btn_batch_all12_right.pack(side=tk.RIGHT)
 
-        grid_box = ttk.Frame(top_card, style="Card.TFrame")
+        grid_box = ttk.Frame(tab_story_list, style="Card.TFrame")
         grid_box.pack(fill=tk.X)
         grid_box.columnconfigure(0, weight=1)
         grid_box.columnconfigure(1, weight=1)
 
         self.scene_btn_refs: Dict[str, tk.Button] = {}
         self.copy_btn_refs: Dict[str, tk.Button] = {}
+        rows_per_col = (len(STORY_CHAPTERS) + 1) // 2
         for idx, ch in enumerate(STORY_CHAPTERS):
             sid = ch["id"]
             row_f = ttk.Frame(grid_box, style="Card.TFrame")
-            row_f.grid(row=idx % 6, column=idx // 6, sticky="ew", padx=4, pady=2)
+            row_f.grid(row=idx % rows_per_col, column=idx // rows_per_col, sticky="ew", padx=4, pady=2)
 
             ttk.Checkbutton(
                 row_f, text="", variable=self.scene_vars[sid], command=self.refresh_output
@@ -1026,6 +1057,128 @@ class StoryPromptGeneratorApp:
             btn_cp = tk.Button(
                 row_f,
                 text="复制[第一]",
+                bg=BORDER,
+                fg=ACCENT_POV,
+                activebackground=ACCENT_POV,
+                activeforeground="#11111b",
+                relief=tk.FLAT,
+                padx=6,
+                pady=1,
+                cursor="hand2",
+                font=("Microsoft YaHei UI", 8, "bold"),
+                command=lambda s=sid: self.copy_single_scene(s),
+            )
+            btn_cp.pack(side=tk.RIGHT)
+            self.copy_btn_refs[sid] = btn_cp
+
+        # === 第二分页：多角度套图（9 镜头，独立运作不与故事线混跑） ===
+        ma_hdr = ttk.Frame(tab_ma_list, style="Card.TFrame")
+        ma_hdr.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(
+            ma_hdr,
+            text="📷 多角度套图 9 镜头（共享左侧角色/服装/画风配置，与故事线分开独立出图）",
+            style="SubHeader.TLabel",
+        ).pack(side=tk.LEFT)
+        ttk.Button(ma_hdr, text="全不选", style="Secondary.TButton", command=lambda: self._batch_toggle_ma(False)).pack(
+            side=tk.RIGHT, padx=2
+        )
+        ttk.Button(ma_hdr, text="全选 9 镜头", style="Secondary.TButton", command=lambda: self._batch_toggle_ma(True)).pack(
+            side=tk.RIGHT, padx=2
+        )
+
+        ma_bar = tk.Frame(tab_ma_list, bg=BG_INPUT, highlightbackground=BORDER, highlightthickness=1, padx=8, pady=5)
+        ma_bar.pack(fill=tk.X, pady=(0, 6))
+        tk.Checkbutton(
+            ma_bar,
+            text="🔞 开启多镜头 NSFW 类词条（关闭=纯SFW过滤）",
+            variable=self.var_ma_nsfw,
+            bg=BG_INPUT,
+            fg=ACCENT,
+            selectcolor=BG_PANEL,
+            activebackground=BG_INPUT,
+            activeforeground=ACCENT,
+            font=("Microsoft YaHei UI", 9, "bold"),
+            cursor="hand2",
+            command=self.refresh_output,
+        ).pack(side=tk.LEFT)
+
+        self.btn_stop_ma_right = ttk.Button(
+            ma_bar,
+            text="⏹ 停止连出",
+            style="Secondary.TButton",
+            command=self.on_request_cancel_any_batch,
+            state="disabled",
+        )
+        self.btn_stop_ma_right.pack(side=tk.RIGHT, padx=(6, 0))
+
+        self.btn_batch_ma_checked = ttk.Button(
+            ma_bar,
+            text="🎯 连出已勾选镜头",
+            style="Action.TButton",
+            command=lambda: self.on_batch_generate_scenes(force_all_12=False, suite_kind="multi_angle"),
+        )
+        self.btn_batch_ma_checked.pack(side=tk.RIGHT, padx=(6, 0))
+
+        self.btn_batch_ma_all = ttk.Button(
+            ma_bar,
+            text="🚀 一键出全套 9 镜头",
+            style="Generate.TButton",
+            command=lambda: self.on_batch_generate_scenes(force_all_12=True, suite_kind="multi_angle"),
+        )
+        self.btn_batch_ma_all.pack(side=tk.RIGHT)
+
+        ma_grid = ttk.Frame(tab_ma_list, style="Card.TFrame")
+        ma_grid.pack(fill=tk.X)
+        ma_grid.columnconfigure(0, weight=1)
+        ma_grid.columnconfigure(1, weight=1)
+        ma_rows_per_col = (len(MULTI_ANGLE_CHAPTERS) + 1) // 2
+        for idx, ch in enumerate(MULTI_ANGLE_CHAPTERS):
+            sid = ch["id"]
+            row_f = ttk.Frame(ma_grid, style="Card.TFrame")
+            row_f.grid(row=idx % ma_rows_per_col, column=idx // ma_rows_per_col, sticky="ew", padx=4, pady=2)
+
+            ttk.Checkbutton(
+                row_f, text="", variable=self.multi_angle_vars[sid], command=self.refresh_output
+            ).pack(side=tk.LEFT)
+
+            btn_sel = tk.Button(
+                row_f,
+                text=ch["title"],
+                anchor="w",
+                bg=BORDER if sid == self.active_scene_id else BG_INPUT,
+                fg=ACCENT if sid == self.active_scene_id else FG_TEXT,
+                activebackground=BORDER,
+                activeforeground=ACCENT,
+                relief=tk.FLAT,
+                padx=6,
+                pady=2,
+                cursor="hand2",
+                font=("Microsoft YaHei UI", 9),
+                command=lambda s=sid: self.select_single_scene(s),
+            )
+            btn_sel.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 4))
+            self.scene_btn_refs[sid] = btn_sel
+
+            btn_gen_row = tk.Button(
+                row_f,
+                text="🎨生成",
+                bg=BORDER,
+                fg=SUCCESS,
+                activebackground=SUCCESS,
+                activeforeground="#11111b",
+                relief=tk.FLAT,
+                padx=5,
+                pady=1,
+                cursor="hand2",
+                font=("Microsoft YaHei UI", 8, "bold"),
+                command=lambda s=sid: self.on_quick_generate_scene(s),
+            )
+            btn_gen_row.pack(side=tk.RIGHT, padx=(3, 0))
+            self.gen_btn_refs[sid] = btn_gen_row
+
+            btn_cp = tk.Button(
+                row_f,
+                text="复制提示词",
                 bg=BORDER,
                 fg=ACCENT_POV,
                 activebackground=ACCENT_POV,
@@ -1232,7 +1385,9 @@ class StoryPromptGeneratorApp:
             bust_preset=self.var_bust.get(),
             skin_preset=self.var_skin.get(),
             outfit_preset=self.var_outfit.get(),
+            outfit_state_mode=self.var_outfit_state.get(),
             custom_outfit_tags=self.var_custom_outfit.get(),
+            keep_canon_elements=self.var_keep_canon.get(),
             legwear_preset=self.var_legwear.get(),
             add_cat_ears=self.var_cat_ears.get(),
             add_horns_tail=self.var_horns.get(),
@@ -1263,6 +1418,7 @@ class StoryPromptGeneratorApp:
             enable_remnants=self.module_vars["enable_remnants"].get(),
             enable_t5_prose=self.module_vars["enable_t5_prose"].get(),
             enable_negatives=self.module_vars["enable_negatives"].get(),
+            enable_multi_angle_nsfw=self.var_ma_nsfw.get(),
         )
 
     def _on_preset_selected(self, _event=None) -> None:
@@ -1286,7 +1442,12 @@ class StoryPromptGeneratorApp:
                 self.var_skin.set(data["skin_preset"])
             if data.get("outfit_preset") in OUTFIT_PRESETS:
                 self.var_outfit.set(data["outfit_preset"])
+            if data.get("outfit_state_mode") in OUTFIT_STATE_PRESETS:
+                self.var_outfit_state.set(data["outfit_state_mode"])
+            else:
+                self.var_outfit_state.set("🔄 智能适配穿脱（原设/裙装自动撩裙拨内裤 · 单件上衣自动真空）")
             self.var_custom_outfit.set(data.get("custom_outfit_tags", ""))
+            self.var_keep_canon.set(bool(data.get("keep_canon_elements", False)))
             if data.get("legwear_preset") in LEGWEAR_PRESETS:
                 self.var_legwear.set(data["legwear_preset"])
             if data.get("style_preset") in STYLE_PRESETS:
@@ -1302,6 +1463,7 @@ class StoryPromptGeneratorApp:
                         self.var_multi_panel_label.set(lbl)
                         break
             self.var_cat_ears.set(bool(data.get("add_cat_ears", False)))
+            self.var_ma_nsfw.set(bool(data.get("enable_multi_angle_nsfw", False)))
             self.var_horns.set(bool(data.get("add_horns_tail", False)))
             self.var_glasses.set(bool(data.get("add_glasses", False)))
             self.var_choker.set(bool(data.get("add_choker", False)))
@@ -1352,17 +1514,31 @@ class StoryPromptGeneratorApp:
                 self._load_preset_by_name(names[0], trigger_refresh=True)
                 self.var_status.set(f"🗑️ 已删除自定义预设「{cur}」")
 
+    def _on_outfit_preset_changed(self, _event=None) -> None:
+        outfit_name = self.var_outfit.get()
+        cur_leg = self.var_legwear.get()
+        if "角色标签原设默认服装" in outfit_name and cur_leg == "赤足裸腿（barefoot 默认）":
+            self.var_legwear.set("🌟 随角色原设鞋袜 / 不强制赤足")
+        elif "宽松滑肩白T恤" in outfit_name and cur_leg == "🌟 随角色原设鞋袜 / 不强制赤足":
+            self.var_legwear.set("赤足裸腿（barefoot 默认）")
+        self.refresh_output()
+
     def _on_style_preset_changed(self, _event=None) -> None:
         style_name = self.var_style.get()
-        if "M6" in style_name or "无描边暖杏真肤" in style_name:
+        if any(k in style_name for k in ("M6", "无描边暖杏真肤", "无界油画")):
+            is_tune2 = "M6-Tune2" in style_name
+            target_rescale = 0.0 if is_tune2 else 0.25
             self.var_api_scale.set(4.8)
-            self.var_api_rescale.set(0.25)
+            self.var_api_rescale.set(target_rescale)
             if hasattr(self, "lbl_api_scale"):
                 self.lbl_api_scale.config(text="Prompt Guidance (相关性 Scale)：4.8")
             self.refresh_output()
-            self.var_status.set("🌤️ 已切换至 M6 柔雾白纱晨光真肤预设（已自动同步最佳低反差生图参数 Scale=4.8, Rescale=0.25）")
+            tag_label = "M6-Tune2 无界油画" if is_tune2 else "M6 保留款"
+            self.var_status.set(
+                f"🌤️ 已切换至 {tag_label} 预设（已自动同步最佳低反差生图参数 Scale=4.8, Rescale={target_rescale}）"
+            )
         else:
-            if round(float(self.var_api_scale.get()), 1) == 4.8 and round(float(self.var_api_rescale.get()), 2) == 0.25:
+            if round(float(self.var_api_scale.get()), 1) == 4.8 and round(float(self.var_api_rescale.get()), 2) in (0.0, 0.25):
                 self.var_api_scale.set(6.0)
                 self.var_api_rescale.set(0.0)
                 if hasattr(self, "lbl_api_scale"):
@@ -1373,6 +1549,14 @@ class StoryPromptGeneratorApp:
         val = float(val_str)
         desc = "清爽克制" if val < 0.9 else ("标准定稿" if val <= 1.08 else "浓稠增量强化")
         self.lbl_fluid.config(text=f"全局液体与残留痕迹权重倍率：{val:.2f}x（{desc}）")
+        self.refresh_output()
+
+    def _is_multi_angle_tab_active(self) -> bool:
+        return hasattr(self, "scene_nb") and self.scene_nb.index(self.scene_nb.select()) == 1
+
+    def _batch_toggle_ma(self, select_all: bool) -> None:
+        for ch in MULTI_ANGLE_CHAPTERS:
+            self.multi_angle_vars[ch["id"]].set(select_all)
         self.refresh_output()
 
     def _batch_toggle(self, mode: str | None) -> None:
@@ -1400,7 +1584,10 @@ class StoryPromptGeneratorApp:
 
     def refresh_output(self) -> None:
         cfg = self._collect_config()
-        selected_ids = [ch["id"] for ch in STORY_CHAPTERS if self.scene_vars[ch["id"]].get()]
+        if self._is_multi_angle_tab_active():
+            selected_ids = [ch["id"] for ch in MULTI_ANGLE_CHAPTERS if self.multi_angle_vars[ch["id"]].get()]
+        else:
+            selected_ids = [ch["id"] for ch in STORY_CHAPTERS if self.scene_vars[ch["id"]].get()]
         pure = self.var_pure_batch.get()
 
         cfg_pov = self._collect_config()
@@ -1453,7 +1640,8 @@ class StoryPromptGeneratorApp:
         if not items:
             return
         idx = min(self._get_selected_block_index(), len(items) - 1)
-        ch_meta = next((c for c in STORY_CHAPTERS if c["id"] == self.active_scene_id), STORY_CHAPTERS[0])
+        all_ch = STORY_CHAPTERS + MULTI_ANGLE_CHAPTERS
+        ch_meta = next((c for c in all_ch if c["id"] == self.active_scene_id), STORY_CHAPTERS[0])
         canvas_hint = items[idx][1]
         self._active_canvas_hint = canvas_hint
         self.lbl_single_info.config(text=f"{ch_meta['title']}  |  推荐画布：{canvas_hint}")
@@ -1461,7 +1649,8 @@ class StoryPromptGeneratorApp:
         self._update_token_badge_from_editor()
 
     def _refresh_single_tab(self, cfg: CharacterConfig) -> None:
-        ch_meta = next((c for c in STORY_CHAPTERS if c["id"] == self.active_scene_id), STORY_CHAPTERS[0])
+        all_ch = STORY_CHAPTERS + MULTI_ANGLE_CHAPTERS
+        ch_meta = next((c for c in all_ch if c["id"] == self.active_scene_id), STORY_CHAPTERS[0])
         items = generate_scene_prompts(self.active_scene_id, cfg, pov_override=cfg.perspective_mode)
         self._current_single_items = items
 
@@ -1527,18 +1716,26 @@ class StoryPromptGeneratorApp:
         self.root.clipboard_clear()
         self.root.clipboard_append(content)
         self.root.update_idletasks()
-        selected_cnt = sum(1 for v in self.scene_vars.values() if v.get())
+        if self._is_multi_angle_tab_active():
+            selected_cnt = sum(1 for v in self.multi_angle_vars.values() if v.get())
+            unit_label = "个镜头"
+        else:
+            selected_cnt = sum(1 for v in self.scene_vars.values() if v.get())
+            unit_label = "幕"
         label = "第一人称 (POV)" if track_mode == "pov" else "第三人称 (客观机位)"
-        self.var_status.set(f"📋 已一键复制【{label}】全部已勾选的 {selected_cnt} 幕整套提示词！")
+        self.var_status.set(f"📋 已一键复制【{label}】全部已勾选的 {selected_cnt} {unit_label}整套提示词！")
 
     def copy_current_track_suite(self) -> None:
         self._copy_specific_suite(self.var_perspective.get())
 
     def export_to_file(self) -> None:
         cfg = self._collect_config()
-        selected_ids = [ch["id"] for ch in STORY_CHAPTERS if self.scene_vars[ch["id"]].get()]
+        if self._is_multi_angle_tab_active():
+            selected_ids = [ch["id"] for ch in MULTI_ANGLE_CHAPTERS if self.multi_angle_vars[ch["id"]].get()]
+        else:
+            selected_ids = [ch["id"] for ch in STORY_CHAPTERS if self.scene_vars[ch["id"]].get()]
         if not selected_ids:
-            messagebox.showwarning("内容为空", "请先勾选要导出的故事线章节！")
+            messagebox.showwarning("内容为空", "请先勾选要导出的章节或镜头！")
             return
 
         both = self.var_export_both.get()
@@ -1804,6 +2001,8 @@ class StoryPromptGeneratorApp:
             self.btn_left_batch_checked,
             self.btn_batch_all12_right,
             self.btn_batch_checked_right,
+            self.btn_batch_ma_all,
+            self.btn_batch_ma_checked,
             self.btn_regen_same,
             self.btn_upscale_last,
             self.btn_upscale_choose,
@@ -1816,7 +2015,7 @@ class StoryPromptGeneratorApp:
         for row_btn in self.gen_btn_refs.values():
             row_btn.config(state=btn_state)
         cancel_state = "normal" if (locked and allow_cancel_batch) else "disabled"
-        for cb in ("btn_cancel_batch", "btn_stop_batch_right", "btn_stop_batch_preview"):
+        for cb in ("btn_cancel_batch", "btn_stop_batch_right", "btn_stop_ma_right", "btn_stop_batch_preview"):
             if hasattr(self, cb):
                 getattr(self, cb).config(state=cancel_state)
 
@@ -1825,7 +2024,7 @@ class StoryPromptGeneratorApp:
             return
         self._cancel_batch_upscale = True
         self._cancel_batch_gen = True
-        for cb in ("btn_cancel_batch", "btn_stop_batch_right", "btn_stop_batch_preview"):
+        for cb in ("btn_cancel_batch", "btn_stop_batch_right", "btn_stop_ma_right", "btn_stop_batch_preview"):
             if hasattr(self, cb):
                 getattr(self, cb).config(state="disabled")
         self.var_status.set("⏹ 正在等待当前这一张请求完成后安全中断批量任务（已落盘图片将完整保留）...")
@@ -2209,8 +2408,8 @@ class StoryPromptGeneratorApp:
         self.var_status.set(f"❌ 生图失败：{err_msg}")
         messagebox.showerror("NovelAI 生图失败", err_msg)
 
-    def on_batch_generate_scenes(self, force_all_12: bool = True) -> None:
-        """一键串行连出全套 12 幕（或当前已勾选幕），支持可选锁定沿用 0 号幕 (S00) 的 Seed"""
+    def on_batch_generate_scenes(self, force_all_12: bool = True, suite_kind: str = "story") -> None:
+        """一键串行连出全套 12 幕或 9 镜头多角度套图（互不混跑），支持可选锁定沿用 0 号幕 (S00) 的 Seed"""
         if self.is_generating:
             return
 
@@ -2223,13 +2422,24 @@ class StoryPromptGeneratorApp:
             )
             return
 
-        if force_all_12:
-            target_chapter_ids = [ch["id"] for ch in STORY_CHAPTERS]
+        is_ma = suite_kind == "multi_angle"
+        source_chapters = MULTI_ANGLE_CHAPTERS if is_ma else STORY_CHAPTERS
+        if is_ma:
+            if force_all_12:
+                target_chapter_ids = [ch["id"] for ch in MULTI_ANGLE_CHAPTERS]
+            else:
+                target_chapter_ids = [ch["id"] for ch in MULTI_ANGLE_CHAPTERS if self.multi_angle_vars[ch["id"]].get()]
+                if not target_chapter_ids:
+                    messagebox.showwarning("未勾选任何镜头", "请先在「多角度套图」标签页勾选至少 1 个镜头，或点击「🚀 一键出全套 9 镜头」。")
+                    return
         else:
-            target_chapter_ids = [ch["id"] for ch in STORY_CHAPTERS if self.scene_vars[ch["id"]].get()]
-            if not target_chapter_ids:
-                messagebox.showwarning("未勾选任何章节", "请先在右侧章节列表中勾选至少 1 个章节，或直接点击「🚀 一键出全套 12 幕」。")
-                return
+            if force_all_12:
+                target_chapter_ids = [ch["id"] for ch in STORY_CHAPTERS if ch["id"].startswith("S")]
+            else:
+                target_chapter_ids = [ch["id"] for ch in STORY_CHAPTERS if self.scene_vars[ch["id"]].get()]
+                if not target_chapter_ids:
+                    messagebox.showwarning("未勾选任何章节", "请先在右侧章节列表中勾选至少 1 个章节，或直接点击「🚀 一键出全套 12 幕」。")
+                    return
 
         mode = self.var_perspective.get()
         mode_label = "👁️ 第一人称 (POV)" if mode == "pov" else "🎥 第三人称 (客观机位)"
@@ -2239,7 +2449,7 @@ class StoryPromptGeneratorApp:
         batch_cfg.include_sub_variants = False
 
         tasks: List[SceneBatchTask] = []
-        for ch in STORY_CHAPTERS:
+        for ch in source_chapters:
             cid = ch["id"]
             if cid not in target_chapter_ids:
                 continue

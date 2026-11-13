@@ -454,7 +454,19 @@ def build_v5_medium_payload(
         raise NaiApiError("提示词内容为空，无法发起生图请求。")
 
     # 自动剥离内联负向块（-2::...::）转入独立的 v4_negative_prompt 通道，为正向框释放 100~150 个 T5 Token
+    # M6-Tune2 特例：Medium 模型仅在器官抑制块保留在正向 base_caption 内联时才生效，因此将其原样留在 base_caption
+    base_caption_inline_kept = ""
+    m_tune2_inline = re.search(
+        r"(?:,\s*)?(-2\.5::(?:(?!::).)*?nose bridge,\s*nostrils,\s*lips(?:(?!::).)*?::)",
+        base_caption,
+        flags=re.DOTALL,
+    )
+    if m_tune2_inline:
+        base_caption_inline_kept = m_tune2_inline.group(1).strip()
+        base_caption = (base_caption[: m_tune2_inline.start()] + base_caption[m_tune2_inline.end() :]).strip(" ,")
     base_caption, base_inline_negs = split_inline_negatives_from_caption(base_caption)
+    if base_caption_inline_kept:
+        base_caption = f"{base_caption.rstrip(', ')}, {base_caption_inline_kept}"
     char_inline_negs_list: List[List[str]] = []
     cleaned_char_captions: List[Dict[str, Any]] = []
     for c in char_captions:
