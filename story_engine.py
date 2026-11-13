@@ -26,6 +26,7 @@ from position_library import (
     ALL_POSITIONS_TEMPLATES,
     POS_CATEGORIES,
     POS_MALE_MODE_PRESETS,
+    POS_STAGE_PRESETS,
     sanitize_style_for_transparent_bg,
 )
 
@@ -103,6 +104,7 @@ class CharacterConfig:
     pos_transparent_bg: bool = False    # 16. 全体位组：开启 V5 原生透明背景抠图
     pos_male_mode: str = "👤 正常显示男方（默认无脸男 faceless male）"  # 17. 全体位组：男方开关/透明模式
     pos_show_penis: bool = True         # 18. 全体位组：是否显示男方器官（关闭时保留女方使用器官状态）
+    pos_stage: str = "🔥 1. 射精前 · 进行中（默认专注体位连接 · 无白浊）"  # 18b. 全体位组：射精前/中/后/拔出四态进度
     cam_enable_override: bool = False   # 19. 全局 3D 相机角度覆盖开关（默认 False 跟随原幕机位）
     cam_azimuth: int = 0                # 20. 相机水平环绕角 (-180 ~ +180, 0=正前方)
     cam_elevation: int = 12             # 21. 相机垂直俯仰角 (-80 ~ +85, 0=平视, >0俯拍, <0仰拍)
@@ -110,6 +112,15 @@ class CharacterConfig:
     cam_wide_lens: bool = False         # 23. 超广角强透视 (foreshortening)
     cam_dutch_angle: bool = False       # 24. 倾斜荷兰角构图 (dutch angle)
     cam_gaze_preset: str = "👁️ 始终看镜头（背后自动回眸）"  # 25. 角色视线跟随模式
+    expr_preset: str = "🔄 随本幕剧情默认（保留原幕微表情与熟睡/半醒节奏）"  # 26. 全局表情覆盖预设
+    expr_eye_state: str = "随表情预设默认"  # 27. 眼部状态细分覆盖
+    expr_mouth_state: str = "随表情预设默认"  # 28. 嘴部状态细分覆盖
+    expr_brow_blush: str = "随表情预设默认"  # 29. 眉眼/羞红强度细分覆盖
+    expr_heart_eyes: bool = False       # 30. 爱心瞳特效
+    expr_empty_eyes: bool = False       # 31. 空洞高光消失失神瞳特效
+    expr_tears: bool = False            # 32. 泪珠滑落特效
+    expr_override_sleeping: bool = False  # 33. 是否强行覆盖 S06/S07 熟睡闭眼幕次
+    custom_expression_tags: str = ""    # 34. 自定义表情补充 Tag
 
 
 # 快捷精密参照开关预设组
@@ -618,6 +629,166 @@ PIGMENT_PRESETS: Dict[str, str] = {
     "3B 鲜嫩樱桃亮粉色（pink pussy）": "pink pussy",
     "3C 熟感边缘深色双色层次（dark-edged mucosa）": "dark pigmented labia edges, two-tone mucosa",
     "3D 兴奋充血潮红发亮（flushed & glistening）": "glistening, flushed groin",
+}
+
+EXPRESSION_PRESETS: Dict[str, Dict[str, str]] = {
+    "🔄 随本幕剧情默认（保留原幕微表情与熟睡/半醒节奏）": {
+        "code": "auto",
+        "tags": "",
+        "prose": "",
+        "short": "🔄 随本幕默认",
+    },
+    "😳 羞涩微醺·含情欲泣（furrowed brow, half-closed eyes, watery eyes, blush）": {
+        "code": "shy_watery",
+        "tags": "furrowed brow, half-closed eyes, watery eyes, shy, blush",
+        "prose": "with a shy, flustered expression, misty half-closed eyes, and a warm blush",
+        "short": "😳 羞涩欲泣",
+    },
+    "😊 温柔浅笑·纯欲治愈（gentle smile, soft blush, parted lips）": {
+        "code": "gentle_smile",
+        "tags": "gentle smile, slight smile, parted lips, soft blush",
+        "prose": "with a gentle, affectionate smile and soft blush",
+        "short": "😊 温柔浅笑",
+    },
+    "😝 俏皮吐舌·小恶魔得意（:p, tongue out, smug, blush, floating heart）": {
+        "code": "playful_smug",
+        "tags": ":p, tongue out, smug, grin, furrowed brow, half-closed eyes, blush, floating heart",
+        "prose": "with a smug, playful expression and sticking the tip of her tongue out",
+        "short": "😝 俏皮吐舌",
+    },
+    "🥺 委屈忍耐·咬唇含泪（biting lip, furrowed brow, teary eyes, heavy blush）": {
+        "code": "biting_lip_teary",
+        "tags": "1.3::biting lip::, furrowed brow, v-shaped eyebrows, teary eyes, watery eyes, trembling, heavy blush",
+        "prose": "biting her lower lip with furrowed brows and teary eyes",
+        "short": "🥺 委屈咬唇",
+    },
+    "😵‍💫 迷离失神·融化恍惚（torogao, bedroom eyes, open mouth, saliva, heavy blush）": {
+        "code": "torogao_melting",
+        "tags": "1.35::torogao::, 1.3::half-closed eyes::, bedroom eyes, open mouth, parted lips, saliva, heavy breathing, heavy blush",
+        "prose": "with a dreamy, melting torogao expression, half-closed bedroom eyes, and heavy blush",
+        "short": "😵‍💫 迷离恍惚",
+    },
+    "🥵 极度高潮·阿黑颜吐舌（ahegao, rolling eyes, tongue out, drooling, heavy blush）": {
+        "code": "ahegao_climax",
+        "tags": "1.4::ahegao::, 1.3::rolling eyes::, upturned eyes, 1.35::tongue out::, open mouth, drooling, saliva, heavy blush, trembling",
+        "prose": "with an overwhelmed ahegao expression, rolling eyes, and tongue lolling out",
+        "short": "🥵 高潮阿黑颜",
+    },
+    "😴 安睡沉眠·呼吸微张（sleeping, closed eyes, relaxed, parted lips）": {
+        "code": "sleeping_peaceful",
+        "tags": "1.5::sleeping::, 1.4::closed eyes::, relaxed, parted lips, soft blush",
+        "prose": "fast asleep with peaceful closed eyes and softly parted lips",
+        "short": "😴 安睡闭眼",
+    },
+    "😪 困倦迷糊·半梦半醒（sleepy, drowsy, half-closed eyes, parted lips）": {
+        "code": "sleepy_drowsy",
+        "tags": "1.35::sleepy::, drowsy, 1.4::half-closed eyes::, parted lips, blush",
+        "prose": "with a drowsy, half-awake expression and heavy-lidded eyes",
+        "short": "😪 困倦半醒",
+    },
+    "😠 傲娇羞恼·微嗔瞪视（tsundere, glaring, furrowed brow, pout, heavy blush）": {
+        "code": "tsundere_glare",
+        "tags": "furrowed brow, v-shaped eyebrows, glaring, annoyed, 1.25::pout::, closed mouth, heavy blush",
+        "prose": "with a flustered, pouting tsundere glare and deep blush",
+        "short": "😠 傲娇微嗔",
+    },
+    "😶 无口清冷·淡漠平静（expressionless, kuudere, closed mouth, calm）": {
+        "code": "kuudere_calm",
+        "tags": "1.35::expressionless::, kuudere, calm, closed mouth, slight blush",
+        "prose": "with a cool, composed expressionless face",
+        "short": "😶 无口清冷",
+    },
+    "😱 惊慌失措·瞳孔收缩（surprised, wide-eyed, constricted pupils, open mouth）": {
+        "code": "surprised_panic",
+        "tags": "1.3::surprised::, 1.3::wide-eyed::, constricted pupils, open mouth, furrowed brow, sweatdrop, blush",
+        "prose": "with a startled, wide-eyed expression and parted mouth",
+        "short": "😱 惊慌睁眼",
+    },
+    "✏️ 纯自定义组合（仅使用下方眼/嘴/眉红细分项与自定义框）": {
+        "code": "custom_only",
+        "tags": "",
+        "prose": "",
+        "short": "✏️ 自定义表情",
+    },
+}
+
+EXPRESSION_EYE_PRESETS: Dict[str, str] = {
+    "随表情预设默认": "auto",
+    "👁️ 自然睁眼 (open eyes)": "open",
+    "😌 半阖迷离眼 (1.3::half-closed eyes::)": "half_closed",
+    "😴 完全闭眼 (1.4::closed eyes::)": "closed",
+    "😉 单眼眨眼 Wink (one eye closed, wink)": "wink",
+    "😳 睁大惊愕眼 (1.3::wide-eyed::)": "wide",
+    "🙄 翻白眼失神 (1.3::rolling eyes::)": "rolling",
+    "😒 半眯鄙视眼 (1.3::jitome::)": "jitome",
+}
+
+EXPRESSION_MOUTH_PRESETS: Dict[str, str] = {
+    "随表情预设默认": "auto",
+    "🙂 闭合微抿 (closed mouth)": "closed",
+    "👄 微张喘息 (parted lips)": "parted",
+    "😮 张口娇喘 (open mouth, heavy breathing)": "open_pant",
+    "😊 温柔微笑 (gentle smile, slight smile)": "smile",
+    "😏 坏笑/得意笑 (smug, smirk, grin)": "smug_grin",
+    "😛 俏皮吐舌 (:p, tongue out)": "playful_tongue",
+    "🥵 伸舌滴涎 (1.35::tongue out::, drooling)": "drool_tongue",
+    "😬 咬紧下唇 (1.3::biting lip::)": "bite_lip",
+    "😒 嘟嘴微嗔 (1.3::pout::)": "pout",
+}
+
+EXPRESSION_BLUSH_PRESETS: Dict[str, str] = {
+    "随表情预设默认": "auto",
+    "🌸 浅粉羞红 (light blush, shy)": "light",
+    "🌺 浓重潮红+八字眉 (furrowed brow, heavy blush)": "heavy_furrow",
+    "🥺 委屈蹙眉+泪光 (v-shaped eyebrows, watery eyes, blush)": "pitiful",
+    "🚫 无红晕清爽 (no blush)": "none",
+}
+
+_EXPR_EYE_TAGS: Dict[str, str] = {
+    "open": "open eyes",
+    "half_closed": "1.3::half-closed eyes::",
+    "closed": "1.4::closed eyes::",
+    "wink": "one eye closed, wink",
+    "wide": "1.3::wide-eyed::",
+    "rolling": "1.3::rolling eyes::",
+    "jitome": "1.3::jitome::",
+}
+
+_EXPR_MOUTH_TAGS: Dict[str, str] = {
+    "closed": "closed mouth",
+    "parted": "parted lips",
+    "open_pant": "open mouth, heavy breathing",
+    "smile": "gentle smile, slight smile",
+    "smug_grin": "smug, smirk, grin",
+    "playful_tongue": ":p, tongue out",
+    "drool_tongue": "1.35::tongue out::, drooling",
+    "bite_lip": "1.3::biting lip::",
+    "pout": "1.3::pout::",
+}
+
+_EXPR_BLUSH_TAGS: Dict[str, str] = {
+    "light": "light blush, shy",
+    "heavy_furrow": "furrowed brow, heavy blush",
+    "pitiful": "v-shaped eyebrows, watery eyes, blush",
+    "none": "no blush",
+}
+
+_EXPR_EYE_CONFLICT_TAGS = {
+    "half-closed eyes", "closed eyes", "sleeping", "sleep", "wide-eyed",
+    "rolling eyes", "upturned eyes", "one eye closed", "wink", "jitome",
+    "bedroom eyes", "open eyes", "constricted pupils",
+}
+
+_EXPR_MOUTH_CONFLICT_TAGS = {
+    ":p", "tongue out", "open mouth", "parted lips", "slightly open mouth",
+    "closed mouth", "biting lip", "pout", "pouting", "gentle smile",
+    "slight smile", "seductive smile", "smile", "smug", "smirk", "grin",
+    "drooling", "saliva",
+}
+
+_EXPR_BLUSH_CONFLICT_TAGS = {
+    "blush", "soft blush", "light blush", "heavy blush", "full-face blush",
+    "no blush", "furrowed brow", "v-shaped eyebrows", "shy",
 }
 
 
@@ -1231,8 +1402,325 @@ def is_m6_soft_morning_skin_active(cfg: CharacterConfig) -> bool:
     return any(k in cfg.style_preset for k in ("M6", "无描边暖杏真肤"))
 
 
-def expr_if(cfg: CharacterConfig, tags: str, essential: str = "") -> str:
+def _strip_expr_tag_list(tags_str: str, conflict_set: set[str]) -> List[str]:
+    out: List[str] = []
+    for raw_t in tags_str.split(","):
+        t = raw_t.strip()
+        if not t:
+            continue
+        bare = re.sub(r"^\d+(?:\.\d+)?::([\s\S]+?)::$", r"\1", t).strip().lower()
+        if bare in conflict_set:
+            continue
+        if t not in out:
+            out.append(t)
+    return out
+
+
+def is_expression_override_active(cfg: CharacterConfig) -> bool:
+    if not cfg.enable_expression:
+        return False
+    preset_info = EXPRESSION_PRESETS.get(cfg.expr_preset)
+    preset_code = preset_info.get("code", "auto") if preset_info else "auto"
+    eye_code = EXPRESSION_EYE_PRESETS.get(cfg.expr_eye_state, "auto")
+    mouth_code = EXPRESSION_MOUTH_PRESETS.get(cfg.expr_mouth_state, "auto")
+    blush_code = EXPRESSION_BLUSH_PRESETS.get(cfg.expr_brow_blush, "auto")
+    return bool(
+        (preset_code not in ("auto", "custom_only") and bool(preset_info and preset_info.get("tags")))
+        or eye_code != "auto"
+        or mouth_code != "auto"
+        or blush_code != "auto"
+        or cfg.expr_heart_eyes
+        or cfg.expr_empty_eyes
+        or cfg.expr_tears
+        or cfg.custom_expression_tags.strip()
+    )
+
+
+def describe_expression_short(cfg: CharacterConfig) -> str:
+    if not cfg.enable_expression:
+        return "🚫 模块已关闭"
+    if not is_expression_override_active(cfg):
+        return "🔄 随本幕默认"
+    parts: List[str] = []
+    preset_info = EXPRESSION_PRESETS.get(cfg.expr_preset)
+    preset_code = preset_info.get("code", "auto") if preset_info else "auto"
+    if preset_code not in ("auto", "custom_only") and preset_info:
+        parts.append(preset_info["short"])
+    elif preset_code == "custom_only":
+        parts.append("✏️ 自定义")
+
+    eye_code = EXPRESSION_EYE_PRESETS.get(cfg.expr_eye_state, "auto")
+    mouth_code = EXPRESSION_MOUTH_PRESETS.get(cfg.expr_mouth_state, "auto")
+    blush_code = EXPRESSION_BLUSH_PRESETS.get(cfg.expr_brow_blush, "auto")
+    if eye_code != "auto":
+        parts.append(f"眼:{cfg.expr_eye_state.split(' (')[0]}")
+    if mouth_code != "auto":
+        parts.append(f"嘴:{cfg.expr_mouth_state.split(' (')[0]}")
+    if blush_code != "auto":
+        parts.append(cfg.expr_brow_blush.split(" (")[0])
+    if cfg.expr_heart_eyes:
+        parts.append("💖爱心瞳")
+    if cfg.expr_empty_eyes:
+        parts.append("🖤空洞瞳")
+    if cfg.expr_tears:
+        parts.append("😭流泪")
+    if cfg.custom_expression_tags.strip():
+        parts.append("➕自定义Tag")
+    return " · ".join(parts) if parts else "✏️ 自定义表情"
+
+
+def compile_expression_override(cfg: CharacterConfig, scene_id: str = "") -> Dict[str, object]:
+    inactive: Dict[str, object] = {
+        "active": False,
+        "pos_tags_str": "",
+        "eyes_open": True,
+        "neg_add": [],
+        "neg_unblock": set(),
+        "prose_clause": "",
+        "short_label": "🔄 随本幕默认",
+    }
+    if scene_id == "MA0":
+        return inactive
+    if scene_id in ("S06", "S07") and not cfg.expr_override_sleeping:
+        return inactive
+    if not is_expression_override_active(cfg):
+        return inactive
+
+    preset_info = EXPRESSION_PRESETS.get(cfg.expr_preset)
+    preset_code = preset_info.get("code", "auto") if preset_info else "auto"
+    eye_code = EXPRESSION_EYE_PRESETS.get(cfg.expr_eye_state, "auto")
+    mouth_code = EXPRESSION_MOUTH_PRESETS.get(cfg.expr_mouth_state, "auto")
+    blush_code = EXPRESSION_BLUSH_PRESETS.get(cfg.expr_brow_blush, "auto")
+
+    m6_on = is_m6_soft_morning_skin_active(cfg)
+    fig_on = is_figure_style_active(cfg)
+
+    raw_base_tags = preset_info.get("tags", "") if (preset_info and preset_code not in ("auto", "custom_only")) else ""
+    tokens: List[str] = []
+    if raw_base_tags:
+        for raw_t in raw_base_tags.split(","):
+            t = raw_t.strip()
+            if not t:
+                continue
+            if (fig_on or m6_on) and ("floating heart" in t or "sweatdrop" in t):
+                continue
+            if m6_on:
+                if "bedroom eyes" in t:
+                    t = "shy"
+                elif "seductive smile" in t:
+                    t = "furrowed brow"
+                elif t == "parted lips":
+                    t = "open mouth"
+                elif "half-closed eyes" in t and eye_code == "auto":
+                    t = "0.85::half-closed eyes::"
+            if t not in tokens:
+                tokens.append(t)
+
+    if eye_code != "auto":
+        tokens = _strip_expr_tag_list(", ".join(tokens), _EXPR_EYE_CONFLICT_TAGS)
+        for et in _EXPR_EYE_TAGS.get(eye_code, "").split(","):
+            s = et.strip()
+            if s and s not in tokens:
+                tokens.append(s)
+
+    if mouth_code != "auto":
+        tokens = _strip_expr_tag_list(", ".join(tokens), _EXPR_MOUTH_CONFLICT_TAGS)
+        for mt in _EXPR_MOUTH_TAGS.get(mouth_code, "").split(","):
+            s = mt.strip()
+            if s and s not in tokens:
+                tokens.append(s)
+
+    if blush_code != "auto":
+        tokens = _strip_expr_tag_list(", ".join(tokens), _EXPR_BLUSH_CONFLICT_TAGS)
+        for bt in _EXPR_BLUSH_TAGS.get(blush_code, "").split(","):
+            s = bt.strip()
+            if s and s not in tokens:
+                tokens.append(s)
+
+    if cfg.expr_heart_eyes:
+        for ht in ("1.3::heart-shaped pupils::", "heart in eye"):
+            if ht not in tokens:
+                tokens.append(ht)
+    if cfg.expr_empty_eyes:
+        for et in ("1.3::empty eyes::", "no eye highlights"):
+            if et not in tokens:
+                tokens.append(et)
+    if cfg.expr_tears:
+        for tt in ("1.25::tears::", "crying", "teardrops", "watery eyes"):
+            if tt not in tokens:
+                tokens.append(tt)
+
+    custom_str = cfg.custom_expression_tags.strip()
+    if custom_str:
+        for ct in custom_str.split(","):
+            s = ct.strip()
+            if s and s not in tokens:
+                tokens.append(s)
+
+    pos_tags_str = ", ".join(tokens)
+    low_bare = {
+        re.sub(r"^\d+(?:\.\d+)?::([\s\S]+?)::$", r"\1", t).strip().lower()
+        for t in tokens
+    }
+    eyes_open = not ("closed eyes" in low_bare or "sleeping" in low_bare)
+
+    neg_unblock: set[str] = set()
+    neg_add: List[str] = []
+    if eyes_open:
+        neg_unblock.update({"open eyes", "half-closed eyes", "looking at viewer"})
+        neg_add.extend(["closed eyes", "sleeping"])
+    else:
+        neg_unblock.update({"closed eyes", "sleeping", "sleep"})
+        neg_add.extend(["open eyes", "half-closed eyes"])
+
+    if "ahegao" in low_bare:
+        neg_unblock.add("ahegao")
+    if "tongue out" in low_bare or ":p" in low_bare:
+        neg_unblock.add("tongue out")
+    if "wide-eyed" in low_bare:
+        neg_unblock.add("wide-eyed")
+    if "rolling eyes" in low_bare:
+        neg_unblock.add("rolling eyes")
+    if "no blush" in low_bare:
+        neg_add.extend(["blush", "heavy blush"])
+    if "closed mouth" in low_bare:
+        neg_add.extend(["open mouth", "tongue out"])
+
+    prose_clause = preset_info.get("prose", "") if (preset_info and preset_code not in ("auto", "custom_only")) else ""
+    extra_prose: List[str] = []
+    if eye_code == "closed":
+        extra_prose.append("closed eyes")
+    elif eye_code == "wink":
+        extra_prose.append("one eye winking playfully")
+    elif eye_code == "wide":
+        extra_prose.append("wide eyes")
+    elif eye_code == "rolling":
+        extra_prose.append("rolling eyes")
+    elif eye_code == "jitome":
+        extra_prose.append("half-lidded unimpressed stare")
+    elif eye_code == "half_closed" and "half-closed" not in prose_clause:
+        extra_prose.append("half-closed eyes")
+    elif eye_code == "open" and "closed eyes" in prose_clause:
+        prose_clause = prose_clause.replace("with peaceful closed eyes", "with open eyes")
+
+    if mouth_code == "closed":
+        extra_prose.append("closed lips")
+    elif mouth_code == "parted":
+        extra_prose.append("softly parted mouth")
+    elif mouth_code == "open_pant":
+        extra_prose.append("an open panting mouth")
+    elif mouth_code == "smile":
+        extra_prose.append("a gentle smile")
+    elif mouth_code == "smug_grin":
+        extra_prose.append("a teasing smirk")
+    elif mouth_code in ("playful_tongue", "drool_tongue"):
+        extra_prose.append("tongue sticking out")
+    elif mouth_code == "bite_lip":
+        extra_prose.append("biting her lower lip")
+    elif mouth_code == "pout":
+        extra_prose.append("a cute pout")
+
+    if cfg.expr_heart_eyes:
+        extra_prose.append("heart-shaped pupils")
+    if cfg.expr_empty_eyes:
+        extra_prose.append("dull empty eyes")
+    if cfg.expr_tears:
+        extra_prose.append("tears streaming down her cheeks")
+
+    if not prose_clause and extra_prose:
+        prose_clause = "with " + ", ".join(extra_prose)
+    elif prose_clause and extra_prose:
+        prose_clause = f"{prose_clause} and {', '.join(extra_prose)}"
+
+    return {
+        "active": bool(pos_tags_str),
+        "pos_tags_str": pos_tags_str,
+        "eyes_open": eyes_open,
+        "neg_add": neg_add,
+        "neg_unblock": neg_unblock,
+        "prose_clause": prose_clause,
+        "short_label": describe_expression_short(cfg),
+    }
+
+
+def apply_expression_to_prompt(prompt_str: str, expr_ctrl: Dict[str, object], apply_prose: bool, enable_negatives: bool) -> str:
+    if not prompt_str or prompt_str.startswith("[Base Prompt]") or not expr_ctrl.get("active"):
+        return prompt_str
+
+    neg_unblock = set(expr_ctrl["neg_unblock"])  # type: ignore[arg-type]
+    neg_add: List[str] = list(expr_ctrl["neg_add"])  # type: ignore[arg-type]
+    eyes_open = bool(expr_ctrl["eyes_open"])
+    prose_clause = str(expr_ctrl["prose_clause"] or "")
+
+    main_neg_tokens: List[str] | None = None
+    extra_neg_blocks: List[str] = []
+
+    def _collect_neg(m: re.Match[str]) -> str:
+        nonlocal main_neg_tokens
+        lvl = m.group(1)
+        body = m.group(2).strip(" ,")
+        if "nose bridge, nostrils, lips" in body:
+            extra_neg_blocks.append(f"{lvl}::{body}::")
+            return ""
+        sub_tokens = [t.strip() for t in body.split(",") if t.strip()]
+        filtered = [t for t in sub_tokens if t.lower() not in neg_unblock]
+        if lvl == "-2" and main_neg_tokens is None:
+            main_neg_tokens = filtered
+        elif filtered:
+            extra_neg_blocks.append(f"{lvl}::{', '.join(filtered)}::")
+        return ""
+
+    pos_only = re.sub(r"(?:,\s*)?(-\d+(?:\.\d+)?)::([\s\S]*?)::", _collect_neg, prompt_str).strip(" ,")
+
+    if not eyes_open:
+        pos_only = re.sub(r"(?:,\s*)?\blooking at viewer\b", "", pos_only)
+        pos_only = re.sub(r"^\s*,\s*", "", pos_only)
+
+    if apply_prose and prose_clause and pos_only.rstrip().endswith("."):
+        replaced = False
+        prose_subs: List[Tuple[str, str]] = [
+            (r"\bwhile gazing shyly at the viewer\b", prose_clause),
+            (r"\bwith a relaxed cheerful smile\b", prose_clause),
+            (r"\bwith a cheerful expression\b", prose_clause),
+            (r"\band gazing gently at the viewer\b", f"and looking at the viewer {prose_clause}"),
+            (r"\bgazing gently at the viewer\b", f"looking at the viewer {prose_clause}"),
+            (r"\band gazing curiously at the viewer\b", f"and looking at the viewer {prose_clause}"),
+            (r"\bgazing curiously at the viewer\b", f"looking at the viewer {prose_clause}"),
+            (r"\blooking up gently at the viewer\b", f"looking up at the viewer {prose_clause}"),
+            (r"\bgazing drowsily down\b", f"looking down {prose_clause}"),
+            (r"\bwith drowsy half-closed eyes\b", prose_clause),
+            (r"\bwith closed eyes\b", prose_clause),
+        ]
+        for pat, rep in prose_subs:
+            new_pos, count = re.subn(pat, rep, pos_only)
+            if count > 0:
+                pos_only = new_pos
+                replaced = True
+        if not replaced and prose_clause not in pos_only:
+            trimmed = pos_only.rstrip()
+            pos_only = trimmed[:-1] + f", {prose_clause}."
+
+    out_parts = [pos_only] if pos_only else []
+    if enable_negatives:
+        if main_neg_tokens is None and neg_add:
+            main_neg_tokens = []
+        if main_neg_tokens is not None:
+            lower_existing = {t.lower() for t in main_neg_tokens}
+            for na in reversed(neg_add):
+                if na.lower() not in lower_existing and na.lower() not in neg_unblock:
+                    main_neg_tokens.insert(0, na)
+                    lower_existing.add(na.lower())
+            if main_neg_tokens:
+                out_parts.append(f"-2::{', '.join(main_neg_tokens)}::")
+    out_parts.extend(extra_neg_blocks)
+    return ", ".join(out_parts)
+
+
+def expr_if(cfg: CharacterConfig, tags: str, essential: str = "", scene_id: str = "") -> str:
     """表情开关：关闭时仅保留剧情关键睁闭眼状态 essential；真实手办/M6晨光真肤画风下自动剥离平面符号与真人唇眼触发词"""
+    override_ctrl = compile_expression_override(cfg, scene_id)
+    if override_ctrl["active"]:
+        return str(override_ctrl["pos_tags_str"])
     m6_on = is_m6_soft_morning_skin_active(cfg)
     clean_ess = essential
     if m6_on and clean_ess:
@@ -1309,6 +1797,9 @@ def generate_scene_prompts(
     af = cfg.enable_action_fluids
     rem = cfg.enable_remnants
     neg_on = cfg.enable_negatives
+    expr_ctrl = compile_expression_override(cfg, scene_id)
+    def_eyes_open = bool(expr_ctrl["eyes_open"]) if expr_ctrl["active"] else True
+    sleep_eyes_open = bool(expr_ctrl["eyes_open"]) if expr_ctrl["active"] else False
     results: List[Tuple[str, str, str]] = []
 
     # ==========================================
@@ -1316,7 +1807,7 @@ def generate_scene_prompts(
     # ==========================================
     if scene_id in MULTI_ANGLE_TEMPLATES:
         tpl = MULTI_ANGLE_TEMPLATES[scene_id]
-        m = build_common_modules(cfg, eyes_open=True)
+        m = build_common_modules(cfg, eyes_open=def_eyes_open)
         ma_outfit = m["front_outfit_tags"]
         ma_shirt_prose = m["front_shirt_prose"]
         ma_leg = m["front_leg_tags"]
@@ -1335,6 +1826,20 @@ def generate_scene_prompts(
             ma_tail_neg = ", ".join(neg_tokens)
         elif not nsfw_on and "nude" not in ma_outfit:
             ma_tail_neg = "nsfw"
+        ma_scene = str(tpl["scene"])
+        if expr_ctrl["active"]:
+            for baked in (
+                "playful cheerful expression",
+                "relaxed cheerful smile",
+                "gentle shy expression",
+                "one eye slightly narrowed",
+                "gentle relaxed gaze",
+                "curious bright gaze",
+                "slight smile",
+            ):
+                ma_scene = re.sub(rf"(?:,\s*)?\b{re.escape(baked)}\b", "", ma_scene, flags=re.IGNORECASE)
+            ma_scene = re.sub(r"^[ ,]+|[ ,]+$", "", ma_scene)
+            ma_scene = join_tags(ma_scene, str(expr_ctrl["pos_tags_str"]))
         p_ma = join_tags(
             m["head_pos"],
             "1girl, solo",
@@ -1343,7 +1848,7 @@ def generate_scene_prompts(
             ma_leg,
             nsfw_prefix,
             anat_ma,
-            str(tpl["scene"]),
+            ma_scene,
             prose_if(cfg, f"{m['name']}{ma_shirt_prose} {tpl['prose']}"),
             wrap_tail_neg(m, ma_tail_neg, neg_on),
         )
@@ -1355,10 +1860,16 @@ def generate_scene_prompts(
     elif scene_id in ALL_POSITIONS_TEMPLATES:
         tpl = ALL_POSITIONS_TEMPLATES[scene_id]
         channel = tpl["channel"]
-        m = build_common_modules(cfg, eyes_open=True)
+        m = build_common_modules(cfg, eyes_open=def_eyes_open)
         trans_bg = bool(cfg.pos_transparent_bg)
         male_code = POS_MALE_MODE_PRESETS.get(cfg.pos_male_mode, "normal")
         show_p = bool(cfg.pos_show_penis)
+        stage_code = POS_STAGE_PRESETS.get(getattr(cfg, "pos_stage", ""), "before")
+        stage_badge = {
+            "during": " · [💦射精中]",
+            "after_inside": " · [🌊射精后结合]",
+            "pull_out": " · [🔗事后拔出]",
+        }.get(stage_code, "")
 
         if channel == "chest":
             if cfg.enable_outfit and cfg.enable_clothing_state and "nude" not in m["outfit_pos"]:
@@ -1391,13 +1902,46 @@ def generate_scene_prompts(
 
         if channel == "solo":
             actor_tags = "1girl, solo"
-            organ_tags = join_tags(
-                m["anat_pos"],
-                "1.2::spread pussy::",
-                wtag("pussy juice", 1.15, f) if af else "",
-            )
+            if stage_code == "before":
+                organ_tags = join_tags(
+                    m["anat_pos"],
+                    "1.2::spread pussy::",
+                    wtag("pussy juice", 1.15, f) if af else "",
+                )
+                organ_prose = ""
+            elif stage_code == "during":
+                organ_tags = join_tags(
+                    m["anat_pos"],
+                    "1.2::spread pussy::, orgasm, climax, female ejaculation, trembling, twitching",
+                    wtag("pussy juice", 1.4, f),
+                    wtag("squirting", 1.3, f),
+                    "pussy juice trail, sweat",
+                )
+                organ_prose = ", arching at the peak of climax with glistening fluids"
+            elif stage_code == "after_inside":
+                organ_tags = join_tags(
+                    m["anat_pos"],
+                    "1.2::spread pussy::, after masturbation, after vaginal, heavy breathing, trembling",
+                    wtag("cum", 1.4, f),
+                    wtag("cum in pussy", 1.45, f),
+                    wtag("cum overflow", 1.4, f),
+                    wtag("cumdrip", 1.35, f),
+                    "cum on thighs, sweat",
+                )
+                organ_prose = ", resting after climax with thick white cum pooling and overflowing from her parted lower anatomy"
+            else:  # "pull_out"
+                organ_tags = join_tags(
+                    m["anat_pos"],
+                    "1.3::spread pussy::, after vaginal, after sex, 0.65::gaping::, twitching",
+                    wtag("cum", 1.45, f),
+                    wtag("cum in pussy", 1.45, f),
+                    wtag("cumdrip", 1.45, f),
+                    wtag("cum string", 1.4, f),
+                    wtag("cum on stomach", 1.3, f),
+                    "cum on thighs, sweat",
+                )
+                organ_prose = ", right after withdrawal with thick white cum overflowing and dripping in sticky strings from her parted lower anatomy"
             partner_prose = ""
-            organ_prose = ""
             extra_neg = "1boy, male, penis, phallus, dildo"
         else:
             if male_code == "normal":
@@ -1421,76 +1965,215 @@ def generate_scene_prompts(
                 partner_neg = "1boy, male body, male torso" if show_p else "1boy, male, multiple people"
 
             if channel == "vaginal":
-                if show_p:
-                    organ_tags = join_tags(m["anat_pos"], "vaginal, insertion, penis", wtag("pussy juice", 1.2, f) if af else "")
-                    organ_prose = ""
-                else:
-                    organ_tags = join_tags(
-                        m["anat_pos"],
-                        "1.3::spread pussy::, 0.55::gaping::, twitching",
-                        wtag("pussy juice, cumdrip", 1.2, f) if af else "",
+                if stage_code == "before":
+                    if show_p:
+                        organ_tags = join_tags(m["anat_pos"], "vaginal, insertion, penis", wtag("pussy juice", 1.2, f) if af else "")
+                        organ_prose = ""
+                    else:
+                        organ_tags = join_tags(
+                            m["anat_pos"],
+                            "1.3::spread pussy::, 0.55::gaping::, twitching",
+                            wtag("pussy juice, cumdrip", 1.2, f) if af else "",
+                        )
+                        organ_prose = ", keeping her lower anatomy actively parted"
+                elif stage_code == "during":
+                    base_org = (
+                        join_tags(m["anat_pos"], "vaginal, insertion, penis")
+                        if show_p
+                        else join_tags(m["anat_pos"], "1.3::spread pussy::, 0.55::gaping::, twitching")
                     )
-                    organ_prose = ", keeping her lower anatomy actively parted"
+                    organ_tags = join_tags(
+                        base_org,
+                        "internal cumshot, ejaculation, climax, trembling, twitching",
+                        wtag("cum", 1.35, f),
+                        wtag("cum in pussy", 1.4, f),
+                        wtag("cum overflow", 1.35, f),
+                        "pussy juice, sweat",
+                    )
+                    organ_prose = ("" if show_p else ", keeping her lower anatomy actively parted") + (
+                        ", climaxing during internal ejaculation as thick white cum begins overflowing from their tightly joined base"
+                    )
+                elif stage_code == "after_inside":
+                    base_org = (
+                        join_tags(m["anat_pos"], "vaginal, insertion, penis")
+                        if show_p
+                        else join_tags(m["anat_pos"], "1.3::spread pussy::, 0.55::gaping::, twitching")
+                    )
+                    organ_tags = join_tags(
+                        base_org,
+                        "after vaginal, after ejaculation, heavy breathing, trembling",
+                        wtag("cum", 1.35, f),
+                        wtag("cum in pussy", 1.45, f),
+                        wtag("cum overflow", 1.45, f),
+                        wtag("cumdrip", 1.35, f),
+                        "cum on thighs, pussy juice, sweat",
+                    )
+                    organ_prose = ("" if show_p else ", keeping her lower anatomy actively parted") + (
+                        ", resting right after internal ejaculation while still deeply joined together as thick white cum pools and overflows"
+                    )
+                else:  # "pull_out"
+                    if show_p:
+                        organ_tags = join_tags(
+                            m["anat_pos"],
+                            "1.35::after vaginal::, 1.4::pull out::, after sex, penis, erection, twitching penis, cum on penis, spread pussy, 0.55::gaping::",
+                            wtag("cum", 1.4, f),
+                            wtag("cum in pussy", 1.45, f),
+                            wtag("cumdrip", 1.45, f),
+                            wtag("cum string", 1.45, f),
+                            wtag("cum on stomach", 1.25, f),
+                            "cum on thighs, pussy juice, sweat",
+                        )
+                        organ_prose = ", right after pulling out, with sticky white cum strings bridging between the tip and her parted, overflowing lower anatomy"
+                    else:
+                        organ_tags = join_tags(
+                            m["anat_pos"],
+                            "1.4::after vaginal::, pull out, after sex, 1.3::spread pussy::, 0.65::gaping::, twitching",
+                            wtag("cum", 1.4, f),
+                            wtag("cum in pussy", 1.45, f),
+                            wtag("cumdrip", 1.45, f),
+                            wtag("cum string", 1.45, f),
+                            wtag("cum on stomach", 1.25, f),
+                            "cum on thighs, pussy juice, sweat",
+                        )
+                        organ_prose = ", right after withdrawal, keeping her lower anatomy parted as thick white cum overflows, drips down, and forms sticky strings"
             elif channel == "oral":
-                if show_p:
-                    organ_tags = join_tags("oral, fellatio, penis, open mouth, tongue, saliva", wtag("saliva trail", 1.2, f) if af else "")
-                    organ_prose = ""
-                else:
-                    organ_tags = join_tags(
-                        "1.3::open mouth::, 1.35::o-shaped mouth::, tongue out, saliva",
-                        wtag("saliva trail", 1.2, f) if af else "",
+                if stage_code == "before":
+                    if show_p:
+                        organ_tags = join_tags("oral, fellatio, penis, open mouth, tongue, saliva", wtag("saliva trail", 1.2, f) if af else "")
+                        organ_prose = ""
+                    else:
+                        organ_tags = join_tags(
+                            "1.3::open mouth::, 1.35::o-shaped mouth::, tongue out, saliva",
+                            wtag("saliva trail", 1.2, f) if af else "",
+                        )
+                        organ_prose = ", keeping her mouth hollowed open with tongue extended"
+                elif stage_code == "during":
+                    base_org = (
+                        "oral, fellatio, penis, open mouth, tongue, saliva"
+                        if show_p
+                        else "1.3::open mouth::, 1.35::o-shaped mouth::, tongue out, saliva"
                     )
-                    organ_prose = ", keeping her mouth hollowed open with tongue extended"
-            elif channel == "chest":
-                if show_p:
                     organ_tags = join_tags(
-                        "paizuri, breasts squeezed together, cleavage, grabbing own breasts, penis",
-                        join_tags(wtag("glistening", 1.15, f), "sweat") if af else "",
+                        base_org,
+                        "ejaculation, climax, swallowing",
+                        wtag("cum", 1.35, f),
+                        wtag("cum in mouth", 1.4, f),
+                        wtag("cum overflow", 1.35, f),
+                        "cum on tongue, saliva",
                     )
-                    organ_prose = ""
-                else:
+                    organ_prose = ("" if show_p else ", keeping her mouth hollowed open with tongue extended") + (
+                        ", during oral ejaculation as thick white cum fills her mouth and overflows past her lips"
+                    )
+                elif stage_code == "after_inside":
+                    base_org = (
+                        "oral, fellatio, penis, open mouth, tongue, saliva"
+                        if show_p
+                        else "1.3::open mouth::, 1.35::o-shaped mouth::, tongue out, saliva"
+                    )
                     organ_tags = join_tags(
-                        "1.4::grabbing own breasts::, 1.35::breasts squeezed together::, cleavage, paizuri pose",
-                        join_tags(wtag("glistening", 1.15, f), "sweat") if af else "",
+                        base_org,
+                        "after fellatio, after ejaculation, heavy breathing",
+                        wtag("cum", 1.35, f),
+                        wtag("cum in mouth", 1.4, f),
+                        wtag("cum on tongue", 1.35, f),
+                        "cum on lips",
+                        wtag("cum string", 1.3, f),
+                        "saliva trail",
                     )
-                    organ_prose = ", pressing her chest together around an open central channel"
-            elif channel == "foot":
-                if show_p:
-                    organ_tags = join_tags("footjob, soles together, feet together, penis", wtag("cum on feet", 1.2, f) if af else "")
-                    organ_prose = ""
-                else:
+                    organ_prose = ("" if show_p else ", keeping her mouth hollowed open with tongue extended") + (
+                        ", right after oral ejaculation with thick white cum pooling on her tongue and along her lips"
+                    )
+                else:  # "pull_out"
+                    base_org = (
+                        "1.4::after fellatio::, 0.55::oral::, pull out, penis, cum on penis, open mouth, tongue out, saliva"
+                        if show_p
+                        else "1.4::after fellatio::, pull out, 1.3::open mouth::, 1.35::o-shaped mouth::, tongue out, saliva"
+                    )
                     organ_tags = join_tags(
-                        "1.4::soles together::, arched feet, feet together",
-                        wtag("cum on feet, cum string", 1.2, f) if af else "",
+                        base_org,
+                        wtag("cum", 1.4, f),
+                        wtag("cum in mouth", 1.3, f),
+                        wtag("cum on face", 1.35, f),
+                        wtag("cum on tongue", 1.35, f),
+                        wtag("cum string", 1.45, f),
+                        "saliva trail",
                     )
-                    organ_prose = ", keeping both soles arched and pressed together"
-            elif channel == "thigh":
-                if show_p:
-                    organ_tags = join_tags(m["anat_pos"], "sumata, thigh sex, thighs together, penis", wtag("pussy juice", 1.15, f) if af else "")
-                    organ_prose = ""
-                else:
-                    organ_tags = join_tags(m["anat_pos"], "1.35::thighs together::, squeezed thighs", wtag("pussy juice", 1.15, f) if af else "")
-                    organ_prose = ", keeping her inner thighs pressed snugly together"
-            elif channel == "glute":
-                if show_p:
+                    organ_prose = ("" if show_p else ", keeping her mouth hollowed open with tongue extended") + (
+                        ", pulling her mouth slightly back right after fellatio with sticky white cum strings stretching from her lips and tongue"
+                    )
+            else:
+                if channel == "chest":
+                    base_before_p = "paizuri, breasts squeezed together, cleavage, grabbing own breasts, penis"
+                    base_before_np = "1.4::grabbing own breasts::, 1.35::breasts squeezed together::, cleavage, paizuri pose"
+                    mild_fluid = join_tags(wtag("glistening", 1.15, f), "sweat") if af else ""
+                    np_prose = ", pressing her chest together around an open central channel"
+                    surface_tags = [wtag("cum on breasts", 1.4, f), wtag("cum on chest", 1.3, f), "facial"]
+                    surface_en = "squeezed cleavage and chest"
+                elif channel == "foot":
+                    base_before_p = "footjob, soles together, feet together, penis"
+                    base_before_np = "1.4::soles together::, arched feet, feet together"
+                    mild_fluid = wtag("cum on feet", 1.2, f) if af else ""
+                    np_prose = ", keeping both soles arched and pressed together"
+                    surface_tags = [wtag("cum on feet", 1.45, f), wtag("cum on toes", 1.35, f), "cum on soles"]
+                    surface_en = "pressed soles and toes"
+                elif channel == "thigh":
+                    base_before_p = join_tags(m["anat_pos"], "sumata, thigh sex, thighs together, penis")
+                    base_before_np = join_tags(m["anat_pos"], "1.35::thighs together::, squeezed thighs")
+                    mild_fluid = wtag("pussy juice", 1.15, f) if af else ""
+                    np_prose = ", keeping her inner thighs pressed snugly together"
+                    surface_tags = [wtag("cum on thighs", 1.4, f), wtag("cum on stomach", 1.3, f), "cum on pussy"]
+                    surface_en = "tightly pressed inner thighs"
+                elif channel == "glute":
+                    base_before_p = "ass focus, assjob, squeezed glutes, penis"
+                    base_before_np = "ass focus, 1.35::squeezed glutes::, spread ass"
+                    mild_fluid = join_tags(wtag("glistening", 1.15, f), "sweat") if af else ""
+                    np_prose = ", keeping her glutes pressed and arched"
+                    surface_tags = [wtag("cum on ass", 1.4, f), wtag("cum on back", 1.25, f)]
+                    surface_en = "arched glutes and lower back"
+                else:  # "hand"
+                    base_before_p = "handjob, two-handed, curled fingers, penis"
+                    base_before_np = "1.35::curled fingers::, cylindrical hand grip, hands together"
+                    mild_fluid = wtag("precum" if show_p else "saliva trail", 1.15, f) if af else ""
+                    np_prose = ", holding both hands in a curled cylindrical grip"
+                    surface_tags = [wtag("cum on hands", 1.4, f), wtag("cum on fingers", 1.35, f)]
+                    surface_en = "cupped hands and fingers"
+
+                base_org = base_before_p if show_p else base_before_np
+                organ_prose = "" if show_p else np_prose
+                if stage_code == "before":
+                    organ_tags = join_tags(base_org, mild_fluid)
+                elif stage_code == "during":
                     organ_tags = join_tags(
-                        "ass focus, assjob, squeezed glutes, penis",
-                        join_tags(wtag("glistening", 1.15, f), "sweat") if af else "",
+                        base_org,
+                        "ejaculation, climax, flying cum",
+                        wtag("cum", 1.35, f),
+                        *surface_tags,
+                        wtag("cum string", 1.25, f),
+                        "sweat",
                     )
-                    organ_prose = ""
-                else:
+                    organ_prose += f", at the moment of ejaculation as thick white cum spurts across her {surface_en}"
+                elif stage_code == "after_inside":
                     organ_tags = join_tags(
-                        "ass focus, 1.35::squeezed glutes::, spread ass",
-                        join_tags(wtag("glistening", 1.15, f), "sweat") if af else "",
+                        base_org,
+                        "after ejaculation, heavy breathing",
+                        wtag("cum", 1.4, f),
+                        *surface_tags,
+                        wtag("cumdrip", 1.35, f),
+                        wtag("cum string", 1.3, f),
+                        "sweat",
                     )
-                    organ_prose = ", keeping her glutes pressed and arched"
-            else:  # "hand"
-                if show_p:
-                    organ_tags = join_tags("handjob, two-handed, curled fingers, penis", wtag("precum", 1.15, f) if af else "")
-                    organ_prose = ""
-                else:
-                    organ_tags = join_tags("1.35::curled fingers::, cylindrical hand grip, hands together", wtag("saliva trail", 1.15, f) if af else "")
-                    organ_prose = ", holding both hands in a curled cylindrical grip"
+                    organ_prose += f", resting right after ejaculation while still holding close as thick white cum pools and drips over her {surface_en}"
+                else:  # "pull_out"
+                    organ_tags = join_tags(
+                        base_org,
+                        "after ejaculation, pull out, excessive cum",
+                        wtag("cum", 1.45, f),
+                        *surface_tags,
+                        wtag("cum string", 1.45, f),
+                        wtag("cumdrip", 1.4, f),
+                        "sweat",
+                    )
+                    organ_prose += f", pulling slightly back right after ejaculation with sticky white cum strings stretching across her {surface_en}"
 
             penis_neg = "" if show_p else "penis, phallus, testicles, dildo, sex toy"
             extra_neg = join_tags(partner_neg, penis_neg)
@@ -1516,13 +2199,13 @@ def generate_scene_prompts(
             prose_if(cfg, prose_sentence, transparent_bg=trans_bg),
             wrap_tail_neg(m, full_neg, neg_on),
         )
-        results.append((f"【{tpl['title']} · {pov_lbl}】", tpl["canvas"], p_pos))
+        results.append((f"【{tpl['title']} · {pov_lbl}{stage_badge}】", tpl["canvas"], p_pos))
 
     # ==========================================
     # F00: 晨光白床正面跪坐前倾（正脸与身材状态校验）
     # ==========================================
     elif scene_id == "F00":
-        m = build_common_modules(cfg, eyes_open=True)
+        m = build_common_modules(cfg, eyes_open=def_eyes_open)
         bg_bed = "indoors, bedroom, bed, white bedsheet, wooden headboard, window, cream sheer curtains" if cfg.enable_background else ""
         bed_prose = " on a white bedsheet in front of a wooden headboard" if cfg.enable_background else ""
 
@@ -1567,7 +2250,7 @@ def generate_scene_prompts(
     # S00: 沙发跪爬吐舌回眸
     # ==========================================
     elif scene_id == "S00":
-        m = build_common_modules(cfg, eyes_open=True)
+        m = build_common_modules(cfg, eyes_open=def_eyes_open)
         rem_tags = join_tags("after vaginal, cum", wtag("cum in pussy", 1.0, f), wtag("cumdrip", 1.0, f), "cum on thighs, sweat") if rem else ""
         exp_tags = expr_if(cfg, ":p, tongue out, smug, furrowed brow, half-closed eyes, watery eyes, blush, floating heart")
         if is_pov:
@@ -1597,7 +2280,7 @@ def generate_scene_prompts(
     # S01: 跪爬口部互动进行中
     # ==========================================
     elif scene_id == "S01":
-        m = build_common_modules(cfg, eyes_open=True)
+        m = build_common_modules(cfg, eyes_open=def_eyes_open)
         exp_tags = expr_if(cfg, "furrowed brow, half-closed eyes, watery eyes, blush, floating heart")
         rem_tags = join_tags("after vaginal, cum", wtag("cum in pussy", 1.0, f), wtag("cumdrip", 1.0, f), "cum on thighs") if rem else ""
         fluid_act = "saliva, sweat" if af else ""
@@ -1628,7 +2311,7 @@ def generate_scene_prompts(
     # S02: 口部事后松口拉丝 + 发丝沾染
     # ==========================================
     elif scene_id == "S02":
-        m = build_common_modules(cfg, eyes_open=True)
+        m = build_common_modules(cfg, eyes_open=def_eyes_open)
         exp_tags = expr_if(cfg, "furrowed brow, half-closed eyes, watery eyes, heavy blush, floating heart")
         oral_fluids = join_tags(
             wtag("cum in mouth", 1.05, f), wtag("cum on face", 1.25, f), wtag("cum in hair", 0.85, f), wtag("cum string", 1.45, f), "saliva trail, sweat"
@@ -1664,7 +2347,7 @@ def generate_scene_prompts(
     # S03: 事前 vs 事后拉丝（支持 2koma 双格 或 拆为单张高清图）
     # ==========================================
     elif scene_id == "S03":
-        m = build_common_modules(cfg, eyes_open=True)
+        m = build_common_modules(cfg, eyes_open=def_eyes_open)
         exp_tags = expr_if(cfg, "furrowed brow, half-closed eyes, watery eyes, heavy blush")
         act_fluids = join_tags(wtag("cum on face", 1.25, f), wtag("cum in hair", 0.85, f), wtag("cum string", 1.4, f), "sweat") if af else ""
         before_fluids = "saliva, sweat" if af else ""
@@ -1753,7 +2436,7 @@ def generate_scene_prompts(
     # S04: 骑乘位（支持 2koma 双格 或 拆为单张高清图：深坐溢流 / 微抬脱出拉丝）
     # ==========================================
     elif scene_id == "S04":
-        m = build_common_modules(cfg, eyes_open=True)
+        m = build_common_modules(cfg, eyes_open=def_eyes_open)
         exp_tags = expr_if(cfg, "slight smile, smug, furrowed brow, half-closed eyes, watery eyes, heavy blush, floating heart", essential="1.4::closed mouth::")
         rem_face = join_tags(wtag("cum on face", 1.4, f), wtag("cum in hair", 1.0, f)) if rem else ""
         act_fluids = join_tags(
@@ -1879,7 +2562,7 @@ def generate_scene_prompts(
     # S05: 单人犬式单侧屈膝高抬腿排泄 + 大滩积液
     # ==========================================
     elif scene_id == "S05":
-        m = build_common_modules(cfg, eyes_open=True)
+        m = build_common_modules(cfg, eyes_open=def_eyes_open)
         exp_tags = expr_if(cfg, ":p, tongue out, smug, furrowed brow, half-closed eyes, watery eyes, heavy blush, floating heart")
         rem_face = join_tags(wtag("cum on face", 1.3, f), wtag("cum in hair", 0.9, f)) if rem else ""
         act_pee = join_tags(
@@ -1919,8 +2602,8 @@ def generate_scene_prompts(
     # S06: 仰躺熟睡 + 小腹积液（闭眼自动隐藏瞳色）
     # ==========================================
     elif scene_id == "S06":
-        m = build_common_modules(cfg, eyes_open=False, is_sleep_disheveled=True)
-        exp_tags = expr_if(cfg, "exhausted, parted lips, heavy blush", essential="1.5::sleeping::, 1.4::closed eyes::, relaxed")
+        m = build_common_modules(cfg, eyes_open=sleep_eyes_open, is_sleep_disheveled=True)
+        exp_tags = expr_if(cfg, "exhausted, parted lips, heavy blush", essential="1.5::sleeping::, 1.4::closed eyes::, relaxed", scene_id=scene_id)
         stomach_fluid = join_tags(
             wtag("cum on stomach", 1.55, f),
             wtag("cum on clothes", 1.45, f) if m["covers_midriff"] else "",
@@ -1959,8 +2642,8 @@ def generate_scene_prompts(
     # S07: 熟睡盘腿脚心相对 + 双手抓脚足交（双脚糊满拉丝）
     # ==========================================
     elif scene_id == "S07":
-        m = build_common_modules(cfg, eyes_open=False, is_sleep_disheveled=True)
-        exp_tags = expr_if(cfg, "exhausted, parted lips, heavy blush", essential="1.5::sleeping::, 1.4::closed eyes::, sleep, relaxed")
+        m = build_common_modules(cfg, eyes_open=sleep_eyes_open, is_sleep_disheveled=True)
+        exp_tags = expr_if(cfg, "exhausted, parted lips, heavy blush", essential="1.5::sleeping::, 1.4::closed eyes::, sleep, relaxed", scene_id=scene_id)
         is_barefoot_hold = "barefoot" in m["leg_foot"]
         foot_fluids = join_tags(
             wtag("cum on feet", 1.6, f),
@@ -2007,7 +2690,7 @@ def generate_scene_prompts(
     # S08: 盘腿抓脚互动中被弄醒 · 睡眼惺忪略带妩媚
     # ==========================================
     elif scene_id == "S08":
-        m = build_common_modules(cfg, eyes_open=True, is_sleep_disheveled=True)
+        m = build_common_modules(cfg, eyes_open=def_eyes_open, is_sleep_disheveled=True)
         exp_tags = expr_if(
             cfg,
             "1.3::bedroom eyes::, 1.2::seductive smile::, parted lips, heavy blush, exhausted",
@@ -2059,7 +2742,7 @@ def generate_scene_prompts(
     # S09: 欺身单手轻拢脖颈 + 迷离仰视（中近景）
     # ==========================================
     elif scene_id == "S09":
-        m = build_common_modules(cfg, eyes_open=True, is_sleep_disheveled=True)
+        m = build_common_modules(cfg, eyes_open=def_eyes_open, is_sleep_disheveled=True)
         exp_tags = expr_if(
             cfg,
             "1.35::bedroom eyes::, 1.15::seductive smile::, parted lips, heavy blush",
@@ -2102,7 +2785,7 @@ def generate_scene_prompts(
     # S10: 单手轻拢脖颈 + 传教士压身深入
     # ==========================================
     elif scene_id == "S10":
-        m = build_common_modules(cfg, eyes_open=True, is_sleep_disheveled=True)
+        m = build_common_modules(cfg, eyes_open=def_eyes_open, is_sleep_disheveled=True)
         exp_tags = expr_if(
             cfg,
             "1.35::bedroom eyes::, 1.15::seductive smile::, parted lips, heavy blush",
@@ -2152,7 +2835,7 @@ def generate_scene_prompts(
     # S11: 传教士位双腿间拔出外射至小腹
     # ==========================================
     elif scene_id == "S11":
-        m = build_common_modules(cfg, eyes_open=True, is_sleep_disheveled=True)
+        m = build_common_modules(cfg, eyes_open=def_eyes_open, is_sleep_disheveled=True)
         exp_tags = expr_if(
             cfg,
             "1.35::bedroom eyes::, 1.15::seductive smile::, parted lips, heavy blush, trembling",
@@ -2212,13 +2895,21 @@ def generate_scene_prompts(
             )
             results.append(("【S11 · 第三人称视角 (客观镜头) · 侧斜全景传教士双腿间拔出外射】", "横图 1216x832", p_3rd))
 
+    if expr_ctrl["active"]:
+        short_expr = str(expr_ctrl["short_label"])
+        expr_results: List[Tuple[str, str, str]] = []
+        for sub_title, canvas_str, prompt_str in results:
+            new_p = apply_expression_to_prompt(prompt_str, expr_ctrl, cfg.enable_t5_prose, neg_on)
+            expr_results.append((f"{sub_title} · [😊{short_expr}]", canvas_str, new_p))
+        results = expr_results
+
     if cfg.cam_enable_override and scene_id != "MA0":
         shot_code = CAMERA_SHOT_PRESETS.get(cfg.cam_shot_preset, "auto")
         gaze_code = CAMERA_GAZE_PRESETS.get(cfg.cam_gaze_preset, "auto_look")
         short_cam = describe_camera_short(
             True, cfg.cam_azimuth, cfg.cam_elevation, shot_code, cfg.cam_wide_lens, cfg.cam_dutch_angle
         )
-        eyes_closed = scene_id in ("S06", "S07")
+        eyes_closed = (not bool(expr_ctrl["eyes_open"])) if expr_ctrl["active"] else (scene_id in ("S06", "S07"))
         cam_results: List[Tuple[str, str, str]] = []
         for sub_title, canvas_str, prompt_str in results:
             new_p = apply_camera_override_to_prompt(
@@ -2278,9 +2969,11 @@ def _describe_active_modules(cfg: CharacterConfig) -> str:
     for flag, name in mapping:
         if not flag:
             off_list.append(name)
+    stage_code = POS_STAGE_PRESETS.get(getattr(cfg, "pos_stage", ""), "before")
+    stage_note = f" | 💦体位阶段:{stage_code}" if stage_code != "before" else ""
     if not off_list:
-        return "全量直出模式（全部模块 ON）"
-    return f"精密参照减负模式（已 OFF：{' / '.join(off_list)}）"
+        return f"全量直出模式（全部模块 ON）{stage_note}"
+    return f"精密参照减负模式（已 OFF：{' / '.join(off_list)}）{stage_note}"
 
 
 def _build_single_track_blocks(cfg: CharacterConfig, selected_ids: List[str], track_mode: str, pure_batch: bool) -> List[str]:

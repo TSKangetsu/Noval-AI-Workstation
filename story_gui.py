@@ -73,6 +73,7 @@ from story_engine import (
     ALL_POSITIONS_CHAPTERS,
     POS_CATEGORIES,
     POS_MALE_MODE_PRESETS,
+    POS_STAGE_PRESETS,
     MODULE_SWITCH_PRESETS,
     CharacterConfig,
     generate_scene_prompts,
@@ -299,6 +300,7 @@ class StoryPromptGeneratorApp:
         self.var_pos_transparent_bg = tk.BooleanVar(value=cfg.pos_transparent_bg)
         self.var_pos_male_mode = tk.StringVar(value=cfg.pos_male_mode)
         self.var_pos_show_penis = tk.BooleanVar(value=cfg.pos_show_penis)
+        self.var_pos_stage = tk.StringVar(value=cfg.pos_stage)
         self.var_cam_override = tk.BooleanVar(value=cfg.cam_enable_override)
         self.var_cam_azimuth = tk.IntVar(value=cfg.cam_azimuth)
         self.var_cam_elevation = tk.IntVar(value=cfg.cam_elevation)
@@ -321,6 +323,7 @@ class StoryPromptGeneratorApp:
         self.var_api_use_s00_seed = tk.BooleanVar(value=api_cfg.use_s00_seed)
         self.var_api_extra_uc = tk.StringVar(value=api_cfg.extra_uc)
         self.var_api_quality = tk.BooleanVar(value=api_cfg.append_v5_quality)
+        self.var_api_auto_upscale_replace = tk.BooleanVar(value=api_cfg.auto_upscale_replace)
         self.var_api_proxy = tk.StringVar(value=api_cfg.proxy)
         self.var_api_outdir = tk.StringVar(value=api_cfg.output_dir)
         self.var_anlas_badge = tk.StringVar(
@@ -1217,6 +1220,13 @@ class StoryPromptGeneratorApp:
             variable=self.var_api_quality,
         ).pack(anchor="w", pady=(4, 4))
 
+        ttk.Checkbutton(
+            tab_api,
+            text="🔎 生成后立刻执行 2x Upscale 并移除放大前原图 (每次 +1 Anlas)",
+            variable=self.var_api_auto_upscale_replace,
+            command=self._update_cost_hint_label,
+        ).pack(anchor="w", pady=(0, 6))
+
         ttk.Label(tab_api, text="额外全局负面词 UC（可选，附加在 V5 Heavy 预设之后）：").pack(anchor="w", pady=(4, 2))
         self._make_api_entry(tab_api, self.var_api_extra_uc).pack(fill=tk.X, ipady=3)
 
@@ -1677,7 +1687,25 @@ class StoryPromptGeneratorApp:
             font=("Microsoft YaHei UI", 9, "bold"),
             cursor="hand2",
             command=self.refresh_output,
+        ).pack(side=tk.LEFT, padx=(0, 8))
+
+        tk.Label(
+            pos_bar,
+            text="阶段：",
+            bg=BG_INPUT,
+            fg=FG_MUTED,
+            font=("Microsoft YaHei UI", 9, "bold"),
         ).pack(side=tk.LEFT)
+
+        cb_pos_stage = ttk.Combobox(
+            pos_bar,
+            textvariable=self.var_pos_stage,
+            values=list(POS_STAGE_PRESETS.keys()),
+            state="readonly",
+            width=26,
+        )
+        cb_pos_stage.pack(side=tk.LEFT, padx=(2, 8))
+        cb_pos_stage.bind("<<ComboboxSelected>>", lambda _e: self.refresh_output())
 
         self.btn_stop_pos_right = ttk.Button(
             pos_bar,
@@ -1961,6 +1989,7 @@ class StoryPromptGeneratorApp:
             pos_transparent_bg=self.var_pos_transparent_bg.get(),
             pos_male_mode=self.var_pos_male_mode.get(),
             pos_show_penis=self.var_pos_show_penis.get(),
+            pos_stage=self.var_pos_stage.get(),
             cam_enable_override=self.var_cam_override.get(),
             cam_azimuth=int(self.var_cam_azimuth.get()),
             cam_elevation=int(self.var_cam_elevation.get()),
@@ -2019,6 +2048,8 @@ class StoryPromptGeneratorApp:
                 self.var_pos_male_mode.set(data["pos_male_mode"])
             if "pos_show_penis" in data:
                 self.var_pos_show_penis.set(bool(data.get("pos_show_penis", True)))
+            if data.get("pos_stage") in POS_STAGE_PRESETS:
+                self.var_pos_stage.set(data["pos_stage"])
             if "cam_enable_override" in data:
                 self.var_cam_override.set(bool(data.get("cam_enable_override", False)))
             if "cam_azimuth" in data:
@@ -2596,8 +2627,9 @@ class StoryPromptGeneratorApp:
         hint = getattr(self, "_active_canvas_hint", "竖图 832x1216")
         w, h = parse_canvas_size(hint, self.var_api_canvas.get())
         est = estimate_v5_medium_anlas(w, h, steps=14, is_opus_free_eligible=False)
+        up_note = " + 自动2x放大 1 Anlas" if self.var_api_auto_upscale_replace.get() else ""
         self.lbl_cost_hint.config(
-            text=f"📐 当前实际发送尺寸：{w} × {h}  |  单张预计消耗：约 {est} Anlas（Opus 免费额度充足时为 0）"
+            text=f"📐 当前实际发送尺寸：{w} × {h}  |  单张预计消耗：约 {est} Anlas（Opus 免费额度充足时为 0）{up_note}"
         )
 
     def _collect_api_settings(self) -> NaiApiSettings:
@@ -2614,6 +2646,7 @@ class StoryPromptGeneratorApp:
             use_s00_seed=bool(self.var_api_use_s00_seed.get()),
             extra_uc=self.var_api_extra_uc.get().strip(),
             append_v5_quality=bool(self.var_api_quality.get()),
+            auto_upscale_replace=bool(self.var_api_auto_upscale_replace.get()),
             proxy=self.var_api_proxy.get().strip(),
             output_dir=self.var_api_outdir.get().strip() or DEFAULT_OUTPUT_DIR,
         )
@@ -2710,9 +2743,15 @@ class StoryPromptGeneratorApp:
         self.btn_check_anlas.config(state="normal")
         opus_note = ""
         if info.opus_usage_percent is not None:
-            state_txt = "已透支(计费)" if info.opus_usage_negative else f"充裕({info.opus_usage_percent}%)"
+            used_pct = max(0, 100 - info.opus_usage_percent)
+            state_txt = "已透支(计费)" if info.opus_usage_negative else f"充裕(余量{info.opus_usage_percent}%/已用{used_pct}%)"
             opus_note = f" | V5额度条:{state_txt}"
-        badge = f"💎 套餐：{info.tier_name} ({'激活' if info.active else '未激活'})  |  剩余点数：{info.anlas_left} Anlas{opus_note}"
+        elif info.tier == 3 and info.active:
+            opus_note = " | ♾️Opus免点额度:生效中(≤1024² 0点)"
+        badge = (
+            f"💎 {info.tier_name} ({'激活' if info.active else '未激活'}) | "
+            f"订阅月度:{info.fixed_anlas} + 永久:{info.purchased_anlas} = {info.anlas_left} Anlas{opus_note}"
+        )
         self.var_anlas_badge.set(badge)
         self.var_status.set(f"✅ Token 验证成功！{badge}")
 
@@ -3081,11 +3120,34 @@ class StoryPromptGeneratorApp:
                     seed=settings.seed,
                     extra_uc=settings.extra_uc,
                     append_v5_quality=settings.append_v5_quality,
+                    auto_upscale_replace=settings.auto_upscale_replace,
                     proxy=settings.proxy,
                     output_dir=settings.output_dir,
                     scene_id=scene_file_tag,
                     perspective_mode=mode,
                 )
+                if settings.auto_upscale_replace and res.width * res.height <= 1048576:
+                    raw_path = res.saved_path
+                    try:
+                        up_res = upscale_single_image_nai(
+                            api_token=settings.api_token,
+                            source_image_path=raw_path,
+                            proxy=settings.proxy,
+                        )
+                        if os.path.exists(raw_path) and os.path.abspath(raw_path) != os.path.abspath(up_res.saved_path):
+                            os.remove(raw_path)
+                        res = GenerationResult(
+                            image_bytes=up_res.image_bytes,
+                            saved_path=up_res.saved_path,
+                            seed=res.seed,
+                            width=up_res.out_width,
+                            height=up_res.out_height,
+                            elapsed_sec=round(res.elapsed_sec + up_res.elapsed_sec, 2),
+                            estimated_anlas=res.estimated_anlas + up_res.anlas_cost,
+                            model=res.model,
+                        )
+                    except Exception:
+                        pass
                 # 生图成功后顺便静默刷新一次剩余点数（失败也不影响主图展示）
                 sub_info: Optional[SubscriptionInfo] = None
                 try:
@@ -3333,6 +3395,7 @@ class StoryPromptGeneratorApp:
                     fallback_s00_seed=self.last_s00_seed,
                     extra_uc=settings.extra_uc,
                     append_v5_quality=settings.append_v5_quality,
+                    auto_upscale_replace=settings.auto_upscale_replace,
                     proxy=settings.proxy,
                     output_dir=settings.output_dir,
                     perspective_mode=mode,

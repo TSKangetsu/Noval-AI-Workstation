@@ -23,6 +23,13 @@ POS_MALE_MODE_PRESETS: Dict[str, str] = {
     "🚫 关闭男方（纯单人 1girl, solo · 保留姿势）": "off",
 }
 
+POS_STAGE_PRESETS: Dict[str, str] = {
+    "🔥 1. 射精前 · 进行中（默认专注体位连接 · 无白浊）": "before",
+    "💦 2. 射精中 · 内射/迸发瞬间（climax / internal cumshot · 白浊喷涌）": "during",
+    "🌊 3. 射精后 · 结合留存溢流（after ejaculation · 仍保持结合白浊满溢）": "after_inside",
+    "🔗 4. 事后拔出 · 脱出拉丝/外射（pull out · 刚拔出拉丝与穴口白浊流淌）": "pull_out",
+}
+
 POS_CATEGORIES: List[str] = [
     "全部体位 (All)",
     "1. 仰卧·传教士系",

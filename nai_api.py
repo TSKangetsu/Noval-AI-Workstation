@@ -190,6 +190,7 @@ class NaiApiSettings:
     use_s00_seed: bool = True
     extra_uc: str = ""
     append_v5_quality: bool = True
+    auto_upscale_replace: bool = False
     proxy: str = ""
     output_dir: str = DEFAULT_OUTPUT_DIR
 
@@ -206,6 +207,8 @@ class SubscriptionInfo:
     purchased_anlas: int
     opus_usage_percent: Optional[int] = None
     opus_usage_negative: bool = False
+    unlimited_max_priority: bool = False
+    expires_at: int = 0
 
 
 @dataclass
@@ -252,6 +255,8 @@ def load_api_settings() -> NaiApiSettings:
                 settings.extra_uc = str(data["extra_uc"])
             if "append_v5_quality" in data:
                 settings.append_v5_quality = bool(data["append_v5_quality"])
+            if "auto_upscale_replace" in data:
+                settings.auto_upscale_replace = bool(data["auto_upscale_replace"])
             if "proxy" in data:
                 settings.proxy = str(data["proxy"]).strip()
             if data.get("output_dir"):
@@ -687,6 +692,14 @@ def fetch_subscription_info(api_token: str, proxy: str = "") -> SubscriptionInfo
         opus_pct = int(usage.get("percent", 0) or 0)
         opus_neg = bool(usage.get("isNegative", False))
 
+    perks = data.get("perks") or {}
+    unlimited_max_priority = bool(
+        perks.get("unlimitedMaxPriority", tier == 3 and active)
+        if isinstance(perks, dict)
+        else (tier == 3 and active)
+    )
+    expires_at = int(data.get("expiresAt", 0) or 0)
+
     return SubscriptionInfo(
         tier=tier,
         tier_name=tier_name,
@@ -696,6 +709,8 @@ def fetch_subscription_info(api_token: str, proxy: str = "") -> SubscriptionInfo
         purchased_anlas=purchased_anlas,
         opus_usage_percent=opus_pct,
         opus_usage_negative=opus_neg,
+        unlimited_max_priority=unlimited_max_priority,
+        expires_at=expires_at,
     )
 
 
@@ -710,6 +725,7 @@ def generate_single_image_v5_medium(
     seed: int = -1,
     extra_uc: str = "",
     append_v5_quality: bool = True,
+    auto_upscale_replace: bool = False,
     proxy: str = "",
     output_dir: str = DEFAULT_OUTPUT_DIR,
     custom_target_dir: Optional[str] = None,
@@ -816,6 +832,7 @@ def batch_generate_scenes_v5_medium(
     fallback_s00_seed: Optional[int] = None,
     extra_uc: str = "",
     append_v5_quality: bool = True,
+    auto_upscale_replace: bool = False,
     proxy: str = "",
     output_dir: str = DEFAULT_OUTPUT_DIR,
     perspective_mode: str = "pov",
@@ -927,6 +944,29 @@ def batch_generate_scenes_v5_medium(
                 break
 
         if res is not None:
+            if auto_upscale_replace and res.width * res.height <= 1048576:
+                raw_path = res.saved_path
+                try:
+                    up_res = upscale_single_image_nai(
+                        api_token=token,
+                        source_image_path=raw_path,
+                        proxy=proxy,
+                        output_dir=suite_dir,
+                    )
+                    if os.path.exists(raw_path) and os.path.abspath(raw_path) != os.path.abspath(up_res.saved_path):
+                        os.remove(raw_path)
+                    res = GenerationResult(
+                        image_bytes=up_res.image_bytes,
+                        saved_path=up_res.saved_path,
+                        seed=res.seed,
+                        width=up_res.out_width,
+                        height=up_res.out_height,
+                        elapsed_sec=round(res.elapsed_sec + up_res.elapsed_sec, 2),
+                        estimated_anlas=res.estimated_anlas + up_res.anlas_cost,
+                        model=res.model,
+                    )
+                except Exception:
+                    pass
             succeeded += 1
             results.append(res)
             last_res = res

@@ -11,3 +11,9 @@ __pycache__/
 *.7z
 sample/
 favorite/
+
+# Node / Vite 前端依赖与中间构建产物
+node_modules/
+web/dist/
+*.tsbuildinfo
+*.log
