@@ -13,6 +13,22 @@ import re
 from dataclasses import dataclass, asdict
 from typing import Dict, List, Tuple
 
+from camera_rig import (
+    CAMERA_GAZE_PRESETS,
+    CAMERA_QUICK_PRESETS,
+    CAMERA_SHOT_PRESETS,
+    apply_camera_override_to_prompt,
+    compile_camera_rig,
+    describe_camera_short,
+)
+from position_library import (
+    ALL_POSITIONS_CHAPTERS,
+    ALL_POSITIONS_TEMPLATES,
+    POS_CATEGORIES,
+    POS_MALE_MODE_PRESETS,
+    sanitize_style_for_transparent_bg,
+)
+
 
 PRESETS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "character_presets.json")
 
@@ -84,6 +100,16 @@ class CharacterConfig:
     enable_t5_prose: bool = True        # 13. 句尾英文自然语言锚点句 (开启时也会自动剔除已 OFF 的模块信息)
     enable_negatives: bool = True       # 14. 动作与画面防崩负向词块
     enable_multi_angle_nsfw: bool = False  # 15. 多角度套图 NSFW 类词条开关（默认 OFF 纯 SFW）
+    pos_transparent_bg: bool = False    # 16. 全体位组：开启 V5 原生透明背景抠图
+    pos_male_mode: str = "👤 正常显示男方（默认无脸男 faceless male）"  # 17. 全体位组：男方开关/透明模式
+    pos_show_penis: bool = True         # 18. 全体位组：是否显示男方器官（关闭时保留女方使用器官状态）
+    cam_enable_override: bool = False   # 19. 全局 3D 相机角度覆盖开关（默认 False 跟随原幕机位）
+    cam_azimuth: int = 0                # 20. 相机水平环绕角 (-180 ~ +180, 0=正前方)
+    cam_elevation: int = 12             # 21. 相机垂直俯仰角 (-80 ~ +85, 0=平视, >0俯拍, <0仰拍)
+    cam_shot_preset: str = "随原幕景别"  # 22. 景别距离覆盖
+    cam_wide_lens: bool = False         # 23. 超广角强透视 (foreshortening)
+    cam_dutch_angle: bool = False       # 24. 倾斜荷兰角构图 (dutch angle)
+    cam_gaze_preset: str = "👁️ 始终看镜头（背后自动回眸）"  # 25. 角色视线跟随模式
 
 
 # 快捷精密参照开关预设组
@@ -1235,7 +1261,7 @@ def expr_if(cfg: CharacterConfig, tags: str, essential: str = "") -> str:
     return join_tags(clean_ess, cleaned_tags)
 
 
-def prose_if(cfg: CharacterConfig, text: str) -> str:
+def prose_if(cfg: CharacterConfig, text: str, transparent_bg: bool = False) -> str:
     if not cfg.enable_t5_prose:
         return ""
     body = text.strip()
@@ -1253,8 +1279,9 @@ def prose_if(cfg: CharacterConfig, text: str) -> str:
         )
     if is_m6_soft_morning_skin_active(cfg):
         m6_body = body.replace("her lips", "her mouth")
+        light_clause = "Warm morning frontal light, " if transparent_bg else "Warm morning frontal light by cream sheer curtains, "
         return (
-            "Warm morning frontal light by cream sheer curtains, "
+            f"{light_clause}"
             "lineless rosy-apricot skin with smooth 3D shading, "
             f"flat 2D moe anime face with big eyes and dot nose: {m6_body}"
         )
@@ -1264,7 +1291,8 @@ def prose_if(cfg: CharacterConfig, text: str) -> str:
             f"with sharp white plastic reflections on molded hair, lacquered skin, rigid PVC clothes, and glossy resin fluids: {body}"
         )
     if is_figure_style_active(cfg):
-        return f"Macro product photo of a painted PVC scale figurine with shallow depth of field and bokeh: {body}"
+        bg_clause = "" if transparent_bg else " with shallow depth of field and bokeh"
+        return f"Macro product photo of a painted PVC scale figurine{bg_clause}: {body}"
     return body
 
 
@@ -1320,12 +1348,180 @@ def generate_scene_prompts(
             wrap_tail_neg(m, ma_tail_neg, neg_on),
         )
         results.append((f"【{tpl['title']}】", str(tpl["canvas"]), p_ma))
-        return results
+
+    # ==========================================
+    # P01..P44+: 全体位生成器（独立运作 · 支持透明背景 / 男方四态开关 / 隐藏男方器官时保留使用部位状态）
+    # ==========================================
+    elif scene_id in ALL_POSITIONS_TEMPLATES:
+        tpl = ALL_POSITIONS_TEMPLATES[scene_id]
+        channel = tpl["channel"]
+        m = build_common_modules(cfg, eyes_open=True)
+        trans_bg = bool(cfg.pos_transparent_bg)
+        male_code = POS_MALE_MODE_PRESETS.get(cfg.pos_male_mode, "normal")
+        show_p = bool(cfg.pos_show_penis)
+
+        if channel == "chest":
+            if cfg.enable_outfit and cfg.enable_clothing_state and "nude" not in m["outfit_pos"]:
+                pos_outfit = join_tags(m["outfit_intact"], "clothes lift, breasts out")
+            else:
+                pos_outfit = m["outfit_pos"]
+        elif channel in ("oral", "hand"):
+            pos_outfit = m["outfit_upper_oral"]
+        else:
+            pos_outfit = m["outfit_pos"]
+
+        pos_leg = m["leg_foot"] if channel == "foot" else m["leg_normal"]
+        pose_raw = tpl["pose_pov"] if is_pov else tpl["pose_3rd"]
+
+        if trans_bg:
+            head_used = sanitize_style_for_transparent_bg(m["head_pos"])
+            bg_used = "2.0::transparent background::, has alpha, alpha transparency, no background"
+            bg_prose = " isolated on a transparent background"
+            pose_used = pose_raw.replace(", head on pillow", "").replace(", hands gripping sheet", "")
+            trans_neg = (
+                "background, simple background, white background, black background, gradient background, "
+                "indoors, outdoors, scenery, furniture, bed, couch, sofa, pillow, window, curtains, wall, floor, drop shadow"
+            )
+        else:
+            head_used = m["head_pos"]
+            bg_used = m["bg_couch"]
+            bg_prose = m["loc_prose"]
+            pose_used = pose_raw
+            trans_neg = ""
+
+        if channel == "solo":
+            actor_tags = "1girl, solo"
+            organ_tags = join_tags(
+                m["anat_pos"],
+                "1.2::spread pussy::",
+                wtag("pussy juice", 1.15, f) if af else "",
+            )
+            partner_prose = ""
+            organ_prose = ""
+            extra_neg = "1boy, male, penis, phallus, dildo"
+        else:
+            if male_code == "normal":
+                actor_tags = join_tags("1girl, 1boy, hetero, faceless male", "1.35::pov::, pov hands" if is_pov else "")
+                partner_prose = " with a faceless partner"
+                partner_neg = ""
+            elif male_code == "translucent":
+                actor_tags = join_tags(
+                    "1girl, 1boy, hetero, faceless male, 1.35::male silhouette::, ghostly outline",
+                    "1.35::pov::" if is_pov else "",
+                )
+                partner_prose = " with a semi-transparent see-through male silhouette that does not obscure her opaque body"
+                partner_neg = ""
+            elif male_code == "invisible":
+                actor_tags = join_tags("1girl", "disembodied penis" if show_p else "solo", "1.3::pov::" if is_pov else "")
+                partner_prose = " held in position by an unseen invisible partner"
+                partner_neg = "male body, male torso, male face" if show_p else "1boy, male, male body"
+            else:  # "off"
+                actor_tags = "1girl, disembodied penis" if show_p else "1girl, solo"
+                partner_prose = ""
+                partner_neg = "1boy, male body, male torso" if show_p else "1boy, male, multiple people"
+
+            if channel == "vaginal":
+                if show_p:
+                    organ_tags = join_tags(m["anat_pos"], "vaginal, insertion, penis", wtag("pussy juice", 1.2, f) if af else "")
+                    organ_prose = ""
+                else:
+                    organ_tags = join_tags(
+                        m["anat_pos"],
+                        "1.3::spread pussy::, 0.55::gaping::, twitching",
+                        wtag("pussy juice, cumdrip", 1.2, f) if af else "",
+                    )
+                    organ_prose = ", keeping her lower anatomy actively parted"
+            elif channel == "oral":
+                if show_p:
+                    organ_tags = join_tags("oral, fellatio, penis, open mouth, tongue, saliva", wtag("saliva trail", 1.2, f) if af else "")
+                    organ_prose = ""
+                else:
+                    organ_tags = join_tags(
+                        "1.3::open mouth::, 1.35::o-shaped mouth::, tongue out, saliva",
+                        wtag("saliva trail", 1.2, f) if af else "",
+                    )
+                    organ_prose = ", keeping her mouth hollowed open with tongue extended"
+            elif channel == "chest":
+                if show_p:
+                    organ_tags = join_tags(
+                        "paizuri, breasts squeezed together, cleavage, grabbing own breasts, penis",
+                        join_tags(wtag("glistening", 1.15, f), "sweat") if af else "",
+                    )
+                    organ_prose = ""
+                else:
+                    organ_tags = join_tags(
+                        "1.4::grabbing own breasts::, 1.35::breasts squeezed together::, cleavage, paizuri pose",
+                        join_tags(wtag("glistening", 1.15, f), "sweat") if af else "",
+                    )
+                    organ_prose = ", pressing her chest together around an open central channel"
+            elif channel == "foot":
+                if show_p:
+                    organ_tags = join_tags("footjob, soles together, feet together, penis", wtag("cum on feet", 1.2, f) if af else "")
+                    organ_prose = ""
+                else:
+                    organ_tags = join_tags(
+                        "1.4::soles together::, arched feet, feet together",
+                        wtag("cum on feet, cum string", 1.2, f) if af else "",
+                    )
+                    organ_prose = ", keeping both soles arched and pressed together"
+            elif channel == "thigh":
+                if show_p:
+                    organ_tags = join_tags(m["anat_pos"], "sumata, thigh sex, thighs together, penis", wtag("pussy juice", 1.15, f) if af else "")
+                    organ_prose = ""
+                else:
+                    organ_tags = join_tags(m["anat_pos"], "1.35::thighs together::, squeezed thighs", wtag("pussy juice", 1.15, f) if af else "")
+                    organ_prose = ", keeping her inner thighs pressed snugly together"
+            elif channel == "glute":
+                if show_p:
+                    organ_tags = join_tags(
+                        "ass focus, assjob, squeezed glutes, penis",
+                        join_tags(wtag("glistening", 1.15, f), "sweat") if af else "",
+                    )
+                    organ_prose = ""
+                else:
+                    organ_tags = join_tags(
+                        "ass focus, 1.35::squeezed glutes::, spread ass",
+                        join_tags(wtag("glistening", 1.15, f), "sweat") if af else "",
+                    )
+                    organ_prose = ", keeping her glutes pressed and arched"
+            else:  # "hand"
+                if show_p:
+                    organ_tags = join_tags("handjob, two-handed, curled fingers, penis", wtag("precum", 1.15, f) if af else "")
+                    organ_prose = ""
+                else:
+                    organ_tags = join_tags("1.35::curled fingers::, cylindrical hand grip, hands together", wtag("saliva trail", 1.15, f) if af else "")
+                    organ_prose = ", holding both hands in a curled cylindrical grip"
+
+            penis_neg = "" if show_p else "penis, phallus, testicles, dildo, sex toy"
+            extra_neg = join_tags(partner_neg, penis_neg)
+
+        exp_pos = expr_if(cfg, "furrowed brow, half-closed eyes, watery eyes, blush")
+        rem_pos = "sweat" if rem else ""
+        full_neg = join_tags(extra_neg, trans_neg, m["common_tail_neg"])
+        pov_lbl = "第一人称 (POV)" if is_pov else "第三人称 (客观镜头)"
+        prose_sentence = f"{m['name']} {tpl['prose_core']}{partner_prose}{organ_prose}{bg_prose}."
+
+        p_pos = join_tags(
+            head_used,
+            actor_tags,
+            m["char_core"],
+            bg_used,
+            pose_used,
+            pos_leg,
+            pos_outfit,
+            exp_pos,
+            "rating:explicit, nsfw, uncensored",
+            organ_tags,
+            rem_pos,
+            prose_if(cfg, prose_sentence, transparent_bg=trans_bg),
+            wrap_tail_neg(m, full_neg, neg_on),
+        )
+        results.append((f"【{tpl['title']} · {pov_lbl}】", tpl["canvas"], p_pos))
 
     # ==========================================
     # F00: 晨光白床正面跪坐前倾（正脸与身材状态校验）
     # ==========================================
-    if scene_id == "F00":
+    elif scene_id == "F00":
         m = build_common_modules(cfg, eyes_open=True)
         bg_bed = "indoors, bedroom, bed, white bedsheet, wooden headboard, window, cream sheer curtains" if cfg.enable_background else ""
         bed_prose = " on a white bedsheet in front of a wooden headboard" if cfg.enable_background else ""
@@ -2016,6 +2212,28 @@ def generate_scene_prompts(
             )
             results.append(("【S11 · 第三人称视角 (客观镜头) · 侧斜全景传教士双腿间拔出外射】", "横图 1216x832", p_3rd))
 
+    if cfg.cam_enable_override and scene_id != "MA0":
+        shot_code = CAMERA_SHOT_PRESETS.get(cfg.cam_shot_preset, "auto")
+        gaze_code = CAMERA_GAZE_PRESETS.get(cfg.cam_gaze_preset, "auto_look")
+        short_cam = describe_camera_short(
+            True, cfg.cam_azimuth, cfg.cam_elevation, shot_code, cfg.cam_wide_lens, cfg.cam_dutch_angle
+        )
+        eyes_closed = scene_id in ("S06", "S07")
+        cam_results: List[Tuple[str, str, str]] = []
+        for sub_title, canvas_str, prompt_str in results:
+            new_p = apply_camera_override_to_prompt(
+                prompt_str,
+                azimuth=cfg.cam_azimuth,
+                elevation=cfg.cam_elevation,
+                shot_code=shot_code,
+                wide_lens=cfg.cam_wide_lens,
+                dutch_angle=cfg.cam_dutch_angle,
+                gaze_code=gaze_code,
+                eyes_closed_scene=eyes_closed,
+            )
+            cam_results.append((f"{sub_title} · [🎥{short_cam}]", canvas_str, new_p))
+        results = cam_results
+
     if is_m6_soft_morning_skin_active(cfg):
         wants_sweat = cfg.add_extra_sweat or ("shiny skin" in SKIN_PRESETS.get(cfg.skin_preset, ""))
         if not wants_sweat:
@@ -2067,7 +2285,7 @@ def _describe_active_modules(cfg: CharacterConfig) -> str:
 
 def _build_single_track_blocks(cfg: CharacterConfig, selected_ids: List[str], track_mode: str, pure_batch: bool) -> List[str]:
     track_label = "👁️ 第一人称视角卷 (First-Person POV)" if track_mode == "pov" else "🎥 第三人称视角卷 (Third-Person Objective)"
-    all_chapters = STORY_CHAPTERS + MULTI_ANGLE_CHAPTERS
+    all_chapters = STORY_CHAPTERS + MULTI_ANGLE_CHAPTERS + ALL_POSITIONS_CHAPTERS
     if pure_batch:
         lines: List[str] = []
         for ch in all_chapters:

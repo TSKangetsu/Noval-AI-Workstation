@@ -557,6 +557,7 @@ def build_v5_medium_payload(
         "characterPrompts": character_prompts_api,
         "straight_alpha": True,
         "tag_hint_qt": 1,
+        "tag_hint_transparent_background": True if "transparent background" in base_caption.lower() else None,
         "tag_hint_uc_preset": 2,
         "v4_prompt": {
             "caption": {

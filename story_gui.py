@@ -10,6 +10,7 @@ NovelAI V4.5 / V5 连续故事线提示词生成器 GUI (story_gui.py)
 from __future__ import annotations
 import ctypes
 from io import BytesIO
+import math
 import os
 import threading
 import tkinter as tk
@@ -17,6 +18,14 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 from typing import Dict, List, Optional
 
 from PIL import Image, ImageTk
+
+from camera_rig import (
+    CAMERA_GAZE_PRESETS,
+    CAMERA_QUICK_PRESETS,
+    CAMERA_SHOT_PRESETS,
+    compile_camera_rig,
+    describe_camera_short,
+)
 
 from nai_api import (
     BatchGenerateSummary,
@@ -61,6 +70,9 @@ from story_engine import (
     PIGMENT_PRESETS,
     STORY_CHAPTERS,
     MULTI_ANGLE_CHAPTERS,
+    ALL_POSITIONS_CHAPTERS,
+    POS_CATEGORIES,
+    POS_MALE_MODE_PRESETS,
     MODULE_SWITCH_PRESETS,
     CharacterConfig,
     generate_scene_prompts,
@@ -278,7 +290,24 @@ class StoryPromptGeneratorApp:
         self.multi_angle_vars: Dict[str, tk.BooleanVar] = {
             ch["id"]: tk.BooleanVar(value=True) for ch in MULTI_ANGLE_CHAPTERS
         }
+        default_pos_checked = {"P01", "P08", "P17", "P23", "P26", "P30", "P35", "P43"}
+        self.all_pos_vars: Dict[str, tk.BooleanVar] = {
+            ch["id"]: tk.BooleanVar(value=(ch["id"] in default_pos_checked)) for ch in ALL_POSITIONS_CHAPTERS
+        }
         self.var_ma_nsfw = tk.BooleanVar(value=cfg.enable_multi_angle_nsfw)
+        self.var_pos_category = tk.StringVar(value=POS_CATEGORIES[0])
+        self.var_pos_transparent_bg = tk.BooleanVar(value=cfg.pos_transparent_bg)
+        self.var_pos_male_mode = tk.StringVar(value=cfg.pos_male_mode)
+        self.var_pos_show_penis = tk.BooleanVar(value=cfg.pos_show_penis)
+        self.var_cam_override = tk.BooleanVar(value=cfg.cam_enable_override)
+        self.var_cam_azimuth = tk.IntVar(value=cfg.cam_azimuth)
+        self.var_cam_elevation = tk.IntVar(value=cfg.cam_elevation)
+        self.var_cam_shot = tk.StringVar(value=cfg.cam_shot_preset)
+        self.var_cam_wide = tk.BooleanVar(value=cfg.cam_wide_lens)
+        self.var_cam_dutch = tk.BooleanVar(value=cfg.cam_dutch_angle)
+        self.var_cam_gaze = tk.StringVar(value=cfg.cam_gaze_preset)
+        self.var_cam_compiled_preview = tk.StringVar(value="当前未启用全局机位覆盖 · 自动跟随各幕原有机位")
+        self._cam_drag_zone: str = ""
         self.active_scene_id: str = "F00"
 
         # === NovelAI V5 Full Medium 单张 API 生图状态 ===
@@ -327,9 +356,28 @@ class StoryPromptGeneratorApp:
             style="Header.TLabel",
         ).pack(side=tk.LEFT)
 
-        # === 右上角：视角切换胶囊组 + 整套复制/导出 ===
+        # === 右上角：3D机位状态胶囊 + 视角切换胶囊组 + 整套复制/导出 ===
         right_ctrl = tk.Frame(top_bar, bg=BG_MAIN)
         right_ctrl.pack(side=tk.RIGHT)
+
+        self.btn_top_cam_pill = tk.Button(
+            right_ctrl,
+            text="🎥 机位: 🔄随本幕默认 (点此调角度)",
+            bg=BG_INPUT,
+            fg=FG_MUTED,
+            activebackground=BORDER,
+            activeforeground=ACCENT,
+            relief=tk.FLAT,
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            padx=9,
+            pady=4,
+            cursor="hand2",
+            font=("Microsoft YaHei UI", 9, "bold"),
+            command=self._jump_to_camera_tab,
+        )
+        self.btn_top_cam_pill.pack(side=tk.LEFT, padx=(0, 10))
+        self.btn_top_cam_pill.bind("<Button-3>", lambda _e: self._reset_camera_override())
 
         pov_switch_box = tk.Frame(
             right_ctrl, bg=BG_INPUT, highlightbackground=ACCENT, highlightthickness=1, padx=4, pady=3
@@ -464,12 +512,14 @@ class StoryPromptGeneratorApp:
         tab_look = ttk.Frame(nb, style="Card.TFrame", padding=12)
         tab_style = ttk.Frame(nb, style="Card.TFrame", padding=12)
         tab_api = ttk.Frame(nb, style="Card.TFrame", padding=12)
+        tab_cam = ttk.Frame(nb, style="Card.TFrame", padding=10)
 
-        nb.add(tab_sw, text=" 🎛️ 精密参照开关 ")
+        nb.add(tab_sw, text=" 🎛️ 精密参照 ")
         nb.add(tab_char, text=" 👤 角色身份 ")
         nb.add(tab_look, text=" 👗 体型穿搭 ")
         nb.add(tab_style, text=" 🎨 画风局部 ")
         nb.add(tab_api, text=" 🚀 API生图 ")
+        nb.add(tab_cam, text=" 🎥 3D机位 ")
         self.left_nb = nb
 
         # === Tab 0: 精密参照模块独立 ON/OFF 开关面板 ===
@@ -673,6 +723,364 @@ class StoryPromptGeneratorApp:
 
         # === Tab 4: NovelAI V5 Full Medium 单张 API 生图设置 ===
         self._build_api_tab(tab_api)
+
+        # === Tab 5: 全局 3D 球面机位雷达盘与快捷预设 ===
+        self._build_camera_tab(tab_cam)
+
+    def _build_camera_tab(self, tab_cam: ttk.Frame) -> None:
+        top_row = ttk.Frame(tab_cam, style="Card.TFrame")
+        top_row.pack(fill=tk.X, pady=(0, 6))
+
+        tk.Checkbutton(
+            top_row,
+            text="🎥 启用全局 3D 相机角度覆盖（拖动下方雷达自动开启）",
+            variable=self.var_cam_override,
+            bg=BG_PANEL,
+            fg=SUCCESS,
+            selectcolor=BG_INPUT,
+            activebackground=BG_PANEL,
+            activeforeground=SUCCESS,
+            font=("Microsoft YaHei UI", 9, "bold"),
+            cursor="hand2",
+            command=self._on_camera_param_changed,
+        ).pack(side=tk.LEFT)
+
+        ttk.Button(
+            top_row,
+            text="🔄 随本幕默认",
+            style="Secondary.TButton",
+            command=self._reset_camera_override,
+        ).pack(side=tk.RIGHT)
+
+        # 可视化 3D 水平环绕雷达盘 (左) + 垂直俯仰剖面弧 (右)
+        self.cam_radar_canvas = tk.Canvas(
+            tab_cam,
+            width=446,
+            height=222,
+            bg=BG_INPUT,
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            cursor="crosshair",
+        )
+        self.cam_radar_canvas.pack(fill=tk.X, pady=(0, 6))
+        self.cam_radar_canvas.bind("<Button-1>", self._on_cam_canvas_down)
+        self.cam_radar_canvas.bind("<B1-Motion>", self._on_cam_canvas_drag)
+        self.cam_radar_canvas.bind("<ButtonRelease-1>", self._on_cam_canvas_up)
+        self.cam_radar_canvas.bind("<Button-3>", lambda _e: self._reset_camera_override())
+
+        # 一键快捷机位胶囊 (2行 x 5列)
+        ttk.Label(
+            tab_cam,
+            text="⚡ 一键快捷机位胶囊（点击直接切换并自动开启机位覆盖 · 按住 Shift 拖动雷达按 15° 吸附）：",
+            style="SubHeader.TLabel",
+        ).pack(anchor="w", pady=(2, 3))
+
+        quick_grid = ttk.Frame(tab_cam, style="Card.TFrame")
+        quick_grid.pack(fill=tk.X, pady=(0, 6))
+        for c_i in range(5):
+            quick_grid.columnconfigure(c_i, weight=1)
+
+        for idx, (lbl, q_az, q_el, q_shot, q_wide) in enumerate(CAMERA_QUICK_PRESETS):
+            tk.Button(
+                quick_grid,
+                text=lbl,
+                bg=BORDER,
+                fg=FG_TEXT,
+                activebackground=ACCENT_POV,
+                activeforeground="#11111b",
+                relief=tk.FLAT,
+                padx=4,
+                pady=3,
+                cursor="hand2",
+                font=("Microsoft YaHei UI", 8, "bold"),
+                command=lambda a=q_az, e=q_el, s=q_shot, w=q_wide: self._apply_quick_camera_preset(a, e, s, w),
+            ).grid(row=idx // 5, column=idx % 5, sticky="ew", padx=2, pady=2)
+
+        # 景别距离胶囊条
+        ttk.Label(tab_cam, text="🔭 景别与焦距范围（Shot Distance）：", style="SubHeader.TLabel").pack(
+            anchor="w", pady=(2, 3)
+        )
+        shot_grid = ttk.Frame(tab_cam, style="Card.TFrame")
+        shot_grid.pack(fill=tk.X, pady=(0, 6))
+        self.cam_shot_btns: Dict[str, tk.Button] = {}
+        shot_keys = list(CAMERA_SHOT_PRESETS.keys())
+        for c_i in range(3):
+            shot_grid.columnconfigure(c_i, weight=1)
+        for idx, sk in enumerate(shot_keys):
+            b = tk.Button(
+                shot_grid,
+                text=sk,
+                bg=ACCENT_POV if sk == self.var_cam_shot.get() else BORDER,
+                fg="#11111b" if sk == self.var_cam_shot.get() else FG_TEXT,
+                activebackground=ACCENT_POV,
+                activeforeground="#11111b",
+                relief=tk.FLAT,
+                padx=4,
+                pady=3,
+                cursor="hand2",
+                font=("Microsoft YaHei UI", 8, "bold"),
+                command=lambda k=sk: self._select_cam_shot(k),
+            )
+            b.grid(row=idx // 3, column=idx % 3, sticky="ew", padx=2, pady=2)
+            self.cam_shot_btns[sk] = b
+
+        # 广角透视 / 荷兰斜角 / 视线跟随
+        lens_row = ttk.Frame(tab_cam, style="Card.TFrame")
+        lens_row.pack(fill=tk.X, pady=(2, 4))
+        ttk.Checkbutton(
+            lens_row,
+            text="🔥 超广角强透视近大远小 (foreshortening)",
+            variable=self.var_cam_wide,
+            command=self._enable_and_refresh_cam,
+        ).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Checkbutton(
+            lens_row,
+            text="📐 荷兰斜角构图 (dutch angle)",
+            variable=self.var_cam_dutch,
+            command=self._enable_and_refresh_cam,
+        ).pack(side=tk.LEFT)
+
+        gaze_row = ttk.Frame(tab_cam, style="Card.TFrame")
+        gaze_row.pack(fill=tk.X, pady=(2, 6))
+        ttk.Label(gaze_row, text="角色视线：").pack(side=tk.LEFT)
+        cb_gaze = ttk.Combobox(
+            gaze_row,
+            textvariable=self.var_cam_gaze,
+            values=list(CAMERA_GAZE_PRESETS.keys()),
+            state="readonly",
+        )
+        cb_gaze.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
+        cb_gaze.bind("<<ComboboxSelected>>", lambda _e: self._on_camera_param_changed())
+
+        # 实时机位词条回显框
+        tk.Label(
+            tab_cam,
+            textvariable=self.var_cam_compiled_preview,
+            bg=BG_INPUT,
+            fg=ACCENT_3RD,
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=435,
+            padx=8,
+            pady=6,
+            font=("Consolas", 9),
+        ).pack(fill=tk.X, pady=(2, 0))
+
+        self._redraw_camera_radar()
+
+    def _jump_to_camera_tab(self) -> None:
+        if hasattr(self, "left_nb"):
+            self.left_nb.select(5)
+
+    def _reset_camera_override(self) -> None:
+        self.var_cam_override.set(False)
+        self._on_camera_param_changed()
+        self.var_status.set("🔄 已恢复「跟随本幕默认机位」模式（右键点击顶部机位胶囊也可随时快速复位）")
+
+    def _enable_and_refresh_cam(self) -> None:
+        self.var_cam_override.set(True)
+        self._on_camera_param_changed()
+
+    def _select_cam_shot(self, shot_label: str) -> None:
+        self.var_cam_shot.set(shot_label)
+        self.var_cam_override.set(True)
+        self._on_camera_param_changed()
+
+    def _apply_quick_camera_preset(
+        self, az: int, el: int, shot_label: Optional[str], wide: bool
+    ) -> None:
+        self.var_cam_override.set(True)
+        self.var_cam_azimuth.set(az)
+        self.var_cam_elevation.set(el)
+        if shot_label and shot_label in CAMERA_SHOT_PRESETS:
+            self.var_cam_shot.set(shot_label)
+        self.var_cam_wide.set(wide)
+        self._on_camera_param_changed()
+
+    def _on_cam_canvas_down(self, event: tk.Event) -> None:
+        self._cam_drag_zone = "pitch" if event.x >= 254 else "azimuth"
+        self.var_cam_override.set(True)
+        self._update_cam_from_pointer(event)
+
+    def _on_cam_canvas_drag(self, event: tk.Event) -> None:
+        if not self._cam_drag_zone:
+            self._cam_drag_zone = "pitch" if event.x >= 254 else "azimuth"
+        self.var_cam_override.set(True)
+        self._update_cam_from_pointer(event)
+
+    def _on_cam_canvas_up(self, _event: tk.Event) -> None:
+        self._cam_drag_zone = ""
+
+    def _update_cam_from_pointer(self, event: tk.Event) -> None:
+        snap15 = bool(event.state & 0x0001)  # Shift 键 15° 吸附
+        if self._cam_drag_zone == "azimuth":
+            cx, cy = 126.0, 114.0
+            dx = event.x - cx
+            dy = event.y - cy
+            if abs(dx) < 1e-3 and abs(dy) < 1e-3:
+                return
+            az = round(math.degrees(math.atan2(dx, dy)))
+            if snap15:
+                az = int(round(az / 15.0) * 15)
+            az = max(-180, min(180, az))
+            self.var_cam_azimuth.set(az)
+        else:
+            px, py = 304.0, 118.0
+            dx = max(6.0, float(event.x) - px)
+            dy = py - float(event.y)
+            el = round(math.degrees(math.atan2(dy, dx)))
+            if snap15:
+                el = int(round(el / 15.0) * 15)
+            el = max(-80, min(85, el))
+            self.var_cam_elevation.set(el)
+        self._on_camera_param_changed()
+
+    def _on_camera_param_changed(self) -> None:
+        cur_shot = self.var_cam_shot.get()
+        if hasattr(self, "cam_shot_btns"):
+            for sk, btn in self.cam_shot_btns.items():
+                btn.config(
+                    bg=ACCENT_POV if sk == cur_shot else BORDER,
+                    fg="#11111b" if sk == cur_shot else FG_TEXT,
+                )
+        self._redraw_camera_radar()
+        self.refresh_output()
+
+    def _sync_camera_status_ui(self) -> None:
+        on = self.var_cam_override.get()
+        az = self.var_cam_azimuth.get()
+        el = self.var_cam_elevation.get()
+        shot_code = CAMERA_SHOT_PRESETS.get(self.var_cam_shot.get(), "auto")
+        gaze_code = CAMERA_GAZE_PRESETS.get(self.var_cam_gaze.get(), "auto_look")
+        wide = self.var_cam_wide.get()
+        dutch = self.var_cam_dutch.get()
+
+        short_txt = describe_camera_short(on, az, el, shot_code, wide, dutch)
+        if hasattr(self, "btn_top_cam_pill"):
+            if on:
+                self.btn_top_cam_pill.config(
+                    text=f"🎥 机位覆盖: {short_txt} (右键复位)",
+                    bg=SUCCESS,
+                    fg="#11111b",
+                    highlightbackground=SUCCESS,
+                )
+            else:
+                self.btn_top_cam_pill.config(
+                    text="🎥 机位: 🔄随本幕默认 (点此调角度)",
+                    bg=BG_INPUT,
+                    fg=FG_MUTED,
+                    highlightbackground=BORDER,
+                )
+
+        if not on:
+            self.var_cam_compiled_preview.set("🔄 当前未启用全局机位覆盖 · 各幕保持原设镜头（拖动上方圆盘或点胶囊即生效）")
+        else:
+            rig = compile_camera_rig(az, el, shot_code, wide, dutch, gaze_code)
+            tags_str = ", ".join(list(rig["pos_tags"]) + list(rig["gaze_tags"]))  # type: ignore[arg-type]
+            self.var_cam_compiled_preview.set(f"✅ 注入正向机位: {tags_str}")
+
+    def _redraw_camera_radar(self) -> None:
+        if not hasattr(self, "cam_radar_canvas"):
+            return
+        cv = self.cam_radar_canvas
+        cv.delete("all")
+        on = self.var_cam_override.get()
+        az = self.var_cam_azimuth.get()
+        el = self.var_cam_elevation.get()
+
+        active_col = ACCENT_POV if on else "#6c7086"
+        pitch_col = SUCCESS if on else "#6c7086"
+
+        # === 左区：360° 水平环绕雷达俯视图 ===
+        cx, cy, r_out = 126, 114, 74
+        cv.create_text(cx, 13, text="🧭 水平环绕角 Azimuth (俯视拖拽)", fill=FG_TEXT, font=("Microsoft YaHei UI", 8, "bold"))
+        cv.create_oval(cx - r_out, cy - r_out, cx + r_out, cy + r_out, outline="#45475a", width=2, fill="#1e1e2e")
+        cv.create_oval(cx - 42, cy - 42, cx + 42, cy + 42, outline="#313244", dash=(3, 3))
+
+        for deg_tick in range(-180, 180, 45):
+            rad_t = math.radians(deg_tick)
+            tx1, ty1 = cx + (r_out - 6) * math.sin(rad_t), cy + (r_out - 6) * math.cos(rad_t)
+            tx2, ty2 = cx + r_out * math.sin(rad_t), cy + r_out * math.cos(rad_t)
+            cv.create_line(cx, cy, tx2, ty2, fill="#2a2b3d")
+            cv.create_line(tx1, ty1, tx2, ty2, fill="#585b70", width=2)
+
+        cv.create_text(cx, cy + r_out + 12, text="▼ 正前 0°", fill=ACCENT_3RD, font=("Microsoft YaHei UI", 8, "bold"))
+        cv.create_text(cx, cy - r_out - 10, text="▲ 正后 180°", fill=FG_MUTED, font=("Microsoft YaHei UI", 8))
+        cv.create_text(cx - r_out - 20, cy, text="左-90°", fill=FG_MUTED, font=("Microsoft YaHei UI", 8))
+        cv.create_text(cx + r_out + 21, cy, text="右+90°", fill=FG_MUTED, font=("Microsoft YaHei UI", 8))
+
+        # 相机视锥扇形 (FOV Cone) 与相机拖拽球
+        az_rad = math.radians(az)
+        cam_x = cx + r_out * math.sin(az_rad)
+        cam_y = cy + r_out * math.cos(az_rad)
+        perp_x = math.cos(az_rad) * 16
+        perp_y = -math.sin(az_rad) * 16
+        cv.create_polygon(
+            cam_x,
+            cam_y,
+            cx + perp_x,
+            cy + perp_y,
+            cx - perp_x,
+            cy - perp_y,
+            fill="#273859" if on else "#252636",
+            outline=active_col,
+            stipple="gray50",
+        )
+        cv.create_line(cam_x, cam_y, cx, cy, fill=active_col, width=2, arrow=tk.LAST)
+
+        # 中心角色朝向图标（面朝下方“正前 0°”）
+        cv.create_oval(cx - 11, cy - 11, cx + 11, cy + 11, fill="#cba6f7", outline="#11111b", width=2)
+        cv.create_polygon(cx - 5, cy + 10, cx + 5, cy + 10, cx, cy + 18, fill=ACCENT_3RD)
+        cv.create_text(cx, cy, text="女", fill="#11111b", font=("Microsoft YaHei UI", 8, "bold"))
+
+        cv.create_oval(cam_x - 9, cam_y - 9, cam_x + 9, cam_y + 9, fill=active_col, outline="#ffffff", width=2)
+        cv.create_text(
+            cx,
+            211,
+            text=f"水平方位: {az:+d}°",
+            fill=active_col if on else FG_MUTED,
+            font=("Consolas", 9, "bold"),
+        )
+
+        # 分隔线
+        cv.create_line(254, 12, 254, 210, fill=BORDER, dash=(3, 3))
+
+        # === 右区：垂直俯仰剖面弧 (-80° ~ +85°) ===
+        px, py, r_arc = 304, 118, 74
+        cv.create_text(350, 13, text="📐 垂直俯仰 Pitch (上下拖拽)", fill=FG_TEXT, font=("Microsoft YaHei UI", 8, "bold"))
+
+        # 绘制侧面小人剪影
+        cv.create_oval(px - 7, py - 28, px + 7, py - 14, outline="#cba6f7", width=2)
+        cv.create_line(px, py - 14, px, py + 18, fill="#cba6f7", width=3)
+        cv.create_line(px, py + 18, px - 6, py + 36, fill="#cba6f7", width=2)
+        cv.create_line(px, py + 18, px + 6, py + 36, fill="#cba6f7", width=2)
+        cv.create_line(px - 14, py + 37, px + 18, py + 37, fill="#45475a", width=2)
+
+        # 绘制俯仰圆弧轨迹
+        arc_pts: List[float] = []
+        for d in range(-80, 86, 5):
+            rd = math.radians(d)
+            arc_pts.extend([px + r_arc * math.cos(rd), py - r_arc * math.sin(rd)])
+        cv.create_line(*arc_pts, fill="#45475a", width=3, smooth=True)
+
+        # 平视 0° 基准线
+        cv.create_line(px + 10, py, px + r_arc + 6, py, fill="#313244", dash=(2, 2))
+        cv.create_text(px + r_arc + 28, py, text="平视 0°", fill=FG_MUTED, font=("Microsoft YaHei UI", 8))
+        cv.create_text(px + 38, py - r_arc - 6, text="顶视+85°", fill=FG_MUTED, font=("Microsoft YaHei UI", 8))
+        cv.create_text(px + 42, py + r_arc + 6, text="虫视-80°", fill=FG_MUTED, font=("Microsoft YaHei UI", 8))
+
+        el_rad = math.radians(el)
+        ey_x = px + r_arc * math.cos(el_rad)
+        ey_y = py - r_arc * math.sin(el_rad)
+        cv.create_line(ey_x, ey_y, px + 4, py - 4, fill=pitch_col, width=2, arrow=tk.LAST)
+        cv.create_oval(ey_x - 8, ey_y - 8, ey_x + 8, ey_y + 8, fill=pitch_col, outline="#ffffff", width=2)
+        cv.create_text(
+            352,
+            211,
+            text=f"垂直俯仰: {el:+d}°",
+            fill=pitch_col if on else FG_MUTED,
+            font=("Consolas", 9, "bold"),
+        )
 
     def _make_api_entry(self, parent: tk.Widget, var: tk.StringVar, show: str = "") -> tk.Entry:
         ent = tk.Entry(
@@ -903,9 +1311,11 @@ class StoryPromptGeneratorApp:
         self.scene_nb.pack(fill=tk.X)
         tab_story_list = ttk.Frame(self.scene_nb, style="Card.TFrame", padding=6)
         tab_ma_list = ttk.Frame(self.scene_nb, style="Card.TFrame", padding=6)
+        tab_pos_list = ttk.Frame(self.scene_nb, style="Card.TFrame", padding=6)
         self.scene_nb.add(tab_story_list, text=" 📖 剧情故事线 (F00 + 12幕) ")
         self.scene_nb.add(tab_ma_list, text=" 📷 多角度套图 (9 镜头 · 独立运作) ")
-        self.scene_nb.bind("<<NotebookTabChanged>>", lambda _e: self.refresh_output())
+        self.scene_nb.add(tab_pos_list, text=f" 💃 全体位生成器 ({len(ALL_POSITIONS_CHAPTERS)} 体位 · 独立运作) ")
+        self.scene_nb.bind("<<NotebookTabChanged>>", self._on_scene_notebook_changed)
 
         hdr = ttk.Frame(tab_story_list, style="Card.TFrame")
         hdr.pack(fill=tk.X, pady=(0, 6))
@@ -1193,6 +1603,135 @@ class StoryPromptGeneratorApp:
             btn_cp.pack(side=tk.RIGHT)
             self.copy_btn_refs[sid] = btn_cp
 
+        # === 第三分页：全体位生成器（44+ 体位 · 支持透明背景 / 男方四态开关 / 器官状态保持） ===
+        pos_hdr = ttk.Frame(tab_pos_list, style="Card.TFrame")
+        pos_hdr.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(pos_hdr, text="💃 姿态分类筛选：", style="SubHeader.TLabel").pack(side=tk.LEFT)
+        cb_pos_cat = ttk.Combobox(
+            pos_hdr,
+            textvariable=self.var_pos_category,
+            values=POS_CATEGORIES,
+            state="readonly",
+            width=22,
+        )
+        cb_pos_cat.pack(side=tk.LEFT, padx=(4, 10))
+        cb_pos_cat.bind("<<ComboboxSelected>>", lambda _e: self._rebuild_pos_grid())
+
+        ttk.Button(
+            pos_hdr, text="全不选", style="Secondary.TButton", command=lambda: self._batch_toggle_pos("none")
+        ).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(
+            pos_hdr, text="仅勾选本类", style="Secondary.TButton", command=lambda: self._batch_toggle_pos("cat")
+        ).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(
+            pos_hdr,
+            text=f"全选 {len(ALL_POSITIONS_CHAPTERS)} 项",
+            style="Secondary.TButton",
+            command=lambda: self._batch_toggle_pos("all"),
+        ).pack(side=tk.RIGHT, padx=2)
+
+        pos_bar = tk.Frame(tab_pos_list, bg=BG_INPUT, highlightbackground=BORDER, highlightthickness=1, padx=8, pady=5)
+        pos_bar.pack(fill=tk.X, pady=(0, 6))
+
+        tk.Checkbutton(
+            pos_bar,
+            text="🪟 透明背景 (V5 Alpha)",
+            variable=self.var_pos_transparent_bg,
+            bg=BG_INPUT,
+            fg=ACCENT_POV,
+            selectcolor=BG_PANEL,
+            activebackground=BG_INPUT,
+            activeforeground=ACCENT_POV,
+            font=("Microsoft YaHei UI", 9, "bold"),
+            cursor="hand2",
+            command=self.refresh_output,
+        ).pack(side=tk.LEFT, padx=(0, 8))
+
+        tk.Label(
+            pos_bar,
+            text="男方：",
+            bg=BG_INPUT,
+            fg=FG_MUTED,
+            font=("Microsoft YaHei UI", 9, "bold"),
+        ).pack(side=tk.LEFT)
+
+        cb_pos_male = ttk.Combobox(
+            pos_bar,
+            textvariable=self.var_pos_male_mode,
+            values=list(POS_MALE_MODE_PRESETS.keys()),
+            state="readonly",
+            width=26,
+        )
+        cb_pos_male.pack(side=tk.LEFT, padx=(2, 8))
+        cb_pos_male.bind("<<ComboboxSelected>>", lambda _e: self.refresh_output())
+
+        tk.Checkbutton(
+            pos_bar,
+            text="显示阴茎（关闭时保持私处/使用器官互动状态）",
+            variable=self.var_pos_show_penis,
+            bg=BG_INPUT,
+            fg=ACCENT,
+            selectcolor=BG_PANEL,
+            activebackground=BG_INPUT,
+            activeforeground=ACCENT,
+            font=("Microsoft YaHei UI", 9, "bold"),
+            cursor="hand2",
+            command=self.refresh_output,
+        ).pack(side=tk.LEFT)
+
+        self.btn_stop_pos_right = ttk.Button(
+            pos_bar,
+            text="⏹ 停止",
+            style="Secondary.TButton",
+            command=self.on_request_cancel_any_batch,
+            state="disabled",
+        )
+        self.btn_stop_pos_right.pack(side=tk.RIGHT, padx=(4, 0))
+
+        self.btn_batch_pos_checked = ttk.Button(
+            pos_bar,
+            text="🎯 连出已勾选",
+            style="Action.TButton",
+            command=lambda: self.on_batch_generate_scenes(force_all_12=False, suite_kind="all_positions"),
+        )
+        self.btn_batch_pos_checked.pack(side=tk.RIGHT, padx=(4, 0))
+
+        self.btn_batch_pos_cat = ttk.Button(
+            pos_bar,
+            text="🚀 出当前分类",
+            style="Generate.TButton",
+            command=lambda: self.on_batch_generate_scenes(force_all_12=True, suite_kind="all_positions"),
+        )
+        self.btn_batch_pos_cat.pack(side=tk.RIGHT)
+
+        pos_scroll_wrap = ttk.Frame(tab_pos_list, style="Card.TFrame")
+        pos_scroll_wrap.pack(fill=tk.X)
+
+        self.pos_canvas = tk.Canvas(
+            pos_scroll_wrap,
+            bg=BG_PANEL,
+            highlightthickness=0,
+            bd=0,
+            height=192,
+        )
+        pos_vscroll = ttk.Scrollbar(pos_scroll_wrap, orient=tk.VERTICAL, command=self.pos_canvas.yview)
+        self.pos_grid_inner = ttk.Frame(self.pos_canvas, style="Card.TFrame")
+        self._pos_canvas_win = self.pos_canvas.create_window((0, 0), window=self.pos_grid_inner, anchor="nw")
+        self.pos_canvas.configure(yscrollcommand=pos_vscroll.set)
+        self.pos_canvas.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        pos_vscroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.pos_grid_inner.bind(
+            "<Configure>",
+            lambda _e: self.pos_canvas.configure(scrollregion=self.pos_canvas.bbox("all")),
+        )
+        self.pos_canvas.bind(
+            "<Configure>",
+            lambda e: self.pos_canvas.itemconfigure(self._pos_canvas_win, width=e.width),
+        )
+        self._bind_pos_mousewheel(self.pos_canvas)
+        self._rebuild_pos_grid(trigger_refresh=False)
+
         out_nb = ttk.Notebook(parent)
         out_nb.pack(fill=tk.BOTH, expand=True)
 
@@ -1419,6 +1958,16 @@ class StoryPromptGeneratorApp:
             enable_t5_prose=self.module_vars["enable_t5_prose"].get(),
             enable_negatives=self.module_vars["enable_negatives"].get(),
             enable_multi_angle_nsfw=self.var_ma_nsfw.get(),
+            pos_transparent_bg=self.var_pos_transparent_bg.get(),
+            pos_male_mode=self.var_pos_male_mode.get(),
+            pos_show_penis=self.var_pos_show_penis.get(),
+            cam_enable_override=self.var_cam_override.get(),
+            cam_azimuth=int(self.var_cam_azimuth.get()),
+            cam_elevation=int(self.var_cam_elevation.get()),
+            cam_shot_preset=self.var_cam_shot.get(),
+            cam_wide_lens=self.var_cam_wide.get(),
+            cam_dutch_angle=self.var_cam_dutch.get(),
+            cam_gaze_preset=self.var_cam_gaze.get(),
         )
 
     def _on_preset_selected(self, _event=None) -> None:
@@ -1464,6 +2013,27 @@ class StoryPromptGeneratorApp:
                         break
             self.var_cat_ears.set(bool(data.get("add_cat_ears", False)))
             self.var_ma_nsfw.set(bool(data.get("enable_multi_angle_nsfw", False)))
+            if "pos_transparent_bg" in data:
+                self.var_pos_transparent_bg.set(bool(data.get("pos_transparent_bg", False)))
+            if data.get("pos_male_mode") in POS_MALE_MODE_PRESETS:
+                self.var_pos_male_mode.set(data["pos_male_mode"])
+            if "pos_show_penis" in data:
+                self.var_pos_show_penis.set(bool(data.get("pos_show_penis", True)))
+            if "cam_enable_override" in data:
+                self.var_cam_override.set(bool(data.get("cam_enable_override", False)))
+            if "cam_azimuth" in data:
+                self.var_cam_azimuth.set(int(data.get("cam_azimuth", 0)))
+            if "cam_elevation" in data:
+                self.var_cam_elevation.set(int(data.get("cam_elevation", 12)))
+            if data.get("cam_shot_preset") in CAMERA_SHOT_PRESETS:
+                self.var_cam_shot.set(data["cam_shot_preset"])
+            if "cam_wide_lens" in data:
+                self.var_cam_wide.set(bool(data.get("cam_wide_lens", False)))
+            if "cam_dutch_angle" in data:
+                self.var_cam_dutch.set(bool(data.get("cam_dutch_angle", False)))
+            if data.get("cam_gaze_preset") in CAMERA_GAZE_PRESETS:
+                self.var_cam_gaze.set(data["cam_gaze_preset"])
+            self._redraw_camera_radar()
             self.var_horns.set(bool(data.get("add_horns_tail", False)))
             self.var_glasses.set(bool(data.get("add_glasses", False)))
             self.var_choker.set(bool(data.get("add_choker", False)))
@@ -1554,6 +2124,149 @@ class StoryPromptGeneratorApp:
     def _is_multi_angle_tab_active(self) -> bool:
         return hasattr(self, "scene_nb") and self.scene_nb.index(self.scene_nb.select()) == 1
 
+    def _is_all_positions_tab_active(self) -> bool:
+        return hasattr(self, "scene_nb") and self.scene_nb.index(self.scene_nb.select()) == 2
+
+    def _on_scene_notebook_changed(self, _event=None) -> None:
+        if self._is_all_positions_tab_active():
+            valid_ids = {c["id"] for c in ALL_POSITIONS_CHAPTERS}
+            if self.active_scene_id not in valid_ids:
+                vis = self._get_filtered_pos_chapters()
+                self.active_scene_id = vis[0]["id"] if vis else ALL_POSITIONS_CHAPTERS[0]["id"]
+        elif self._is_multi_angle_tab_active():
+            valid_ids = {c["id"] for c in MULTI_ANGLE_CHAPTERS}
+            if self.active_scene_id not in valid_ids:
+                self.active_scene_id = MULTI_ANGLE_CHAPTERS[0]["id"]
+        else:
+            valid_ids = {c["id"] for c in STORY_CHAPTERS}
+            if self.active_scene_id not in valid_ids:
+                self.active_scene_id = STORY_CHAPTERS[0]["id"]
+        for sid, btn in list(self.scene_btn_refs.items()):
+            if btn.winfo_exists():
+                btn.config(
+                    bg=BORDER if sid == self.active_scene_id else BG_INPUT,
+                    fg=ACCENT if sid == self.active_scene_id else FG_TEXT,
+                )
+        self.refresh_output()
+
+    def _bind_pos_mousewheel(self, canvas: tk.Canvas) -> None:
+        def _on_wheel(event: tk.Event) -> None:
+            if self._is_all_positions_tab_active():
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        canvas.bind("<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", _on_wheel))
+        canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
+
+    def _get_filtered_pos_chapters(self) -> List[Dict[str, str]]:
+        cat = self.var_pos_category.get()
+        if not cat or cat == POS_CATEGORIES[0]:
+            return list(ALL_POSITIONS_CHAPTERS)
+        return [ch for ch in ALL_POSITIONS_CHAPTERS if ch.get("category") == cat]
+
+    def _rebuild_pos_grid(self, trigger_refresh: bool = True) -> None:
+        if not hasattr(self, "pos_grid_inner"):
+            return
+        all_pos_ids = {c["id"] for c in ALL_POSITIONS_CHAPTERS}
+        for pid in all_pos_ids:
+            self.scene_btn_refs.pop(pid, None)
+            self.gen_btn_refs.pop(pid, None)
+            self.copy_btn_refs.pop(pid, None)
+        for child in self.pos_grid_inner.winfo_children():
+            child.destroy()
+
+        vis_chapters = self._get_filtered_pos_chapters()
+        self.pos_grid_inner.columnconfigure(0, weight=1)
+        self.pos_grid_inner.columnconfigure(1, weight=1)
+        is_pov = self.var_perspective.get() == "pov"
+        cp_txt = "复制[第一]" if is_pov else "复制[第三]"
+        cp_fg = ACCENT_POV if is_pov else ACCENT_3RD
+        gen_state = "disabled" if self.is_generating else "normal"
+
+        rows_per_col = max(1, (len(vis_chapters) + 1) // 2)
+        for idx, ch in enumerate(vis_chapters):
+            sid = ch["id"]
+            row_f = ttk.Frame(self.pos_grid_inner, style="Card.TFrame")
+            row_f.grid(row=idx % rows_per_col, column=idx // rows_per_col, sticky="ew", padx=4, pady=2)
+
+            ttk.Checkbutton(
+                row_f, text="", variable=self.all_pos_vars[sid], command=self.refresh_output
+            ).pack(side=tk.LEFT)
+
+            btn_sel = tk.Button(
+                row_f,
+                text=ch["title"],
+                anchor="w",
+                bg=BORDER if sid == self.active_scene_id else BG_INPUT,
+                fg=ACCENT if sid == self.active_scene_id else FG_TEXT,
+                activebackground=BORDER,
+                activeforeground=ACCENT,
+                relief=tk.FLAT,
+                padx=6,
+                pady=2,
+                cursor="hand2",
+                font=("Microsoft YaHei UI", 9),
+                command=lambda s=sid: self.select_single_scene(s),
+            )
+            btn_sel.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 4))
+            self.scene_btn_refs[sid] = btn_sel
+
+            btn_gen_row = tk.Button(
+                row_f,
+                text="🎨生成",
+                bg=BORDER,
+                fg=SUCCESS,
+                activebackground=SUCCESS,
+                activeforeground="#11111b",
+                relief=tk.FLAT,
+                padx=5,
+                pady=1,
+                cursor="hand2",
+                font=("Microsoft YaHei UI", 8, "bold"),
+                state=gen_state,
+                command=lambda s=sid: self.on_quick_generate_scene(s),
+            )
+            btn_gen_row.pack(side=tk.RIGHT, padx=(3, 0))
+            self.gen_btn_refs[sid] = btn_gen_row
+
+            btn_cp = tk.Button(
+                row_f,
+                text=cp_txt,
+                bg=BORDER,
+                fg=cp_fg,
+                activebackground=cp_fg,
+                activeforeground="#11111b",
+                relief=tk.FLAT,
+                padx=6,
+                pady=1,
+                cursor="hand2",
+                font=("Microsoft YaHei UI", 8, "bold"),
+                command=lambda s=sid: self.copy_single_scene(s),
+            )
+            btn_cp.pack(side=tk.RIGHT)
+            self.copy_btn_refs[sid] = btn_cp
+
+        if hasattr(self, "pos_canvas"):
+            self.pos_canvas.yview_moveto(0.0)
+        if trigger_refresh:
+            if self._is_all_positions_tab_active() and vis_chapters:
+                vis_ids = {c["id"] for c in vis_chapters}
+                if self.active_scene_id not in vis_ids:
+                    self.select_single_scene(vis_chapters[0]["id"])
+                    return
+            self.refresh_output()
+
+    def _batch_toggle_pos(self, mode: str) -> None:
+        vis_ids = {c["id"] for c in self._get_filtered_pos_chapters()}
+        for ch in ALL_POSITIONS_CHAPTERS:
+            sid = ch["id"]
+            if mode == "none":
+                self.all_pos_vars[sid].set(False)
+            elif mode == "all":
+                self.all_pos_vars[sid].set(True)
+            elif mode == "cat":
+                self.all_pos_vars[sid].set(sid in vis_ids)
+        self.refresh_output()
+
     def _batch_toggle_ma(self, select_all: bool) -> None:
         for ch in MULTI_ANGLE_CHAPTERS:
             self.multi_angle_vars[ch["id"]].set(select_all)
@@ -1583,8 +2296,11 @@ class StoryPromptGeneratorApp:
         self.out_nb.select(0)
 
     def refresh_output(self) -> None:
+        self._sync_camera_status_ui()
         cfg = self._collect_config()
-        if self._is_multi_angle_tab_active():
+        if self._is_all_positions_tab_active():
+            selected_ids = [ch["id"] for ch in ALL_POSITIONS_CHAPTERS if self.all_pos_vars[ch["id"]].get()]
+        elif self._is_multi_angle_tab_active():
             selected_ids = [ch["id"] for ch in MULTI_ANGLE_CHAPTERS if self.multi_angle_vars[ch["id"]].get()]
         else:
             selected_ids = [ch["id"] for ch in STORY_CHAPTERS if self.scene_vars[ch["id"]].get()]
@@ -1640,7 +2356,7 @@ class StoryPromptGeneratorApp:
         if not items:
             return
         idx = min(self._get_selected_block_index(), len(items) - 1)
-        all_ch = STORY_CHAPTERS + MULTI_ANGLE_CHAPTERS
+        all_ch = STORY_CHAPTERS + MULTI_ANGLE_CHAPTERS + ALL_POSITIONS_CHAPTERS
         ch_meta = next((c for c in all_ch if c["id"] == self.active_scene_id), STORY_CHAPTERS[0])
         canvas_hint = items[idx][1]
         self._active_canvas_hint = canvas_hint
@@ -1649,7 +2365,7 @@ class StoryPromptGeneratorApp:
         self._update_token_badge_from_editor()
 
     def _refresh_single_tab(self, cfg: CharacterConfig) -> None:
-        all_ch = STORY_CHAPTERS + MULTI_ANGLE_CHAPTERS
+        all_ch = STORY_CHAPTERS + MULTI_ANGLE_CHAPTERS + ALL_POSITIONS_CHAPTERS
         ch_meta = next((c for c in all_ch if c["id"] == self.active_scene_id), STORY_CHAPTERS[0])
         items = generate_scene_prompts(self.active_scene_id, cfg, pov_override=cfg.perspective_mode)
         self._current_single_items = items
@@ -1716,7 +2432,10 @@ class StoryPromptGeneratorApp:
         self.root.clipboard_clear()
         self.root.clipboard_append(content)
         self.root.update_idletasks()
-        if self._is_multi_angle_tab_active():
+        if self._is_all_positions_tab_active():
+            selected_cnt = sum(1 for v in self.all_pos_vars.values() if v.get())
+            unit_label = "个体位"
+        elif self._is_multi_angle_tab_active():
             selected_cnt = sum(1 for v in self.multi_angle_vars.values() if v.get())
             unit_label = "个镜头"
         else:
@@ -1730,12 +2449,14 @@ class StoryPromptGeneratorApp:
 
     def export_to_file(self) -> None:
         cfg = self._collect_config()
-        if self._is_multi_angle_tab_active():
+        if self._is_all_positions_tab_active():
+            selected_ids = [ch["id"] for ch in ALL_POSITIONS_CHAPTERS if self.all_pos_vars[ch["id"]].get()]
+        elif self._is_multi_angle_tab_active():
             selected_ids = [ch["id"] for ch in MULTI_ANGLE_CHAPTERS if self.multi_angle_vars[ch["id"]].get()]
         else:
             selected_ids = [ch["id"] for ch in STORY_CHAPTERS if self.scene_vars[ch["id"]].get()]
         if not selected_ids:
-            messagebox.showwarning("内容为空", "请先勾选要导出的章节或镜头！")
+            messagebox.showwarning("内容为空", "请先勾选要导出的章节、镜头或体位！")
             return
 
         both = self.var_export_both.get()
@@ -1856,6 +2577,16 @@ class StoryPromptGeneratorApp:
         new_w = max(1, int(src_w * ratio))
         new_h = max(1, int(src_h * ratio))
         resized = self._preview_pil_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        if resized.mode == "RGBA":
+            alpha_min, _ = resized.getchannel("A").getextrema()
+            if alpha_min < 250:
+                tile = 16
+                checker = Image.new("RGBA", (new_w, new_h), (30, 30, 46, 255))
+                light_sq = Image.new("RGBA", (tile, tile), (52, 54, 74, 255))
+                for yy in range(0, new_h, tile):
+                    for xx in range(((yy // tile) % 2) * tile, new_w, tile * 2):
+                        checker.paste(light_sq, (xx, yy))
+                resized = Image.alpha_composite(checker, resized)
         self._preview_tk_img = ImageTk.PhotoImage(resized)
         self.lbl_image_view.config(image=self._preview_tk_img, text="")
 
@@ -2003,6 +2734,8 @@ class StoryPromptGeneratorApp:
             self.btn_batch_checked_right,
             self.btn_batch_ma_all,
             self.btn_batch_ma_checked,
+            self.btn_batch_pos_cat,
+            self.btn_batch_pos_checked,
             self.btn_regen_same,
             self.btn_upscale_last,
             self.btn_upscale_choose,
@@ -2012,10 +2745,11 @@ class StoryPromptGeneratorApp:
             self.btn_left_batch_upscale,
         ):
             b.config(state=btn_state)
-        for row_btn in self.gen_btn_refs.values():
-            row_btn.config(state=btn_state)
+        for row_btn in list(self.gen_btn_refs.values()):
+            if row_btn.winfo_exists():
+                row_btn.config(state=btn_state)
         cancel_state = "normal" if (locked and allow_cancel_batch) else "disabled"
-        for cb in ("btn_cancel_batch", "btn_stop_batch_right", "btn_stop_ma_right", "btn_stop_batch_preview"):
+        for cb in ("btn_cancel_batch", "btn_stop_batch_right", "btn_stop_ma_right", "btn_stop_pos_right", "btn_stop_batch_preview"):
             if hasattr(self, cb):
                 getattr(self, cb).config(state=cancel_state)
 
@@ -2024,7 +2758,7 @@ class StoryPromptGeneratorApp:
             return
         self._cancel_batch_upscale = True
         self._cancel_batch_gen = True
-        for cb in ("btn_cancel_batch", "btn_stop_batch_right", "btn_stop_ma_right", "btn_stop_batch_preview"):
+        for cb in ("btn_cancel_batch", "btn_stop_batch_right", "btn_stop_ma_right", "btn_stop_pos_right", "btn_stop_batch_preview"):
             if hasattr(self, cb):
                 getattr(self, cb).config(state="disabled")
         self.var_status.set("⏹ 正在等待当前这一张请求完成后安全中断批量任务（已落盘图片将完整保留）...")
@@ -2422,24 +3156,40 @@ class StoryPromptGeneratorApp:
             )
             return
 
-        is_ma = suite_kind == "multi_angle"
-        source_chapters = MULTI_ANGLE_CHAPTERS if is_ma else STORY_CHAPTERS
-        if is_ma:
+        if suite_kind == "all_positions":
+            source_chapters = ALL_POSITIONS_CHAPTERS
+            if force_all_12:
+                vis_ch = self._get_filtered_pos_chapters()
+                target_chapter_ids = [ch["id"] for ch in vis_ch]
+                scope_label = f"当前分类 {len(target_chapter_ids)} 个体位"
+            else:
+                target_chapter_ids = [ch["id"] for ch in ALL_POSITIONS_CHAPTERS if self.all_pos_vars[ch["id"]].get()]
+                if not target_chapter_ids:
+                    messagebox.showwarning("未勾选任何体位", "请先在「全体位生成器」勾选至少 1 个体位，或点击「🚀 出当前分类」。")
+                    return
+                scope_label = f"已勾选 {len(target_chapter_ids)} 个体位"
+        elif suite_kind == "multi_angle":
+            source_chapters = MULTI_ANGLE_CHAPTERS
             if force_all_12:
                 target_chapter_ids = [ch["id"] for ch in MULTI_ANGLE_CHAPTERS]
+                scope_label = "全套 9 镜头"
             else:
                 target_chapter_ids = [ch["id"] for ch in MULTI_ANGLE_CHAPTERS if self.multi_angle_vars[ch["id"]].get()]
                 if not target_chapter_ids:
                     messagebox.showwarning("未勾选任何镜头", "请先在「多角度套图」标签页勾选至少 1 个镜头，或点击「🚀 一键出全套 9 镜头」。")
                     return
+                scope_label = f"已勾选 {len(target_chapter_ids)} 镜头"
         else:
+            source_chapters = STORY_CHAPTERS
             if force_all_12:
                 target_chapter_ids = [ch["id"] for ch in STORY_CHAPTERS if ch["id"].startswith("S")]
+                scope_label = "全套 12 幕 (S00 ~ S11)"
             else:
                 target_chapter_ids = [ch["id"] for ch in STORY_CHAPTERS if self.scene_vars[ch["id"]].get()]
                 if not target_chapter_ids:
                     messagebox.showwarning("未勾选任何章节", "请先在右侧章节列表中勾选至少 1 个章节，或直接点击「🚀 一键出全套 12 幕」。")
                     return
+                scope_label = f"已勾选 {len(target_chapter_ids)} 幕"
 
         mode = self.var_perspective.get()
         mode_label = "👁️ 第一人称 (POV)" if mode == "pov" else "🎥 第三人称 (客观机位)"
@@ -2505,7 +3255,7 @@ class StoryPromptGeneratorApp:
             "确认一键批量连出故事线",
             f"🎬 即将按顺序串行连出 NovelAI V5 Full Medium：\n\n"
             f"• 视角轨道：{mode_label}\n"
-            f"• 目标范围：{'全套 12 幕 (S00 ~ S11)' if force_all_12 else f'已勾选 {len(target_chapter_ids)} 幕'} {split_note}\n"
+            f"• 目标范围：{scope_label} {split_note}\n"
             f"• 0号幕 (S00) Seed 跟随：{seed_desc}\n"
             f"• 画布策略：{settings.canvas_preset}\n"
             f"• 预计总消耗：约 {total_anlas} Anlas（若 Opus 免费额度充裕则为 0 点数）\n"
@@ -2534,11 +3284,12 @@ class StoryPromptGeneratorApp:
         ) -> None:
             def _ui_step() -> None:
                 # 同步高亮当前正在处理的章节按钮
-                for sid_k, btn_k in self.scene_btn_refs.items():
-                    btn_k.config(
-                        bg=BORDER if sid_k == task.base_chapter_id else BG_INPUT,
-                        fg=SUCCESS if sid_k == task.base_chapter_id else FG_TEXT,
-                    )
+                for sid_k, btn_k in list(self.scene_btn_refs.items()):
+                    if btn_k.winfo_exists():
+                        btn_k.config(
+                            bg=BORDER if sid_k == task.base_chapter_id else BG_INPUT,
+                            fg=SUCCESS if sid_k == task.base_chapter_id else FG_TEXT,
+                        )
 
                 if phase == "start":
                     seed_lbl = f"Seed={cur_seed}" if cur_seed > 0 else "Seed=随机摇号中"
@@ -2611,11 +3362,12 @@ class StoryPromptGeneratorApp:
         self._cancel_batch_gen = False
 
         # 恢复当前选中章节高亮色
-        for sid_k, btn_k in self.scene_btn_refs.items():
-            btn_k.config(
-                bg=BORDER if sid_k == self.active_scene_id else BG_INPUT,
-                fg=ACCENT if sid_k == self.active_scene_id else FG_TEXT,
-            )
+        for sid_k, btn_k in list(self.scene_btn_refs.items()):
+            if btn_k.winfo_exists():
+                btn_k.config(
+                    bg=BORDER if sid_k == self.active_scene_id else BG_INPUT,
+                    fg=ACCENT if sid_k == self.active_scene_id else FG_TEXT,
+                )
 
         if summary.s00_seed_used is not None and self.var_api_use_s00_seed.get():
             self.last_s00_seed = summary.s00_seed_used
