@@ -279,7 +279,61 @@ export function loadApiSettings(): NaiApiSettings {
     const raw = localStorage.getItem(LS_API_KEY);
     if (!raw) return def;
     const parsed = JSON.parse(raw) as Partial<NaiApiSettings>;
-    return { ...def, ...parsed };
+    const merged: NaiApiSettings = { ...def, ...parsed };
+    if (merged.model !== "nai-diffusion-4-5-full" && merged.model !== "nai-diffusion-5-full-medium") {
+      merged.model = def.model;
+    }
+    if (!Number.isFinite(merged.steps)) merged.steps = def.steps;
+    merged.steps = Math.max(1, Math.min(50, Math.round(merged.steps)));
+    if (
+      merged.precise_ref_workflow !== "chara_only" &&
+      merged.precise_ref_workflow !== "style_plus_chara" &&
+      merged.precise_ref_workflow !== "single_char_and_style"
+    ) {
+      merged.precise_ref_workflow = def.precise_ref_workflow;
+    }
+    if (
+      merged.uc_preset_mode !== "heavy" &&
+      merged.uc_preset_mode !== "light" &&
+      merged.uc_preset_mode !== "human_focus" &&
+      merged.uc_preset_mode !== "none"
+    ) {
+      merged.uc_preset_mode = def.uc_preset_mode;
+    }
+    if (!parsed.uc_preset_migrated_v2) {
+      if (!parsed.uc_preset_mode || parsed.uc_preset_mode === "none") {
+        merged.uc_preset_mode = "heavy";
+      }
+      merged.uc_preset_migrated_v2 = true;
+      saveApiSettings(merged);
+    }
+    merged.keep_inline_negatives =
+      merged.keep_inline_negatives === undefined ? def.keep_inline_negatives : Boolean(merged.keep_inline_negatives);
+    if (!Number.isFinite(merged.precise_ref_strength)) {
+      merged.precise_ref_strength = def.precise_ref_strength;
+    }
+    if (!Number.isFinite(merged.precise_ref_fidelity)) {
+      merged.precise_ref_fidelity = def.precise_ref_fidelity;
+    }
+    if (!Number.isFinite(merged.precise_style_strength)) {
+      merged.precise_style_strength = def.precise_style_strength;
+    }
+    if (!Number.isFinite(merged.precise_style_fidelity)) {
+      merged.precise_style_fidelity = def.precise_style_fidelity;
+    }
+    merged.precise_ref_strength = Math.max(0, Math.min(1, Number(merged.precise_ref_strength)));
+    merged.precise_ref_fidelity = Math.max(0, Math.min(1, Number(merged.precise_ref_fidelity)));
+    merged.precise_ref_enabled = Boolean(merged.precise_ref_enabled);
+    merged.precise_style_strength = Math.max(0, Math.min(1, Number(merged.precise_style_strength)));
+    merged.precise_style_fidelity = Math.max(0, Math.min(1, Number(merged.precise_style_fidelity)));
+    merged.precise_style_enabled = Boolean(merged.precise_style_enabled);
+    if (merged.carousel_auto_mode !== "follow_latest" && merged.carousel_auto_mode !== "timed") {
+      merged.carousel_auto_mode = parsed.carousel_interval_sec === 0 ? "follow_latest" : "timed";
+    }
+    if (![2, 3, 4, 6, 8].includes(Number(merged.carousel_interval_sec))) {
+      merged.carousel_interval_sec = 4;
+    }
+    return merged;
   } catch {
     return def;
   }
@@ -291,4 +345,155 @@ export function saveApiSettings(settings: NaiApiSettings): void {
   } catch {
     // ignore
   }
+}
+
+// ==========================================
+// IndexedDB Storage for V4.5 Precise Reference (Character) Image
+// ==========================================
+export interface StoredPreciseRefImage {
+  filename: string;
+  rawBytes: Uint8Array;
+  preparedPngBytes: Uint8Array;
+  origWidth: number;
+  origHeight: number;
+  normWidth: number;
+  normHeight: number;
+  prepVersion?: number;
+  updatedAt: number;
+}
+
+const IDB_NAME = "nai_wb_idb_v1";
+const IDB_STORE = "kv";
+const IDB_PRECISE_REF_KEY = "precise_ref_character_v1";
+const IDB_PRECISE_STYLE_REF_KEY = "precise_ref_style_v1";
+const memPreciseRefSlots: Record<string, StoredPreciseRefImage | null> = {
+  [IDB_PRECISE_REF_KEY]: null,
+  [IDB_PRECISE_STYLE_REF_KEY]: null,
+};
+
+function openWorkbenchIdb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") {
+      reject(new Error("IndexedDB unavailable"));
+      return;
+    }
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error ?? new Error("IndexedDB open error"));
+  });
+}
+
+function toUint8Array(val: unknown): Uint8Array {
+  if (val instanceof Uint8Array) return val;
+  if (val instanceof ArrayBuffer) return new Uint8Array(val);
+  if (ArrayBuffer.isView(val)) {
+    return new Uint8Array(val.buffer, val.byteOffset, val.byteLength);
+  }
+  return new Uint8Array(0);
+}
+
+async function loadPreciseRefByKey(key: string): Promise<StoredPreciseRefImage | null> {
+  try {
+    const db = await openWorkbenchIdb();
+    const record = await new Promise<unknown>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const store = tx.objectStore(IDB_STORE);
+      const getReq = store.get(key);
+      getReq.onsuccess = () => resolve(getReq.result);
+      getReq.onerror = () => reject(getReq.error);
+    });
+    db.close();
+    if (!record || typeof record !== "object") {
+      return memPreciseRefSlots[key] ?? null;
+    }
+    const r = record as Record<string, unknown>;
+    const rawBytes = toUint8Array(r.rawBytes);
+    const preparedPngBytes = toUint8Array(r.preparedPngBytes);
+    if (preparedPngBytes.length === 0) {
+      return memPreciseRefSlots[key] ?? null;
+    }
+    const loaded: StoredPreciseRefImage = {
+      filename: String(r.filename || "reference.png"),
+      rawBytes: rawBytes.length > 0 ? rawBytes : preparedPngBytes,
+      preparedPngBytes,
+      origWidth: Number(r.origWidth || 0),
+      origHeight: Number(r.origHeight || 0),
+      normWidth: Number(r.normWidth || 0),
+      normHeight: Number(r.normHeight || 0),
+      prepVersion: Number(r.prepVersion || 1),
+      updatedAt: Number(r.updatedAt || Date.now()),
+    };
+    memPreciseRefSlots[key] = loaded;
+    return loaded;
+  } catch {
+    return memPreciseRefSlots[key] ?? null;
+  }
+}
+
+async function savePreciseRefByKey(key: string, item: StoredPreciseRefImage): Promise<void> {
+  // Store canonical prepared PNG in IndexedDB without duplicating huge 17MB+ 4K raw files
+  const compactItem: StoredPreciseRefImage = {
+    ...item,
+    rawBytes:
+      item.rawBytes.byteLength > 4 * 1024 * 1024 ? item.preparedPngBytes : item.rawBytes,
+  };
+  memPreciseRefSlots[key] = compactItem;
+  try {
+    const db = await openWorkbenchIdb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      tx.objectStore(IDB_STORE).put(compactItem, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // Keep in-memory copy if IndexedDB is blocked in local/incognito context
+  }
+}
+
+async function clearPreciseRefByKey(key: string): Promise<void> {
+  memPreciseRefSlots[key] = null;
+  try {
+    const db = await openWorkbenchIdb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      tx.objectStore(IDB_STORE).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // ignore
+  }
+}
+
+export async function loadPreciseRefImage(): Promise<StoredPreciseRefImage | null> {
+  return loadPreciseRefByKey(IDB_PRECISE_REF_KEY);
+}
+
+export async function savePreciseRefImage(item: StoredPreciseRefImage): Promise<void> {
+  return savePreciseRefByKey(IDB_PRECISE_REF_KEY, item);
+}
+
+export async function clearPreciseRefImage(): Promise<void> {
+  return clearPreciseRefByKey(IDB_PRECISE_REF_KEY);
+}
+
+export async function loadPreciseStyleRefImage(): Promise<StoredPreciseRefImage | null> {
+  return loadPreciseRefByKey(IDB_PRECISE_STYLE_REF_KEY);
+}
+
+export async function savePreciseStyleRefImage(item: StoredPreciseRefImage): Promise<void> {
+  return savePreciseRefByKey(IDB_PRECISE_STYLE_REF_KEY, item);
+}
+
+export async function clearPreciseStyleRefImage(): Promise<void> {
+  return clearPreciseRefByKey(IDB_PRECISE_STYLE_REF_KEY);
 }

@@ -59,8 +59,11 @@ export class CameraRadarCanvas {
   }
 
   private bindEvents(): void {
+    this.canvas.style.touchAction = "none";
+
     this.canvas.addEventListener("pointerdown", (evt) => {
       if (evt.button === 2) return;
+      evt.preventDefault();
       const { x, y } = this.toLogicalXY(evt);
       this.canvas.setPointerCapture(evt.pointerId);
       this.dragTarget = x < 210 ? "az" : "el";
@@ -69,6 +72,7 @@ export class CameraRadarCanvas {
 
     this.canvas.addEventListener("pointermove", (evt) => {
       if (!this.dragTarget) return;
+      evt.preventDefault();
       const { x, y } = this.toLogicalXY(evt);
       this.updateFromPoint(x, y, evt.shiftKey);
     });
@@ -284,6 +288,6 @@ export class CameraRadarCanvas {
     ctx.fillStyle = "#7f849c";
     ctx.font = "10px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("左键拖拽调角（Shift 吸附15°） · 右键复位回随本幕默认", this.W / 2, this.H - 4);
+    ctx.fillText("触屏/左键拖拽调角 (Shift吸附15°) · 右键或点上方复位", this.W / 2, this.H - 4);
   }
 }

@@ -26,6 +26,8 @@ export interface CharacterConfig {
   add_extra_sweat: boolean;
 
   style_preset: string;
+  lighting_preset: string;
+  env_preset: string;
   custom_style_pos: string;
   custom_style_neg: string;
   morph_preset: string;
@@ -54,6 +56,7 @@ export interface CharacterConfig {
   enable_multi_angle_nsfw: boolean;
 
   pos_transparent_bg: boolean;
+  pos_scene: string;
   pos_male_mode: string;
   pos_show_penis: boolean;
   pos_stage: string;
@@ -103,6 +106,8 @@ export function createDefaultCharacterConfig(): CharacterConfig {
     add_extra_sweat: false,
 
     style_preset: "137_128 锋利钢笔水彩空气感逆光（原版默认）",
+    lighting_preset: "🔄 随画风与本幕默认光影（不额外覆盖）",
+    env_preset: "🔄 随本幕/体位工具栏默认环境",
     custom_style_pos: "",
     custom_style_neg: "",
     morph_preset: "1D 微明显蝴蝶低过渡（原版默认）",
@@ -131,6 +136,7 @@ export function createDefaultCharacterConfig(): CharacterConfig {
     enable_multi_angle_nsfw: false,
 
     pos_transparent_bg: false,
+    pos_scene: "🛋️ 默认暖光室内沙发（indoors, couch, lamp）",
     pos_male_mode: "👤 正常显示男方（默认无脸男 faceless male）",
     pos_show_penis: true,
     pos_stage: "🔥 1. 射精前 · 进行中（默认专注体位连接 · 无白浊）",
@@ -169,34 +175,73 @@ export interface TokenCountInfo {
   exact_spiece: boolean;
 }
 
+export type NaiModelId = "nai-diffusion-5-full-medium" | "nai-diffusion-4-5-full";
+export type NaiUcPresetMode = "heavy" | "light" | "human_focus" | "none";
+export type PreciseRefMode = "character" | "style" | "character&style";
+export type PreciseRefWorkflowMode = "chara_only" | "style_plus_chara" | "single_char_and_style";
+export type CarouselMode = "manual" | "follow_latest" | "timed";
+
+export interface PreciseRefSlotInput {
+  mode: PreciseRefMode;
+  pngBytes: Uint8Array;
+  strength: number;
+  fidelity: number;
+}
+
 export interface NaiApiSettings {
   api_token: string;
+  model: NaiModelId;
+  steps: number;
   canvas_preset: string;
   scale: number;
   cfg_rescale: number;
   seed: number;
   use_s00_seed: boolean;
+  uc_preset_mode: NaiUcPresetMode;
+  uc_preset_migrated_v2?: boolean;
+  keep_inline_negatives: boolean;
   extra_uc: string;
   append_v5_quality: boolean;
+  precise_ref_workflow: PreciseRefWorkflowMode;
+  precise_ref_enabled: boolean;
+  precise_ref_strength: number;
+  precise_ref_fidelity: number;
+  precise_style_enabled: boolean;
+  precise_style_strength: number;
+  precise_style_fidelity: number;
   auto_download: boolean;
   auto_upscale_replace: boolean;
   auto_fullscreen_carousel: boolean;
+  carousel_auto_mode: "follow_latest" | "timed";
   carousel_interval_sec: number;
 }
 
 export function createDefaultNaiApiSettings(): NaiApiSettings {
   return {
     api_token: "",
+    model: "nai-diffusion-5-full-medium",
+    steps: 28,
     canvas_preset: "🔄 自动跟随本幕推荐画布",
     scale: 6.0,
     cfg_rescale: 0.0,
     seed: -1,
     use_s00_seed: true,
+    uc_preset_mode: "heavy",
+    uc_preset_migrated_v2: true,
+    keep_inline_negatives: true,
     extra_uc: "",
     append_v5_quality: true,
+    precise_ref_workflow: "style_plus_chara",
+    precise_ref_enabled: true,
+    precise_ref_strength: 1.0,
+    precise_ref_fidelity: 1.0,
+    precise_style_enabled: true,
+    precise_style_strength: 1.0,
+    precise_style_fidelity: 1.0,
     auto_download: false,
     auto_upscale_replace: false,
     auto_fullscreen_carousel: true,
+    carousel_auto_mode: "follow_latest",
     carousel_interval_sec: 4,
   };
 }

@@ -1,7 +1,10 @@
 import {
   CANVAS_PRESETS,
+  MODEL_V4_5_FULL,
   MODEL_V5_FULL_MEDIUM,
   NAI_IMAGE_ENDPOINT,
+  V4_5_HUMAN_FOCUS_UC_BASE,
+  V4_5_LIGHT_UC_BASE,
   V5_HEAVY_UC_BASE,
   V5_QUALITY_SUFFIX,
 } from "../data/engineConstants";
@@ -9,7 +12,13 @@ import {
   parseStructuredPrompt,
   splitInlineNegativesFromCaption,
 } from "../engine/t5Tokenizer";
-import type { SubscriptionInfo } from "../engine/types";
+import type {
+  NaiModelId,
+  NaiUcPresetMode,
+  PreciseRefMode,
+  PreciseRefSlotInput,
+  SubscriptionInfo,
+} from "../engine/types";
 
 export class NaiApiError extends Error {
   statusCode?: number;
@@ -42,40 +51,130 @@ export function parseCanvasSize(canvasHint: string, canvasPreset: string): [numb
   return [832, 1216];
 }
 
+export function estimateNaiAnlas(options: {
+  model: NaiModelId;
+  width: number;
+  height: number;
+  steps?: number;
+  isOpusFreeEligible?: boolean;
+  hasPreciseRef?: boolean;
+  preciseRefCount?: number;
+}): number {
+  const isV45 = options.model === MODEL_V4_5_FULL;
+  const effectiveSteps = isV45 ? Math.max(1, Math.min(50, Math.round(options.steps ?? 28))) : 14;
+  const pixels = options.width * options.height;
+  const isOpusFreeBase = Boolean(
+    options.isOpusFreeEligible && pixels <= 1048576 && effectiveSteps <= 28
+  );
+
+  let genCost = 0;
+  if (!isOpusFreeBase) {
+    const stepFactor = 1.0 / 1.06521739;
+    const baseCost = Math.ceil(
+      2951823174884865e-21 * pixels + 5753298233447344e-22 * pixels * effectiveSteps * stepFactor
+    );
+    genCost = isV45 ? Math.max(baseCost, 2) : Math.max(Math.ceil(baseCost * 1.5), 2);
+  }
+
+  const refCount =
+    typeof options.preciseRefCount === "number"
+      ? Math.max(0, Math.round(options.preciseRefCount))
+      : options.hasPreciseRef
+        ? 1
+        : 0;
+  const refSurcharge = isV45 ? refCount * 5 : 0;
+  return genCost + refSurcharge;
+}
+
 export function estimateV5MediumAnlas(
   width: number,
   height: number,
   steps = 14,
   isOpusFreeEligible = false
 ): number {
-  const pixels = width * height;
-  if (isOpusFreeEligible && pixels <= 1048576 && steps <= 28) {
-    return 0;
-  }
-  const stepFactor = 1.0 / 1.06521739;
-  const baseCost = Math.ceil(
-    2951823174884865e-21 * pixels + 5753298233447344e-22 * pixels * steps * stepFactor
-  );
-  return Math.max(Math.ceil(baseCost * 1.5), 2);
+  return estimateNaiAnlas({
+    model: MODEL_V5_FULL_MEDIUM,
+    width,
+    height,
+    steps,
+    isOpusFreeEligible,
+    hasPreciseRef: false,
+  });
 }
 
-export function buildV5MediumPayload(options: {
+export interface BuildPreciseRefMeta {
+  mode: PreciseRefMode;
+  strength: number;
+  fidelity: number;
+  base64Image?: string;
+}
+
+export function uint8ArrayToBase64(bytes: Uint8Array): string {
+  const CHUNK_SIZE = 0x8000;
+  const chunks: string[] = [];
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    const slice = bytes.subarray(i, Math.min(i + CHUNK_SIZE, bytes.length));
+    chunks.push(String.fromCharCode.apply(null, slice as unknown as number[]));
+  }
+  return btoa(chunks.join(""));
+}
+
+export function buildNaiGeneratePayload(options: {
+  model?: NaiModelId;
   rawPrompt: string;
   width?: number;
   height?: number;
+  steps?: number;
   scale?: number;
   cfgRescale?: number;
   seed?: number;
+  ucPresetMode?: NaiUcPresetMode;
+  keepInlineNegatives?: boolean;
   extraUc?: string;
   appendV5Quality?: boolean;
-}): { payload: Record<string, unknown>; actualSeed: number } {
+  hasPreciseRef?: boolean;
+  preciseRefMode?: PreciseRefMode;
+  preciseRefStrength?: number;
+  preciseRefFidelity?: number;
+  preciseRefMetas?: BuildPreciseRefMeta[];
+}): {
+  payload: Record<string, unknown>;
+  actualSeed: number;
+  effectiveSteps: number;
+  usedPreciseRef: boolean;
+  preciseRefCount: number;
+} {
+  const model: NaiModelId =
+    options.model === MODEL_V4_5_FULL ? MODEL_V4_5_FULL : MODEL_V5_FULL_MEDIUM;
+  const isV45 = model === MODEL_V4_5_FULL;
+  const effectiveSteps = isV45 ? Math.max(1, Math.min(50, Math.round(options.steps ?? 28))) : 14;
   const width = options.width ?? 832;
   const height = options.height ?? 1216;
-  const scale = options.scale ?? 6.0;
+  const scale = options.scale ?? (isV45 ? 7.0 : 6.0);
   const cfgRescale = options.cfgRescale ?? 0.0;
   const seed = options.seed ?? -1;
   const extraUc = options.extraUc ?? "";
   const appendV5Quality = options.appendV5Quality ?? true;
+  // V5 Full Medium enforces heavy UC preset; V4.5 respects user choice (default "heavy" to match NovelAI Web UI default)
+  const effectiveUcPreset: NaiUcPresetMode = isV45
+    ? options.ucPresetMode ?? "heavy"
+    : "heavy";
+  // Keep inline `-2::...::` weights intact in positive caption by default on V4.5 (matching web single-box behavior)
+  const keepInlineNegs = options.keepInlineNegatives ?? isV45;
+
+  const resolvedMetas: BuildPreciseRefMeta[] = [];
+  if (isV45) {
+    if (options.preciseRefMetas && options.preciseRefMetas.length > 0) {
+      resolvedMetas.push(...options.preciseRefMetas);
+    } else if (options.hasPreciseRef) {
+      resolvedMetas.push({
+        mode: options.preciseRefMode ?? "character",
+        strength: options.preciseRefStrength ?? 1.0,
+        fidelity: options.preciseRefFidelity ?? 1.0,
+      });
+    }
+  }
+  const usedPreciseRef = resolvedMetas.length > 0;
 
   if (width % 64 !== 0 || height % 64 !== 0) {
     throw new NaiApiError(`分辨率必须为 64 的整数倍，当前为 ${width}x${height}`);
@@ -86,34 +185,41 @@ export function buildV5MediumPayload(options: {
     throw new NaiApiError("提示词内容为空，无法发起生图请求。");
   }
 
-  let baseCaptionInlineKept = "";
-  const tune2Re = /(?:,\s*)?(-2\.5::(?:(?!::)[\s\S])*?nose bridge,\s*nostrils,\s*lips(?:(?!::)[\s\S])*?::)/;
-  const mTune2 = tune2Re.exec(baseCaption);
-  if (mTune2) {
-    baseCaptionInlineKept = mTune2[1].trim();
-    baseCaption = (
-      baseCaption.slice(0, mTune2.index) + baseCaption.slice(mTune2.index + mTune2[0].length)
-    ).replace(/^[ ,]+|[ ,]+$/g, "");
-  }
-
-  const baseSplit = splitInlineNegativesFromCaption(baseCaption);
-  baseCaption = baseSplit.cleaned;
-  const baseInlineNegs = baseSplit.negChunks;
-  if (baseCaptionInlineKept) {
-    baseCaption = `${baseCaption.replace(/[, ]+$/g, "")}, ${baseCaptionInlineKept}`;
-  }
-
+  let baseInlineNegs: string[] = [];
   const charInlineNegsList: string[][] = [];
-  charCaptions = charCaptions.map((c) => {
-    const res = splitInlineNegativesFromCaption(c.char_caption);
-    charInlineNegsList.push(res.negChunks);
-    return { char_caption: res.cleaned, centers: c.centers };
-  });
 
-  const lowerCheck = baseCaption.toLowerCase();
-  const hasQualityAlready = ["masterpiece", "very aesthetic", "best quality"].some((kw) =>
-    lowerCheck.includes(kw)
-  );
+  if (keepInlineNegs) {
+    baseCaption = baseCaption.trim();
+    charCaptions = charCaptions.map((c) => {
+      charInlineNegsList.push([]);
+      return { char_caption: c.char_caption.trim(), centers: c.centers };
+    });
+  } else {
+    let baseCaptionInlineKept = "";
+    const tune2Re = /(?:,\s*)?(-2\.5::(?:(?!::)[\s\S])*?nose bridge,\s*nostrils,\s*lips(?:(?!::)[\s\S])*?::)/;
+    const mTune2 = tune2Re.exec(baseCaption);
+    if (mTune2) {
+      baseCaptionInlineKept = mTune2[1].trim();
+      baseCaption = (
+        baseCaption.slice(0, mTune2.index) + baseCaption.slice(mTune2.index + mTune2[0].length)
+      ).replace(/^[ ,]+|[ ,]+$/g, "");
+    }
+
+    const baseSplit = splitInlineNegativesFromCaption(baseCaption);
+    baseCaption = baseSplit.cleaned;
+    baseInlineNegs = baseSplit.negChunks;
+    if (baseCaptionInlineKept) {
+      baseCaption = `${baseCaption.replace(/[, ]+$/g, "")}, ${baseCaptionInlineKept}`;
+    }
+
+    charCaptions = charCaptions.map((c) => {
+      const res = splitInlineNegativesFromCaption(c.char_caption);
+      charInlineNegsList.push(res.negChunks);
+      return { char_caption: res.cleaned, centers: c.centers };
+    });
+  }
+
+  const lowerCheck = baseCaption.trim().replace(/[, ]+$/g, "").toLowerCase();
   const suppressAnimeQuality = [
     "pixel art",
     "raw photo",
@@ -122,7 +228,8 @@ export function buildV5MediumPayload(options: {
     "no lineart",
   ].some((kw) => lowerCheck.includes(kw));
   const useStdQualityPreset = Boolean(appendV5Quality && !suppressAnimeQuality);
-  if (useStdQualityPreset && !hasQualityAlready) {
+  const alreadyHasStdSuffix = lowerCheck.endsWith(V5_QUALITY_SUFFIX.toLowerCase());
+  if (useStdQualityPreset && !alreadyHasStdSuffix) {
     baseCaption = `${baseCaption.replace(/[, ]+$/g, "")}, ${V5_QUALITY_SUFFIX}`;
   }
 
@@ -136,10 +243,16 @@ export function buildV5MediumPayload(options: {
   );
 
   const ucParts: string[] = [];
-  if (!wantsNsfw) {
-    ucParts.push("nsfw");
+  if (effectiveUcPreset === "heavy") {
+    if (!wantsNsfw) ucParts.push("nsfw");
+    ucParts.push(V5_HEAVY_UC_BASE);
+  } else if (effectiveUcPreset === "light") {
+    if (!wantsNsfw) ucParts.push("nsfw");
+    ucParts.push(V4_5_LIGHT_UC_BASE);
+  } else if (effectiveUcPreset === "human_focus") {
+    if (!wantsNsfw) ucParts.push("nsfw");
+    ucParts.push(V4_5_HUMAN_FOCUS_UC_BASE);
   }
-  ucParts.push(V5_HEAVY_UC_BASE);
   if (baseInlineNegs.length > 0) {
     ucParts.push(...baseInlineNegs);
   }
@@ -166,68 +279,176 @@ export function buildV5MediumPayload(options: {
     centers: c.centers,
   }));
 
-  const parameters = {
-    params_version: 4,
-    width,
-    height,
-    scale: cleanScale,
-    sampler: "k_euler_ancestral",
-    steps: 14,
-    n_samples: 1,
-    ucPresetId: "heavy",
-    qualityPresetId: useStdQualityPreset ? "standard" : "none",
-    autoSmea: false,
-    dynamic_thresholding: false,
-    controlnet_strength: 1.0,
-    legacy: false,
-    add_original_image: true,
-    cfg_rescale: cleanRescale,
-    noise_schedule: "karras",
-    legacy_v3_extend: false,
-    skip_cfg_above_sigma: null,
-    use_coords: useCoords,
-    legacy_uc: false,
-    normalize_reference_strength_multiple: true,
-    inpaintImg2ImgStrength: 1.0,
-    seed: actualSeed,
-    characterPrompts: characterPromptsApi,
-    straight_alpha: true,
-    tag_hint_qt: 1,
-    tag_hint_transparent_background: baseCaption.toLowerCase().includes("transparent background")
-      ? true
-      : null,
-    tag_hint_uc_preset: 2,
-    v4_prompt: {
-      caption: {
-        base_caption: baseCaption,
-        char_captions: charCaptions,
-      },
-      use_coords: useCoords,
-      use_order: true,
-    },
-    v4_negative_prompt: {
-      caption: {
-        base_caption: negativePrompt,
-        char_captions: negCharCaptions,
-      },
-      legacy_uc: false,
-    },
-    negative_prompt: negativePrompt,
-    deliberate_euler_ancestral_bug: false,
-    prefer_brownian: true,
-    image_format: "png",
+  const ucPresetIntMap: Partial<Record<NaiUcPresetMode, number>> = {
+    heavy: 0,
+    light: 1,
+    human_focus: 3,
   };
+  const tagHintUcMap: Record<NaiUcPresetMode, number> = {
+    none: 0,
+    heavy: 2,
+    light: 3,
+    human_focus: 4,
+  };
+  const ucPresetInt = ucPresetIntMap[effectiveUcPreset];
+
+  const parameters: Record<string, unknown> = isV45
+    ? {
+        params_version: 3,
+        width,
+        height,
+        scale: cleanScale,
+        sampler: "k_euler_ancestral",
+        steps: effectiveSteps,
+        n_samples: 1,
+        ...(ucPresetInt !== undefined ? { ucPreset: ucPresetInt } : {}),
+        qualityToggle: useStdQualityPreset,
+        autoSmea: false,
+        dynamic_thresholding: false,
+        controlnet_strength: 1.0,
+        legacy: false,
+        add_original_image: true,
+        cfg_rescale: cleanRescale,
+        noise_schedule: "karras",
+        legacy_v3_extend: false,
+        skip_cfg_above_sigma: null,
+        use_coords: useCoords,
+        legacy_uc: false,
+        normalize_reference_strength_multiple: !usedPreciseRef,
+        inpaintImg2ImgStrength: 1.0,
+        seed: actualSeed,
+        characterPrompts: characterPromptsApi,
+        tag_hint_qt: useStdQualityPreset ? 1 : 0,
+        tag_hint_uc_preset: tagHintUcMap[effectiveUcPreset],
+        v4_prompt: {
+          caption: {
+            base_caption: baseCaption,
+            char_captions: charCaptions,
+          },
+          use_coords: useCoords,
+          use_order: true,
+        },
+        v4_negative_prompt: {
+          caption: {
+            base_caption: negativePrompt,
+            char_captions: negCharCaptions,
+          },
+          use_coords: false,
+          use_order: false,
+          legacy_uc: false,
+        },
+        negative_prompt: negativePrompt,
+        deliberate_euler_ancestral_bug: false,
+        prefer_brownian: true,
+        image_format: "png",
+      }
+    : {
+        params_version: 4,
+        width,
+        height,
+        scale: cleanScale,
+        sampler: "k_euler_ancestral",
+        steps: effectiveSteps,
+        n_samples: 1,
+        ucPresetId: "heavy",
+        qualityPresetId: useStdQualityPreset ? "standard" : "none",
+        autoSmea: false,
+        dynamic_thresholding: false,
+        controlnet_strength: 1.0,
+        legacy: false,
+        add_original_image: true,
+        cfg_rescale: cleanRescale,
+        noise_schedule: "karras",
+        legacy_v3_extend: false,
+        skip_cfg_above_sigma: null,
+        use_coords: useCoords,
+        legacy_uc: false,
+        normalize_reference_strength_multiple: true,
+        inpaintImg2ImgStrength: 1.0,
+        seed: actualSeed,
+        characterPrompts: characterPromptsApi,
+        straight_alpha: true,
+        tag_hint_qt: useStdQualityPreset ? 1 : 0,
+        tag_hint_transparent_background: baseCaption.toLowerCase().includes("transparent background")
+          ? true
+          : null,
+        tag_hint_uc_preset: 2,
+        v4_prompt: {
+          caption: {
+            base_caption: baseCaption,
+            char_captions: charCaptions,
+          },
+          use_coords: useCoords,
+          use_order: true,
+        },
+        v4_negative_prompt: {
+          caption: {
+            base_caption: negativePrompt,
+            char_captions: negCharCaptions,
+          },
+          legacy_uc: false,
+        },
+        negative_prompt: negativePrompt,
+        deliberate_euler_ancestral_bug: false,
+        prefer_brownian: true,
+        image_format: "png",
+      };
+
+  if (usedPreciseRef) {
+    // Official NovelAI V4.5 Precise Reference expects raw Base64 PNG strings in director_reference_images
+    parameters.director_reference_images = resolvedMetas.map(
+      (m, idx) => m.base64Image ?? `director_ref_${idx}`
+    );
+    parameters.director_reference_descriptions = resolvedMetas.map((m) => ({
+      caption: {
+        base_caption: m.mode,
+        char_captions: [],
+      },
+      use_coords: false,
+      use_order: false,
+      legacy_uc: false,
+    }));
+    parameters.director_reference_information_extracted = resolvedMetas.map(() => 1.0);
+    parameters.director_reference_strength_values = resolvedMetas.map((m) =>
+      Number(Math.max(0.0, Math.min(1.0, m.strength)).toFixed(2))
+    );
+    // NovelAI Director Reference API stores (1.0 - Fidelity) in secondary_strength_values
+    parameters.director_reference_secondary_strength_values = resolvedMetas.map((m) => {
+      const cleanFid = Number(Math.max(0.0, Math.min(1.0, m.fidelity)).toFixed(2));
+      return Number((1.0 - cleanFid).toFixed(2));
+    });
+  }
 
   return {
     payload: {
       input: baseCaption,
-      model: MODEL_V5_FULL_MEDIUM,
+      model,
       action: "generate",
       parameters,
-      use_new_shared_trial: false,
+      use_new_shared_trial: true,
     },
     actualSeed,
+    effectiveSteps,
+    usedPreciseRef,
+    preciseRefCount: resolvedMetas.length,
   };
+}
+
+export function buildV5MediumPayload(options: {
+  rawPrompt: string;
+  width?: number;
+  height?: number;
+  scale?: number;
+  cfgRescale?: number;
+  seed?: number;
+  extraUc?: string;
+  appendV5Quality?: boolean;
+}): { payload: Record<string, unknown>; actualSeed: number } {
+  const { payload, actualSeed } = buildNaiGeneratePayload({
+    ...options,
+    model: MODEL_V5_FULL_MEDIUM,
+  });
+  return { payload, actualSeed };
 }
 
 function isPngBytes(b: Uint8Array): boolean {
@@ -469,16 +690,135 @@ export async function fetchSubscriptionInfo(rawToken: string): Promise<Subscript
   };
 }
 
-export async function generateSingleImageV5Medium(options: {
+export function computeCanonicalPreciseRefCanvas(
+  srcWidth: number,
+  srcHeight: number
+): {
+  normWidth: number;
+  normHeight: number;
+  drawWidth: number;
+  drawHeight: number;
+  dx: number;
+  dy: number;
+} {
+  const safeW = Math.max(1, srcWidth);
+  const safeH = Math.max(1, srcHeight);
+  const aspect = safeW / safeH;
+  const candidates: Array<[number, number]> = [
+    [1024, 1536],
+    [1472, 1472],
+    [1536, 1024],
+  ];
+  let normWidth = 1472;
+  let normHeight = 1472;
+  let bestDiff = Number.POSITIVE_INFINITY;
+  for (const [cw, ch] of candidates) {
+    const diff = Math.abs(cw / ch - aspect);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      normWidth = cw;
+      normHeight = ch;
+    }
+  }
+  const scale = Math.min(normWidth / safeW, normHeight / safeH);
+  const drawWidth = Math.max(1, Math.round(safeW * scale));
+  const drawHeight = Math.max(1, Math.round(safeH * scale));
+  const dx = Math.floor((normWidth - drawWidth) / 2);
+  const dy = Math.floor((normHeight - drawHeight) / 2);
+  return { normWidth, normHeight, drawWidth, drawHeight, dx, dy };
+}
+
+export async function preparePreciseReferencePng(rawBytes: Uint8Array): Promise<{
+  preparedPngBytes: Uint8Array;
+  origWidth: number;
+  origHeight: number;
+  normWidth: number;
+  normHeight: number;
+}> {
+  const copy = new Uint8Array(rawBytes.byteLength);
+  copy.set(rawBytes);
+  const bmp = await createImageBitmap(new Blob([copy]));
+  const origWidth = bmp.width;
+  const origHeight = bmp.height;
+  const { normWidth, normHeight, drawWidth, drawHeight, dx, dy } =
+    computeCanonicalPreciseRefCanvas(origWidth, origHeight);
+
+  // Progressive multi-step 2x halving downsample for 4K / ultra-high-res reference sheets:
+  // Single-step >2x downscaling in browser Canvas 2D causes lineart aliasing & moiré artifacts.
+  let curSource: CanvasImageSource = bmp;
+  let curW = origWidth;
+  let curH = origHeight;
+  try {
+    while (curW * 0.5 >= drawWidth && curH * 0.5 >= drawHeight) {
+      const nextW = Math.max(drawWidth, Math.round(curW * 0.5));
+      const nextH = Math.max(drawHeight, Math.round(curH * 0.5));
+      if (nextW === curW && nextH === curH) break;
+      const stepCanvas = document.createElement("canvas");
+      stepCanvas.width = nextW;
+      stepCanvas.height = nextH;
+      const stepCtx = stepCanvas.getContext("2d");
+      if (!stepCtx) break;
+      stepCtx.imageSmoothingEnabled = true;
+      stepCtx.imageSmoothingQuality = "high";
+      stepCtx.drawImage(curSource, 0, 0, nextW, nextH);
+      curSource = stepCanvas;
+      curW = nextW;
+      curH = nextH;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = normWidth;
+    canvas.height = normHeight;
+    const ctx = canvas.getContext("2d", { alpha: false }) || canvas.getContext("2d");
+    if (!ctx) {
+      throw new NaiApiError("浏览器 Canvas 2D 上下文不可用，无法预处理精密参照图像。");
+    }
+
+    // Standard black letterbox padding matching NovelAI Web UI / SDK preprocessing
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, normWidth, normHeight);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(curSource, dx, dy, drawWidth, drawHeight);
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("Canvas toBlob failed"))),
+        "image/png"
+      );
+    });
+    return {
+      preparedPngBytes: new Uint8Array(await blob.arrayBuffer()),
+      origWidth,
+      origHeight,
+      normWidth,
+      normHeight,
+    };
+  } finally {
+    bmp.close();
+  }
+}
+
+export async function generateSingleImageNai(options: {
   apiToken: string;
+  model?: NaiModelId;
   promptText: string;
   width?: number;
   height?: number;
+  steps?: number;
   scale?: number;
   cfgRescale?: number;
   seed?: number;
+  ucPresetMode?: NaiUcPresetMode;
+  keepInlineNegatives?: boolean;
   extraUc?: string;
   appendV5Quality?: boolean;
+  preciseRefs?: PreciseRefSlotInput[];
+  preciseRefPngBytes?: Uint8Array | null;
+  preciseRefMode?: PreciseRefMode;
+  preciseRefStrength?: number;
+  preciseRefFidelity?: number;
+  isOpusFreeEligible?: boolean;
   pixel3xNearest?: boolean;
   signal?: AbortSignal;
 }): Promise<{
@@ -488,40 +828,92 @@ export async function generateSingleImageV5Medium(options: {
   height: number;
   elapsedSec: number;
   estimatedAnlas: number;
+  model: NaiModelId;
+  usedPreciseRef: boolean;
+  preciseRefCount: number;
 }> {
   const token = normalizeToken(options.apiToken);
   if (!token) {
     throw new NaiApiError("未填写 API Token！请先填入 NovelAI Persistent API Token (pst-...)");
   }
 
+  const model: NaiModelId =
+    options.model === MODEL_V4_5_FULL ? MODEL_V4_5_FULL : MODEL_V5_FULL_MEDIUM;
   const width = options.width ?? 832;
   const height = options.height ?? 1216;
-  const { payload, actualSeed } = buildV5MediumPayload({
-    rawPrompt: options.promptText,
-    width,
-    height,
-    scale: options.scale,
-    cfgRescale: options.cfgRescale,
-    seed: options.seed,
-    extraUc: options.extraUc,
-    appendV5Quality: options.appendV5Quality,
-  });
 
-  const form = new FormData();
-  form.append("request", new Blob([JSON.stringify(payload)], { type: "application/json" }), "blob");
+  const activeRefs: PreciseRefSlotInput[] = [];
+  if (model === MODEL_V4_5_FULL) {
+    if (options.preciseRefs && options.preciseRefs.length > 0) {
+      for (const r of options.preciseRefs) {
+        if (r.pngBytes && r.pngBytes.length > 0) {
+          activeRefs.push(r);
+        }
+      }
+    } else if (options.preciseRefPngBytes && options.preciseRefPngBytes.length > 0) {
+      activeRefs.push({
+        mode: options.preciseRefMode ?? "character",
+        pngBytes: options.preciseRefPngBytes,
+        strength: options.preciseRefStrength ?? 1.0,
+        fidelity: options.preciseRefFidelity ?? 1.0,
+      });
+    }
+  }
+
+  const { payload, actualSeed, effectiveSteps, usedPreciseRef, preciseRefCount } =
+    buildNaiGeneratePayload({
+      model,
+      rawPrompt: options.promptText,
+      width,
+      height,
+      steps: options.steps,
+      scale: options.scale,
+      cfgRescale: options.cfgRescale,
+      seed: options.seed,
+      ucPresetMode: options.ucPresetMode,
+      keepInlineNegatives: options.keepInlineNegatives,
+      extraUc: options.extraUc,
+      appendV5Quality: options.appendV5Quality,
+      preciseRefMetas: activeRefs.map((r) => ({
+        mode: r.mode,
+        strength: r.strength,
+        fidelity: r.fidelity,
+        base64Image: uint8ArrayToBase64(r.pngBytes),
+      })),
+    });
 
   const t0 = performance.now();
   let resp: Response;
   try {
-    // CRITICAL CORS RULE: Only Authorization header; FormData automatically sets multipart/form-data Content-Type
-    resp = await fetch(`${NAI_IMAGE_ENDPOINT}/ai/generate-image`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: form,
-      signal: options.signal,
-    });
+    if (model === MODEL_V4_5_FULL) {
+      // Official NovelAI V4.5 REST JSON transport: passes Base64 PNGs in parameters.director_reference_images
+      // (CORS preflight verified: Access-Control-Allow-Headers: Authorization, Content-Type; Origin: *)
+      resp = await fetch(`${NAI_IMAGE_ENDPOINT}/ai/generate-image`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: options.signal,
+      });
+    } else {
+      // V5 Full Medium multipart request part
+      const form = new FormData();
+      form.append(
+        "request",
+        new Blob([JSON.stringify(payload)], { type: "application/json" }),
+        "blob"
+      );
+      resp = await fetch(`${NAI_IMAGE_ENDPOINT}/ai/generate-image`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: form,
+        signal: options.signal,
+      });
+    }
   } catch (err) {
     throw new NaiApiError(`生图请求网络异常：${err instanceof Error ? err.message : String(err)}`);
   }
@@ -543,7 +935,14 @@ export async function generateSingleImageV5Medium(options: {
   }
 
   const elapsedSec = Number(((performance.now() - t0) / 1000).toFixed(2));
-  const estCost = estimateV5MediumAnlas(width, height, 14, false);
+  const estCost = estimateNaiAnlas({
+    model,
+    width,
+    height,
+    steps: effectiveSteps,
+    isOpusFreeEligible: Boolean(options.isOpusFreeEligible),
+    preciseRefCount,
+  });
 
   return {
     imageBytes,
@@ -552,7 +951,36 @@ export async function generateSingleImageV5Medium(options: {
     height: outH,
     elapsedSec,
     estimatedAnlas: estCost,
+    model,
+    usedPreciseRef,
+    preciseRefCount,
   };
+}
+
+export async function generateSingleImageV5Medium(options: {
+  apiToken: string;
+  promptText: string;
+  width?: number;
+  height?: number;
+  scale?: number;
+  cfgRescale?: number;
+  seed?: number;
+  extraUc?: string;
+  appendV5Quality?: boolean;
+  pixel3xNearest?: boolean;
+  signal?: AbortSignal;
+}): Promise<{
+  imageBytes: Uint8Array;
+  seed: number;
+  width: number;
+  height: number;
+  elapsedSec: number;
+  estimatedAnlas: number;
+}> {
+  return generateSingleImageNai({
+    ...options,
+    model: MODEL_V5_FULL_MEDIUM,
+  });
 }
 
 export async function upscaleSingleImageNai(options: {

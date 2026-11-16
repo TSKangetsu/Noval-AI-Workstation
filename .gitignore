@@ -2,12 +2,7 @@
 nai_api_config.json
 outputs/
 
-# Python 缓存
-__pycache__/
-*.py[cod]
-*$py.class
-
-# 本地打包归档
+# 本地打包归档与参考图目录
 *.7z
 sample/
 favorite/

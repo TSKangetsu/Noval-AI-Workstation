@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "verify": "tsx scripts/verify_engine.ts",
     "preview": "vite preview"
   },
   "devDependencies": {

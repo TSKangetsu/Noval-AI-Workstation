@@ -6,6 +6,7 @@ import {
   BUST_PRESETS,
   CAMERA_GAZE_PRESETS,
   CAMERA_SHOT_PRESETS,
+  ENV_PRESETS,
   EXPR_BLUSH_CONFLICT_TAGS,
   EXPR_BLUSH_TAGS,
   EXPR_EYE_CONFLICT_TAGS,
@@ -17,6 +18,7 @@ import {
   EXPRESSION_MOUTH_PRESETS,
   EXPRESSION_PRESETS,
   LEGWEAR_PRESETS,
+  LIGHTING_PRESETS,
   MORPH_PRESETS,
   MULTI_ANGLE_CHAPTERS,
   MULTI_ANGLE_TEMPLATES,
@@ -24,6 +26,7 @@ import {
   OUTFIT_STATE_PRESETS,
   PIGMENT_PRESETS,
   POS_MALE_MODE_PRESETS,
+  POS_SCENE_PRESETS,
   POS_STAGE_PRESETS,
   PUBIC_PRESETS,
   QUALITY_TAGS,
@@ -32,6 +35,7 @@ import {
   STYLE_PRESETS,
 } from "../data/engineConstants";
 import { applyCameraOverrideToPrompt, describeCameraShort } from "./cameraRig";
+import { countPromptT5Tokens } from "./t5Tokenizer";
 import type { CharacterConfig, PerspectiveMode, ScenePromptItem } from "./types";
 
 export function sanitizeStyleForTransparentBg(headPos: string): string {
@@ -316,7 +320,11 @@ export function compileExpressionOverride(
   const lowBare = new Set(
     tokens.map((t) => t.replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase())
   );
-  const eyesOpen = !(lowBare.has("closed eyes") || lowBare.has("sleeping"));
+  const eyesOpen = !(
+    lowBare.has("closed eyes") ||
+    lowBare.has("squeezed eyes") ||
+    lowBare.has("sleeping")
+  );
 
   const negUnblock = new Set<string>();
   const negAdd: string[] = [];
@@ -327,13 +335,16 @@ export function compileExpressionOverride(
     negAdd.push("closed eyes", "sleeping");
   } else {
     negUnblock.add("closed eyes");
+    negUnblock.add("squeezed eyes");
     negUnblock.add("sleeping");
     negUnblock.add("sleep");
     negAdd.push("open eyes", "half-closed eyes");
   }
 
   if (lowBare.has("ahegao")) negUnblock.add("ahegao");
-  if (lowBare.has("tongue out") || lowBare.has(":p")) negUnblock.add("tongue out");
+  if (lowBare.has("tongue out") || lowBare.has(":p") || lowBare.has("licking lips")) {
+    negUnblock.add("tongue out");
+  }
   if (lowBare.has("wide-eyed")) negUnblock.add("wide-eyed");
   if (lowBare.has("rolling eyes")) negUnblock.add("rolling eyes");
   if (lowBare.has("no blush")) negAdd.push("blush", "heavy blush");
@@ -591,7 +602,55 @@ export function buildCommonModules(
       styleNeg = st[1];
     }
   }
-  const headPos = joinTags(qualPos, styleOnlyPos);
+
+  const lightInfo =
+    LIGHTING_PRESETS[cfg.lighting_preset] ??
+    LIGHTING_PRESETS["🔄 随画风与本幕默认光影（不额外覆盖）"];
+  const envInfo =
+    ENV_PRESETS[cfg.env_preset] ?? ENV_PRESETS["🔄 随本幕/体位工具栏默认环境"];
+
+  if (lightInfo.code !== "auto") {
+    if (lightInfo.strip_head_lighting && styleOnlyPos) {
+      const stripLightSet = new Set([
+        "front lighting",
+        "warm lighting",
+        "warm indoor lighting",
+        "soft lighting",
+        "diffused lighting",
+        "gentle chiaroscuro",
+        "low contrast",
+        "muted colors",
+        "backlighting",
+        "rim lighting",
+      ]);
+      styleOnlyPos = styleOnlyPos
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => {
+          if (!t) return false;
+          const bare = t.replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+          return !stripLightSet.has(bare);
+        })
+        .join(", ");
+    }
+    if (lightInfo.unblock_neg?.length && styleNeg) {
+      const unblockSet = new Set(lightInfo.unblock_neg.map((x) => x.toLowerCase()));
+      styleNeg = styleNeg
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t && !unblockSet.has(t.toLowerCase()))
+        .join(", ");
+    }
+  }
+  if (cfg.enable_background && envInfo.code !== "auto" && envInfo.unblock_dark && styleNeg) {
+    styleNeg = styleNeg
+      .split(",")
+      .map((t) => t.trim())
+      .filter((t) => t && !["dark", "harsh shadows", "high contrast"].includes(t.toLowerCase()))
+      .join(", ");
+  }
+
+  const headPos = joinTags(qualPos, styleOnlyPos, lightInfo.code !== "auto" ? lightInfo.tags : "");
 
   const outfitInfo =
     OUTFIT_PRESETS[cfg.outfit_preset] ??
@@ -690,7 +749,7 @@ export function buildCommonModules(
     const [bustPos, bustNeg] = BUST_PRESETS[cfg.bust_preset] ?? ["", ""];
     const skinPos = SKIN_PRESETS[cfg.skin_preset] ?? "";
     const extras: string[] = [];
-    if (cfg.add_cat_ears) extras.push("cat ears, animal ears, animal ear fluff");
+    if (cfg.add_cat_ears) extras.push("cat ears, animal ears, animal ear fluff, cat tail");
     if (cfg.add_horns_tail) extras.push("demon horns, demon tail");
     if (cfg.add_glasses) extras.push("glasses, semi-rimless glasses");
     if (cfg.add_choker) extras.push("choker, black choker");
@@ -919,8 +978,26 @@ export function buildCommonModules(
   let bgCouch = "";
   let bgSleepCouch = "";
   let locProse = "";
+  let envExtraNeg = "";
+  const hasGlobalEnv = cfg.enable_background && envInfo.code !== "auto";
   if (cfg.enable_background) {
-    if (m6Mode) {
+    if (hasGlobalEnv) {
+      const lightTagSet = new Set(
+        (lightInfo.code !== "auto" ? lightInfo.tags : "")
+          .split(",")
+          .map((t) => t.trim().toLowerCase())
+          .filter(Boolean)
+      );
+      const dedupEnv = envInfo.tags
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t && !lightTagSet.has(t.toLowerCase()))
+        .join(", ");
+      bgCouch = dedupEnv;
+      bgSleepCouch = dedupEnv;
+      locProse = envInfo.prose;
+      envExtraNeg = envInfo.extra_neg || "";
+    } else if (m6Mode) {
       bgCouch = "indoors, beige couch, window, cream sheer curtains";
       bgSleepCouch = "indoors, beige couch, pillow, window, cream sheer curtains";
       locProse = " by cream sheer curtains";
@@ -930,9 +1007,16 @@ export function buildCommonModules(
       locProse = " on the warm-lit couch";
     }
   }
-  const onCouchTag = cfg.enable_background ? "lying on couch" : "";
-  const kneelCouchTag = cfg.enable_background ? "kneeling on couch" : "kneeling";
-  const handsCouchTag = cfg.enable_background ? "hands on couch" : "supporting weight";
+  const onCouchTag = !cfg.enable_background
+    ? ""
+    : hasGlobalEnv
+      ? envInfo.code === "cherry_shallow_water"
+        ? "in water"
+        : ""
+      : "lying on couch";
+  const kneelCouchTag = !cfg.enable_background || hasGlobalEnv ? "kneeling" : "kneeling on couch";
+  const handsCouchTag =
+    !cfg.enable_background || hasGlobalEnv ? "supporting weight" : "hands on couch";
 
   let anatPos: string;
   let anatNeg: string;
@@ -957,8 +1041,8 @@ export function buildCommonModules(
       : "";
   const isTune2 = cfg.style_preset.includes("M6-Tune2");
   const commonTailNeg = isTune2
-    ? joinTags(anatNeg, canonNeg, intactNeg)
-    : joinTags(styleNeg, bodyFullNeg, anatNeg, canonNeg, intactNeg);
+    ? joinTags(anatNeg, canonNeg, intactNeg, envExtraNeg)
+    : joinTags(styleNeg, bodyFullNeg, anatNeg, canonNeg, intactNeg, envExtraNeg);
 
   return {
     head_pos: headPos,
@@ -1080,19 +1164,54 @@ export function generateScenePrompts(
     const maleCode = POS_MALE_MODE_PRESETS[cfg.pos_male_mode] ?? "normal";
     const showP = Boolean(cfg.pos_show_penis);
     const stageCode = POS_STAGE_PRESETS[cfg.pos_stage] ?? "before";
+    const isManualFemale = ["fingering", "grope_fingering", "clit_tease", "breast_grope"].includes(
+      channel
+    );
+    const isPullOutLike = stageCode === "pull_out" || stageCode === "prolapse";
+    const catTailWrapActive =
+      Boolean(cfg.add_cat_ears) &&
+      channel !== "solo" &&
+      !isManualFemale &&
+      showP &&
+      isPullOutLike;
     const stageBadge =
       stageCode === "during"
-        ? " · [💦射精中]"
+        ? isManualFemale
+          ? " · [💦高潮迸发]"
+          : " · [💦射精中]"
         : stageCode === "after_inside"
-          ? " · [🌊射精后结合]"
+          ? isManualFemale
+            ? " · [🌊余韵留存]"
+            : " · [🌊射精后结合]"
           : stageCode === "pull_out"
-            ? " · [🔗事后拔出]"
-            : "";
+            ? isManualFemale
+              ? " · [🔗抽指拉丝]"
+              : catTailWrapActive
+                ? " · [🔗事后拔出·🐾猫尾缠绕]"
+                : " · [🔗事后拔出]"
+            : stageCode === "prolapse"
+              ? isManualFemale
+                ? " · [🌺抽指宫脱]"
+                : catTailWrapActive
+                  ? " · [🌺事后宫脱·🐾猫尾缠绕]"
+                  : " · [🌺事后宫脱]"
+              : "";
 
     let posOutfit: string;
-    if (channel === "chest") {
+    if (channel === "chest" || channel === "breast_grope") {
       if (cfg.enable_outfit && cfg.enable_clothing_state && !m.outfit_pos.includes("nude")) {
-        posOutfit = joinTags(m.outfit_intact, "clothes lift, breasts out");
+        posOutfit = joinTags(m.outfit_intact, "clothes lift, breasts out, nipples");
+      } else {
+        posOutfit = m.outfit_pos;
+      }
+    } else if (channel === "grope_fingering") {
+      if (
+        cfg.enable_outfit &&
+        cfg.enable_clothing_state &&
+        !m.outfit_pos.includes("nude") &&
+        !m.outfit_pos.includes("breasts out")
+      ) {
+        posOutfit = joinTags(m.outfit_pos, "clothes lift, breasts out, nipples");
       } else {
         posOutfit = m.outfit_pos;
       }
@@ -1110,6 +1229,12 @@ export function generateScenePrompts(
     let bgProse: string;
     let poseUsed: string;
     let transNeg: string;
+    let tailNegUsed = m.common_tail_neg;
+    const scenePreset =
+      POS_SCENE_PRESETS[cfg.pos_scene] ??
+      POS_SCENE_PRESETS["🛋️ 默认暖光室内沙发（indoors, couch, lamp）"];
+    const sceneBadge =
+      !transBg && cfg.enable_background && scenePreset.badge ? scenePreset.badge : "";
     if (transBg) {
       headUsed = sanitizeStyleForTransparentBg(m.head_pos);
       bgUsed = "2.0::transparent background::, has alpha, alpha transparency, no background";
@@ -1118,6 +1243,33 @@ export function generateScenePrompts(
       transNeg =
         "background, simple background, white background, black background, gradient background, " +
         "indoors, outdoors, scenery, furniture, bed, couch, sofa, pillow, window, curtains, wall, floor, drop shadow";
+    } else if (cfg.enable_background && scenePreset.code !== "default_couch") {
+      headUsed = scenePreset.unblock_dark
+        ? m.head_pos.replace(/,\s*warm lighting\b/gi, "")
+        : m.head_pos;
+      const headSet = new Set(
+        headUsed
+          .split(",")
+          .map((t) => t.trim().toLowerCase())
+          .filter(Boolean)
+      );
+      bgUsed = scenePreset.tags
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t && !headSet.has(t.toLowerCase()))
+        .join(", ");
+      bgProse = scenePreset.prose;
+      poseUsed = scenePreset.strip_indoor_pose
+        ? poseRaw.replace(", head on pillow", "").replace(", hands gripping sheet", "")
+        : poseRaw;
+      transNeg = scenePreset.extra_neg || "";
+      if (scenePreset.unblock_dark && tailNegUsed) {
+        tailNegUsed = tailNegUsed
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => t && !["dark", "harsh shadows", "high contrast"].includes(t.toLowerCase()))
+          .join(", ");
+      }
     } else {
       headUsed = m.head_pos;
       bgUsed = m.bg_couch;
@@ -1162,6 +1314,19 @@ export function generateScenePrompts(
         );
         organProse =
           ", resting after climax with thick white cum pooling and overflowing from her parted lower anatomy";
+      } else if (stageCode === "prolapse") {
+        organTags = joinTags(
+          m.anat_pos,
+          "after vaginal, after sex, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, twitching, trembling",
+          wtag("cum", 1.45, f),
+          wtag("cum in pussy", 1.45, f),
+          wtag("cumdrip", 1.45, f),
+          wtag("cum string", 1.4, f),
+          wtag("cum on stomach", 1.3, f),
+          "cum on thighs, sweat"
+        );
+        organProse =
+          ", right after intense sex with a glistening pink prolapsed cervix protruding and dripping with thick white cum and sticky strings";
       } else {
         organTags = joinTags(
           m.anat_pos,
@@ -1177,7 +1342,198 @@ export function generateScenePrompts(
           ", right after withdrawal with thick white cum overflowing and dripping in sticky strings from her parted lower anatomy";
       }
       partnerProse = "";
-      extraNeg = "1boy, male, penis, phallus, dildo";
+      extraNeg = joinTags(
+        "1boy, male, penis, phallus, dildo",
+        stageCode === "prolapse" ? "anal prolapse, anal" : ""
+      );
+    } else if (isManualFemale) {
+      let partnerNeg: string;
+      const isSelfTouch = maleCode === "off";
+      if (maleCode === "normal") {
+        actorTags = joinTags(
+          "1girl, 1boy, hetero, faceless male, male hand",
+          isPov ? "1.35::pov::, 1.35::pov hands::" : ""
+        );
+        partnerProse = " with a faceless partner's hands";
+        partnerNeg = "";
+      } else if (maleCode === "translucent") {
+        actorTags = joinTags(
+          "1girl, 1boy, hetero, faceless male, 1.35::male silhouette::, ghostly outline",
+          isPov ? "1.35::pov::, pov hands" : ""
+        );
+        partnerProse =
+          " with a semi-transparent see-through male silhouette whose hands do not obscure her opaque body";
+        partnerNeg = "";
+      } else if (maleCode === "invisible") {
+        actorTags = joinTags(
+          "1girl, solo, 1.35::invisible partner::",
+          isPov ? "1.3::pov::" : ""
+        );
+        partnerProse = " stimulated by the unseen hands of an invisible partner";
+        partnerNeg = "1boy, male, male body";
+      } else {
+        actorTags = "1girl, solo, female masturbation";
+        partnerProse = "";
+        partnerNeg = "1boy, male, multiple people";
+      }
+
+      if (channel === "breast_grope") {
+        const baseGrope = isSelfTouch
+          ? "1.4::grabbing own breasts::, squeezing breasts, 1.3::nipple tweak::, pinching nipples, sunken breasts"
+          : "1.4::breast grab::, 1.35::grabbing another's breast::, breast grab from behind, groping, 1.3::nipple tweak::, pinching nipples, sunken breasts";
+        if (stageCode === "before") {
+          organTags = joinTags(baseGrope, af ? "glistening, sweat" : "");
+          organProse = isSelfTouch
+            ? ", kneading her own soft breasts and pinching her sensitive nipples"
+            : ", as hands knead deeply into her soft breasts and pinch her sensitive nipples";
+        } else if (stageCode === "during") {
+          organTags = joinTags(
+            baseGrope,
+            "orgasm, climax, trembling, arched back, heavy breathing, glistening skin, flying sweatdrops, sweat"
+          );
+          organProse =
+            ", trembling in intense climax as her soft breasts are squeezed firmly and her erect nipples are pinched";
+        } else if (stageCode === "after_inside") {
+          organTags = joinTags(
+            baseGrope,
+            "after orgasm, heavy breathing, trembling, flushed chest, glistening skin, sweat"
+          );
+          organProse =
+            ", panting softly right after climax while hands remain cupped tightly over her flushed breasts";
+        } else {
+          organTags = joinTags(
+            "flushed breasts, erect nipples, 1.25::saliva trail::, glistening skin, heavy breathing, trembling, sweat",
+            isSelfTouch ? "hands near chest" : "reaching hands"
+          );
+          organProse =
+            ", just as hands release slightly from her flushed, indented breasts and glistening erect nipples";
+        }
+      } else {
+        const gropePrefix =
+          channel === "grope_fingering"
+            ? isSelfTouch
+              ? "1.3::grabbing own breast::, nipple tweak"
+              : "1.35::breast grab::, grabbing another's breast, groping, nipple tweak"
+            : "";
+        const gropeProse =
+          channel === "grope_fingering"
+            ? isSelfTouch
+              ? " while one hand squeezes her own breast and"
+              : " while one hand squeezes her soft breast and"
+            : ",";
+
+        if (channel === "clit_tease") {
+          const spreadTag = isSelfTouch
+            ? "1.35::spreading own pussy::"
+            : "1.35::spreading another's pussy::";
+          if (stageCode === "before") {
+            organTags = joinTags(
+              m.anat_pos,
+              spreadTag,
+              "1.4::clitoral stimulation::, fingers, 1.3::spread pussy::, 1.25::clitoris::",
+              af ? wtag("pussy juice", 1.25, f) : ""
+            );
+            organProse =
+              ", as fingers part her lower anatomy wide open and directly rub her sensitive clitoris";
+          } else if (stageCode === "during") {
+            organTags = joinTags(
+              m.anat_pos,
+              spreadTag,
+              "1.4::clitoral stimulation::, 1.3::spread pussy::, 1.25::clitoris::, orgasm, climax, 1.35::female ejaculation::, trembling, twitching",
+              wtag("pussy juice", 1.45, f),
+              wtag("squirting", 1.35, f),
+              "pussy juice trail, sweat"
+            );
+            organProse =
+              ", jolting in intense climax with a glistening spray of female ejaculation as fingers rapidly rub her exposed clitoris";
+          } else if (stageCode === "after_inside") {
+            organTags = joinTags(
+              m.anat_pos,
+              spreadTag,
+              "clitoral stimulation, 1.3::spread pussy::, clitoris, after orgasm, heavy breathing, trembling, twitching",
+              wtag("pussy juice", 1.45, f),
+              "pussy juice on fingers, wet thighs, sweat"
+            );
+            organProse =
+              ", quivering right after climax with wet fingers still holding her soaked lower anatomy open against her clitoris";
+          } else if (stageCode === "prolapse") {
+            organTags = joinTags(
+              m.anat_pos,
+              "after masturbation, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, 1.25::clitoris::, twitching, wet fingers, glistening fingers",
+              wtag("pussy juice", 1.45, f),
+              wtag("pussy juice trail", 1.45, f),
+              "pussy juice string, wet thighs, sweat"
+            );
+            organProse =
+              ", just as glistening wet fingers pull back, leaving a glistening pink prolapsed cervix protruding with sticky translucent threads of fluid";
+          } else {
+            organTags = joinTags(
+              m.anat_pos,
+              "after masturbation, 1.3::spread pussy::, 1.25::clitoris::, twitching, wet fingers, glistening fingers",
+              wtag("pussy juice", 1.45, f),
+              wtag("pussy juice trail", 1.45, f),
+              "pussy juice string, wet thighs, sweat"
+            );
+            organProse =
+              ", just as glistening wet fingers pull slightly back, stretching sticky translucent threads of fluid from her swollen clitoris and parted folds";
+          }
+        } else {
+          if (stageCode === "before") {
+            organTags = joinTags(
+              m.anat_pos,
+              gropePrefix,
+              "1.4::fingering::, hand between legs, fingers, 1.25::spread pussy::",
+              af ? wtag("pussy juice", 1.25, f) : ""
+            );
+            organProse = `${gropeProse} fingers stroke and press deep inside her parted lower anatomy`;
+          } else if (stageCode === "during") {
+            organTags = joinTags(
+              m.anat_pos,
+              gropePrefix,
+              "1.4::fingering::, hand between legs, 1.25::spread pussy::, orgasm, climax, 1.35::female ejaculation::, trembling, twitching",
+              wtag("pussy juice", 1.45, f),
+              wtag("squirting", 1.35, f),
+              "pussy juice trail, sweat"
+            );
+            organProse = `${gropeProse} rapid fingering drives her to climax in a glistening spray of female ejaculation`;
+          } else if (stageCode === "after_inside") {
+            organTags = joinTags(
+              m.anat_pos,
+              gropePrefix,
+              "1.35::fingering::, hand between legs, 1.25::spread pussy::, after orgasm, heavy breathing, trembling, twitching",
+              wtag("pussy juice", 1.45, f),
+              "pussy juice on fingers, wet thighs, sweat"
+            );
+            organProse = `${gropeProse} wet fingers remain buried inside her quivering, soaked lower anatomy right after climax`;
+          } else if (stageCode === "prolapse") {
+            organTags = joinTags(
+              m.anat_pos,
+              gropePrefix,
+              "1.35::after fingering::, after masturbation, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, twitching, wet fingers, glistening fingers",
+              wtag("pussy juice", 1.45, f),
+              wtag("pussy juice trail", 1.45, f),
+              "pussy juice string, wet thighs, sweat"
+            );
+            organProse = `${gropeProse} glistening wet fingers withdraw, dragging out a glistening pink prolapsed cervix with sticky translucent threads of fluid`;
+          } else {
+            organTags = joinTags(
+              m.anat_pos,
+              gropePrefix,
+              "1.35::after fingering::, after masturbation, 1.3::spread pussy::, 0.55::gaping::, twitching, wet fingers, glistening fingers",
+              wtag("pussy juice", 1.45, f),
+              wtag("pussy juice trail", 1.45, f),
+              "pussy juice string, wet thighs, sweat"
+            );
+            organProse = `${gropeProse} glistening wet fingers withdraw, stretching sticky translucent threads of fluid from her parted, twitching pussy`;
+          }
+        }
+      }
+
+      extraNeg = joinTags(
+        partnerNeg,
+        "penis, phallus, testicles, dildo, sex toy, vaginal",
+        stageCode === "prolapse" ? "anal prolapse, anal" : ""
+      );
     } else {
       let partnerNeg: string;
       if (maleCode === "normal") {
@@ -1254,6 +1610,34 @@ export function generateScenePrompts(
           organProse =
             (showP ? "" : ", keeping her lower anatomy actively parted") +
             ", resting right after internal ejaculation while still deeply joined together as thick white cum pools and overflows";
+        } else if (stageCode === "prolapse") {
+          if (showP) {
+            organTags = joinTags(
+              m.anat_pos,
+              "1.35::after vaginal::, 1.4::pull out::, after sex, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, twitching, penis, erection, twitching penis, cum on penis",
+              wtag("cum", 1.45, f),
+              wtag("cum in pussy", 1.45, f),
+              wtag("cumdrip", 1.45, f),
+              wtag("cum string", 1.45, f),
+              wtag("cum on stomach", 1.25, f),
+              "cum on thighs, pussy juice, sweat"
+            );
+            organProse =
+              ", right after pulling out, dragging out a glistening pink prolapsed cervix drenched in overflowing white cum with sticky cum strings bridging to the tip";
+          } else {
+            organTags = joinTags(
+              m.anat_pos,
+              "1.4::after vaginal::, pull out, after sex, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, twitching, trembling",
+              wtag("cum", 1.45, f),
+              wtag("cum in pussy", 1.45, f),
+              wtag("cumdrip", 1.45, f),
+              wtag("cum string", 1.45, f),
+              wtag("cum on stomach", 1.25, f),
+              "cum on thighs, pussy juice, sweat"
+            );
+            organProse =
+              ", right after withdrawal, leaving a glistening pink prolapsed cervix protruding and dripping with thick white cum and sticky strings";
+          }
         } else {
           if (showP) {
             organTags = joinTags(
@@ -1416,6 +1800,24 @@ export function generateScenePrompts(
             "sweat"
           );
           organProse += `, resting right after ejaculation while still holding close as thick white cum pools and drips over her ${surfaceEn}`;
+        } else if (stageCode === "prolapse") {
+          const lowerProlapse =
+            channel === "thigh" || channel === "glute" || channel === "foot"
+              ? "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, after vaginal"
+              : "";
+          organTags = joinTags(
+            baseOrg,
+            "after ejaculation, pull out, excessive cum",
+            lowerProlapse,
+            wtag("cum", 1.45, f),
+            ...surfaceTags,
+            wtag("cum string", 1.45, f),
+            wtag("cumdrip", 1.4, f),
+            "sweat"
+          );
+          organProse += lowerProlapse
+            ? `, pulling back right after ejaculation with a glistening prolapsed cervix exposed and sticky white cum strings stretching across her ${surfaceEn}`
+            : `, pulling slightly back right after ejaculation with sticky white cum strings stretching across her ${surfaceEn}`;
         } else {
           organTags = joinTags(
             baseOrg,
@@ -1431,12 +1833,35 @@ export function generateScenePrompts(
       }
 
       const penisNeg = showP ? "" : "penis, phallus, testicles, dildo, sex toy";
-      extraNeg = joinTags(partnerNeg, penisNeg);
+      extraNeg = joinTags(
+        partnerNeg,
+        penisNeg,
+        stageCode === "prolapse" ? "anal prolapse" : ""
+      );
+
+      if (catTailWrapActive) {
+        const hasCatTailInCore = m.char_core.toLowerCase().includes("cat tail");
+        organTags = joinTags(
+          organTags,
+          hasCatTailInCore ? "" : "1.3::cat tail::",
+          "1.45::tail around penis::, 1.25::tailjob::, prehensile tail"
+        );
+        organProse +=
+          ", while her flexible cat tail instinctively coils and wraps snugly around the withdrawn penis";
+      }
+    }
+
+    if (stageCode === "prolapse" && tailNegUsed) {
+      tailNegUsed = tailNegUsed
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t && t.toLowerCase() !== "gaping")
+        .join(", ");
     }
 
     const expPos = exprIf(cfg, "furrowed brow, half-closed eyes, watery eyes, blush");
     const remPos = rem ? "sweat" : "";
-    const fullNeg = joinTags(extraNeg, transNeg, m.common_tail_neg);
+    const fullNeg = joinTags(extraNeg, transNeg, tailNegUsed);
     const povLbl = isPov ? "第一人称 (POV)" : "第三人称 (客观镜头)";
     const proseSentence = `${m.name} ${tpl.prose_core}${partnerProse}${organProse}${bgProse}.`;
 
@@ -1456,7 +1881,7 @@ export function generateScenePrompts(
       wrapTailNeg(m, fullNeg, negOn)
     );
     results.push({
-      subTitle: `【${tpl.title} · ${povLbl}${stageBadge}】`,
+      subTitle: `【${tpl.title} · ${povLbl}${sceneBadge}${stageBadge}】`,
       canvas: tpl.canvas,
       prompt: pPos,
     });
@@ -2961,6 +3386,51 @@ export function generateScenePrompts(
       canvas: item.canvas.startsWith("竖图")
         ? "像素竖图 384x512 (原生直出 ➔ 自动3x硬放大 1152x1536)"
         : "像素横图 512x384 (原生直出 ➔ 自动3x硬放大 1536x1152)",
+    }));
+  }
+
+  // Post-pass 4: Global Lighting Prose & Badge pass
+  const activeLight =
+    LIGHTING_PRESETS[cfg.lighting_preset] ??
+    LIGHTING_PRESETS["🔄 随画风与本幕默认光影（不额外覆盖）"];
+  const activeEnv =
+    ENV_PRESETS[cfg.env_preset] ?? ENV_PRESETS["🔄 随本幕/体位工具栏默认环境"];
+  const isPosTransBg = sceneId in ALL_POSITIONS_TEMPLATES && Boolean(cfg.pos_transparent_bg);
+  if (activeLight.code !== "auto" && !isPosTransBg && sceneId !== "MA0") {
+    results = results.map((item) => {
+      let nextPrompt = item.prompt;
+      if (cfg.enable_t5_prose && activeLight.prose && !nextPrompt.startsWith("[Base Prompt]")) {
+        const negMatch = /,\s*(-\d+(?:\.\d+)?::[\s\S]*)$/.exec(nextPrompt);
+        let candidate: string;
+        if (negMatch) {
+          const prefix = nextPrompt.slice(0, negMatch.index).trim();
+          const sep = prefix.endsWith(".") ? " " : ", ";
+          candidate = `${prefix}${sep}${activeLight.prose}, ${negMatch[1]}`;
+        } else {
+          const trimmed = nextPrompt.trim();
+          const sep = trimmed.endsWith(".") ? " " : ", ";
+          candidate = `${trimmed}${sep}${activeLight.prose}`;
+        }
+        if (countPromptT5Tokens(candidate).api_pos_tokens <= 504) {
+          nextPrompt = candidate;
+        }
+      }
+      return {
+        ...item,
+        subTitle: `${item.subTitle} · [${activeLight.badge}]`,
+        prompt: nextPrompt,
+      };
+    });
+  }
+  if (
+    cfg.enable_background &&
+    activeEnv.code !== "auto" &&
+    !(sceneId in ALL_POSITIONS_TEMPLATES) &&
+    sceneId !== "MA0"
+  ) {
+    results = results.map((item) => ({
+      ...item,
+      subTitle: `${item.subTitle} · [${activeEnv.badge}]`,
     }));
   }
 
