@@ -1230,7 +1230,7 @@ export const MULTI_ANGLE_CHAPTERS: Array<{ id: string; title: string; actor_type
   }
 ];
 
-export const MULTI_ANGLE_TEMPLATES: Record<string, { title: string; canvas: string; allow_multi_views: boolean; scene: string; prose: string; force_nsfw?: boolean; unlock_belly?: boolean; builtin_xray?: boolean; extra_neg?: string; default_expr_tags?: string }> = {
+export const MULTI_ANGLE_TEMPLATES: Record<string, { title: string; canvas: string; allow_multi_views: boolean; scene: string; prose: string; force_nsfw?: boolean; unlock_belly?: boolean; builtin_xray?: boolean; extra_neg?: string; default_expr_tags?: string; pov_visibility?: "front_face_visible" | "rear_no_face" | "top_down_over_shoulder"; prose_pov?: string }> = {
   "MA0": {
     "title": "MA0 · 三视图设定表 (Three-View Sheet)",
     "canvas": "横图 1216x832",
@@ -1689,7 +1689,7 @@ export const ALL_POSITIONS_CHAPTERS: Array<{ id: string; title: string; category
   },
   {
     "id": "P44",
-    "title": "P44 · 跪趴塌腰回眸展示位 (Solo Rear-Arch Showcase)",
+    "title": "P44 · 跪趴塌腰展示位 · 客观回眸/POV纯背特写 (Solo Rear-Arch Showcase)",
     "category": "8. 柔韧进阶·展示系",
     "actor_type": "AllPos"
   },
@@ -1761,7 +1761,7 @@ export const ALL_POSITIONS_CHAPTERS: Array<{ id: string; title: string; category
   }
 ];
 
-export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string; category: string; channel: string; canvas: string; pose_pov: string; pose_3rd: string; prose_core: string; lock_scene_env?: boolean; env_tags?: string; env_prose?: string; env_badge?: string; env_neg?: string; unlock_belly?: boolean; builtin_xray?: boolean; raw_action_tags?: string; extra_scene_neg?: string; default_expr_tags?: string }> = {
+export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string; category: string; channel: string; canvas: string; pose_pov: string; pose_3rd: string; prose_core: string; pov_visibility?: "front_face_visible" | "rear_no_face" | "top_down_over_shoulder"; prose_pov?: string; extra_pov_neg?: string; lock_scene_env?: boolean; env_tags?: string; env_prose?: string; env_badge?: string; env_neg?: string; unlock_belly?: boolean; builtin_xray?: boolean; raw_action_tags?: string; extra_scene_neg?: string; default_expr_tags?: string }> = {
   "P01": {
     "id": "P01",
     "title": "P01 · 标准仰卧传教士位 (Classic Supine)",
@@ -1770,7 +1770,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "1.25::from above::, lying on back, spread legs, arms above head, looking at viewer",
     "pose_3rd": "three-quarter view, high angle, lying on back, spread legs, knees bent, looking at viewer",
-    "prose_core": "lying on her back with her legs parted and gazing up"
+    "prose_core": "lying on her back with her legs parted and gazing up",
+    "pov_visibility": "front_face_visible"
   },
   "P02": {
     "id": "P02",
@@ -1780,7 +1781,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "from above, lying on back, 1.35::legs up::, v-shaped legs, bare legs raised high, looking at viewer",
     "pose_3rd": "side three-quarter view, lying on back, 1.35::legs up::, ankles raised high in a V-shape",
-    "prose_core": "lying on her back with both legs raised high in a V-shape"
+    "prose_core": "lying on her back with both legs raised high in a V-shape",
+    "pov_visibility": "front_face_visible"
   },
   "P03": {
     "id": "P03",
@@ -1790,7 +1792,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "1.3::from above::, lying on back, 1.4::folded::, knees to chest, ankles near shoulders, tilted hips, looking at viewer",
     "pose_3rd": "side view, lying on back, 1.4::folded::, knees pressed toward chest, raised pelvis",
-    "prose_core": "lying folded on her back with her knees pressed close to her chest and hips tilted upward"
+    "prose_core": "lying folded on her back with her knees pressed close to her chest and hips tilted upward",
+    "pov_visibility": "front_face_visible"
   },
   "P04": {
     "id": "P04",
@@ -1800,7 +1803,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "close-up, from above, lying on back, 1.35::leg lock::, ankles crossed, arms outstretched, looking at viewer",
     "pose_3rd": "three-quarter high angle, lying on back, 1.35::leg lock::, legs wrapped around waist, embrace",
-    "prose_core": "lying on her back with her legs locked inward in a close embrace"
+    "prose_core": "lying on her back with her legs locked inward in a close embrace",
+    "pov_visibility": "front_face_visible"
   },
   "P05": {
     "id": "P05",
@@ -1810,7 +1814,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "from above, lying on back, 1.35::one leg up::, asymmetrical legs, spread thigh, looking at viewer",
     "pose_3rd": "three-quarter view, lying on back, 1.35::one leg up::, one knee bent flat, asymmetric leg posture",
-    "prose_core": "lying on her back with one leg lifted high and the other extended"
+    "prose_core": "lying on her back with one leg lifted high and the other extended",
+    "pov_visibility": "front_face_visible"
   },
   "P06": {
     "id": "P06",
@@ -1820,7 +1825,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "eye-level, lying on back, hips at edge, knees bent wide apart, arched waist, looking at viewer",
     "pose_3rd": "three-quarter low angle, reclining on back at edge, knees open wide, arched lower back",
-    "prose_core": "reclining on her back at the edge with her hips forward and knees parted"
+    "prose_core": "reclining on her back at the edge with her hips forward and knees parted",
+    "pov_visibility": "front_face_visible"
   },
   "P07": {
     "id": "P07",
@@ -1830,7 +1836,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "横图 1216x832",
     "pose_pov": "high angle, lying on back, elevated hips, 1.3::arched back::, spread knees, hands gripping sheet",
     "pose_3rd": "side three-quarter view, lying on back, elevated pelvis, 1.3::arched back::, bent knees apart",
-    "prose_core": "lying on her back with her pelvis elevated and lower back arched"
+    "prose_core": "lying on her back with her pelvis elevated and lower back arched",
+    "pov_visibility": "front_face_visible"
   },
   "P08": {
     "id": "P08",
@@ -1840,7 +1847,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "low angle, from below, 1.35::girl on top::, straddling, kneeling, upright torso, looking down at viewer",
     "pose_3rd": "three-quarter low angle, 1.35::girl on top::, straddling, kneeling upright, hands on thighs",
-    "prose_core": "kneeling upright in a straddling top posture while looking down"
+    "prose_core": "kneeling upright in a straddling top posture while looking down",
+    "pov_visibility": "front_face_visible"
   },
   "P09": {
     "id": "P09",
@@ -1850,7 +1858,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "low angle, from below, 1.4::squatting::, girl on top, straddling, wide knees, soles flat, looking down at viewer",
     "pose_3rd": "frontal three-quarter view, 1.4::squatting::, girl on top, straddling with wide-set knees",
-    "prose_core": "squatting in a wide-knee straddling posture on top"
+    "prose_core": "squatting in a wide-knee straddling posture on top",
+    "pov_visibility": "front_face_visible"
   },
   "P10": {
     "id": "P10",
@@ -1860,7 +1869,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "close-up, low angle, girl on top, straddling, 1.35::leaning forward::, arms forward, close face, looking at viewer",
     "pose_3rd": "three-quarter cowboy shot, girl on top, straddling, 1.35::leaning forward::, arched spine",
-    "prose_core": "straddling on top while leaning closely forward"
+    "prose_core": "straddling on top while leaning closely forward",
+    "pov_visibility": "front_face_visible"
   },
   "P11": {
     "id": "P11",
@@ -1868,9 +1878,10 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "2. 女上位·骑乘坐姿系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "low angle, from below, girl on top, straddling, 1.35::leaning back::, arched back, arms supporting behind, head tilted back",
+    "pose_pov": "low angle, from below, girl on top, straddling, 1.35::leaning back::, arched back, arms supporting behind, looking down at viewer",
     "pose_3rd": "side three-quarter view, girl on top, straddling, 1.35::leaning back::, hands braced behind, arched torso",
-    "prose_core": "straddling on top while leaning back on both hands with an arched spine"
+    "prose_core": "straddling on top while leaning back on both hands with an arched spine",
+    "pov_visibility": "front_face_visible"
   },
   "P12": {
     "id": "P12",
@@ -1878,9 +1889,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "2. 女上位·骑乘坐姿系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "low angle, 1.35::from behind::, girl on top, reverse straddle, kneeling, back, 1.3::looking back::, over shoulder",
+    "pose_pov": "1.45::pov::, 1.35::from below::, low angle, 1.5::from behind::, 1.35::back::, 1.35::facing away::, girl on top, reverse straddle, kneeling, back of head, bare back, shoulder blades, spine, arched back",
     "pose_3rd": "rear three-quarter view, girl on top, reverse straddle, kneeling, arched back, looking back over shoulder",
-    "prose_core": "kneeling in a reverse straddling posture seen from behind while glancing over her shoulder"
+    "prose_core": "kneeling in a reverse straddling posture seen from behind while glancing over her shoulder",
+    "pov_visibility": "rear_no_face",
+    "prose_pov": "kneeling in a reverse straddling posture facing away, showing the back of her head, bare shoulder blades, and arched spine from below"
   },
   "P13": {
     "id": "P13",
@@ -1888,9 +1901,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "2. 女上位·骑乘坐姿系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "low angle, 1.35::from behind::, 1.4::squatting::, girl on top, reverse straddle, knees wide, looking back",
+    "pose_pov": "1.45::pov::, 1.35::from below::, low angle, 1.5::from behind::, 1.35::back::, 1.35::facing away::, 1.4::squatting::, girl on top, reverse straddle, knees wide, back of head, bare back, shoulder blades, spine",
     "pose_3rd": "rear low angle, 1.4::squatting::, girl on top, reverse straddle, back view, looking back",
-    "prose_core": "squatting with wide knees in a reverse straddling posture seen from behind"
+    "prose_core": "squatting with wide knees in a reverse straddling posture seen from behind",
+    "pov_visibility": "rear_no_face",
+    "prose_pov": "squatting with wide knees in a reverse straddling posture facing away, showing the back of her head and arched bare back from below"
   },
   "P14": {
     "id": "P14",
@@ -1900,7 +1915,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "close cowboy shot, 1.35::upright straddle::, sitting on lap, face-to-face, arms around neck, looking at viewer",
     "pose_3rd": "three-quarter view, 1.35::upright straddle::, sitting on lap, wrapped legs, close embrace",
-    "prose_core": "sitting upright face-to-face on a lap with her legs wrapped inward"
+    "prose_core": "sitting upright face-to-face on a lap with her legs wrapped inward",
+    "pov_visibility": "front_face_visible"
   },
   "P15": {
     "id": "P15",
@@ -1908,9 +1924,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "2. 女上位·骑乘坐姿系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "high angle, sitting on lap, leaning back, spread thighs, knees up, looking back up at viewer",
+    "pose_pov": "1.45::pov::, 1.4::from above::, top-down, high angle, looking down, pov hands, top of head, foreshortening, sitting on lap, back against chest, spread thighs, knees up",
     "pose_3rd": "frontal view, sitting on lap from behind, leaning back, 1.35::spread legs::, knees raised, looking at viewer",
-    "prose_core": "sitting leaned back with her knees raised and thighs parted toward the front"
+    "prose_core": "sitting leaned back with her knees raised and thighs parted toward the front",
+    "pov_visibility": "top_down_over_shoulder",
+    "prose_pov": "sitting leaned back against the viewer's chest seen from directly above over the top of her head, looking down along her chest, stomach, and parted thighs"
   },
   "P16": {
     "id": "P16",
@@ -1920,7 +1938,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "low angle, from below, girl on top, squatting forward, dominant posture, hands forward, looking down at viewer",
     "pose_3rd": "three-quarter view, amazon posture, girl straddling forward in a deep squat, looking at viewer",
-    "prose_core": "straddling forward in a deep dominant squat while looking down"
+    "prose_core": "straddling forward in a deep dominant squat while looking down",
+    "pov_visibility": "front_face_visible"
   },
   "P17": {
     "id": "P17",
@@ -1928,9 +1947,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "3. 后入·俯卧跪趴系",
     "channel": "vaginal",
     "canvas": "横图 1216x832",
-    "pose_pov": "1.35::from behind::, 1.3::all fours::, kneeling, arched back, raised hips, 1.3::looking back::, over shoulder",
+    "pose_pov": "1.45::pov::, 1.35::from above::, high angle, 1.5::from behind::, 1.35::back::, 1.35::facing away::, 1.3::all fours::, kneeling, arched back, raised hips, back of head, bare back, shoulder blades, spine",
     "pose_3rd": "side three-quarter rear view, 1.3::all fours::, kneeling, arched lower back, looking back at viewer",
-    "prose_core": "on all fours with an arched lower back while looking back over her shoulder"
+    "prose_core": "on all fours with an arched lower back while looking back over her shoulder",
+    "pov_visibility": "rear_no_face",
+    "prose_pov": "on all fours facing away, showing the back of her head, bare slender back, and raised hips from above"
   },
   "P18": {
     "id": "P18",
@@ -1938,9 +1959,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "3. 后入·俯卧跪趴系",
     "channel": "vaginal",
     "canvas": "横图 1216x832",
-    "pose_pov": "1.35::from behind::, 1.4::top-down bottom-up::, chest down, forearms down, hips high, arched spine, looking back",
+    "pose_pov": "1.45::pov::, 1.35::from above::, high angle, 1.5::from behind::, 1.35::back::, 1.35::facing away::, 1.4::top-down bottom-up::, chest down, forearms down, hips high, arched spine, back of head, bare back, shoulder blades",
     "pose_3rd": "side three-quarter view, 1.4::top-down bottom-up::, chest pressed low, raised hips, looking back",
-    "prose_core": "resting her chest low on her forearms with her hips raised high and spine arched"
+    "prose_core": "resting her chest low on her forearms with her hips raised high and spine arched",
+    "pov_visibility": "rear_no_face",
+    "prose_pov": "resting her chest low on her forearms facing away, showing the back of her head, arched spine, and high-raised hips"
   },
   "P19": {
     "id": "P19",
@@ -1948,9 +1971,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "3. 后入·俯卧跪趴系",
     "channel": "vaginal",
     "canvas": "横图 1216x832",
-    "pose_pov": "high angle, 1.35::from behind::, 1.35::lying on stomach::, prone, slightly parted legs, head turned back, looking at viewer",
+    "pose_pov": "1.45::pov::, 1.35::from above::, high angle, 1.5::from behind::, 1.35::back::, 1.35::facing away::, 1.35::lying on stomach::, prone, slightly parted legs, back of head, bare back, shoulder blades, spine",
     "pose_3rd": "side three-quarter view, 1.35::lying on stomach::, flat prone posture, head resting on arms, looking at viewer",
-    "prose_core": "lying flat on her stomach with her head turned back toward the viewer"
+    "prose_core": "lying flat on her stomach with her head turned back toward the viewer",
+    "pov_visibility": "rear_no_face",
+    "prose_pov": "lying flat on her stomach facing away, showing the back of her head and bare slender back from above"
   },
   "P20": {
     "id": "P20",
@@ -1958,9 +1983,12 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "3. 后入·俯卧跪趴系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "1.3::from behind::, kneeling upright, 1.3::arms behind back::, arched chest, head turned over shoulder, looking at viewer",
+    "pose_pov": "1.45::pov::, slight high angle, 1.5::from behind::, 1.35::back::, 1.35::facing away::, kneeling upright, torso upright, arched chest, 1.45::arms pulled back::, 1.4::wrists held::, holding wrists, arched spine, back of head, bare back, shoulder blades",
     "pose_3rd": "three-quarter side-rear view, kneeling upright, arms pulled back, arched posture, looking back",
-    "prose_core": "kneeling upright with her arms drawn back and chest arched while glancing over her shoulder"
+    "prose_core": "kneeling upright with her arms drawn back and chest arched while glancing over her shoulder",
+    "pov_visibility": "rear_no_face",
+    "prose_pov": "kneeling upright facing away with both wrists held and her arms pulled firmly behind her back, showing the back of her head, shoulder blades, and arched upright back",
+    "extra_pov_neg": "hands on floor, all fours, supporting hands forward"
   },
   "P21": {
     "id": "P21",
@@ -1968,9 +1996,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "3. 后入·俯卧跪趴系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "1.35::from behind::, standing, 1.35::bent over::, supporting hands forward, parted legs, looking back over shoulder",
+    "pose_pov": "1.45::pov::, 1.35::from above::, high angle, 1.5::from behind::, 1.35::back::, 1.35::facing away::, standing, 1.35::bent over::, supporting hands forward, parted legs, back of head, bare back, shoulder blades, spine",
     "pose_3rd": "three-quarter rear view, standing, 1.35::bent over::, torso leaned forward, one heel slightly raised, looking back",
-    "prose_core": "standing bent forward with hands braced ahead while looking back over her shoulder"
+    "prose_core": "standing bent forward with hands braced ahead while looking back over her shoulder",
+    "pov_visibility": "rear_no_face",
+    "prose_pov": "standing bent forward with hands braced ahead facing away, showing the back of her head and bare slender back"
   },
   "P22": {
     "id": "P22",
@@ -1978,9 +2008,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "3. 后入·俯卧跪趴系",
     "channel": "vaginal",
     "canvas": "横图 1216x832",
-    "pose_pov": "high angle, from behind, lying on stomach, bent knees spread wide, soles upward, looking back",
+    "pose_pov": "1.45::pov::, 1.35::from above::, high angle, 1.5::from behind::, 1.35::back::, 1.35::facing away::, lying on stomach, bent knees spread wide, soles upward, back of head, bare back, spine",
     "pose_3rd": "three-quarter overhead rear view, lying on stomach, frog-leg bent knees apart, looking back",
-    "prose_core": "lying prone on her stomach with both knees bent outward to the sides"
+    "prose_core": "lying prone on her stomach with both knees bent outward to the sides",
+    "pov_visibility": "rear_no_face",
+    "prose_pov": "lying prone on her stomach facing away with both knees bent wide outward, showing the back of her head and bare back"
   },
   "P23": {
     "id": "P23",
@@ -1988,9 +2020,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "4. 侧卧·汤匙交叉系",
     "channel": "vaginal",
     "canvas": "横图 1216x832",
-    "pose_pov": "close side view, 1.35::lying on side::, curled knees, head on pillow, looking back at viewer",
+    "pose_pov": "1.45::pov::, close side-rear view, 1.45::from behind::, 1.35::lying on side::, spooning, curled knees, head on pillow, 1.35::facing away::, nape, back of head, bare back, spine",
     "pose_3rd": "landscape view, 1.35::lying on side::, spooning posture, knees drawn up, looking at viewer",
-    "prose_core": "lying on her side with her knees gently drawn up while glancing back"
+    "prose_core": "lying on her side with her knees gently drawn up while glancing back",
+    "pov_visibility": "rear_no_face",
+    "prose_pov": "lying on her side in a close spooning posture facing away, showing the back of her head, slender nape, and curved back"
   },
   "P24": {
     "id": "P24",
@@ -2000,7 +2034,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "横图 1216x832",
     "pose_pov": "three-quarter view, 1.3::lying on side::, 1.35::one leg raised::, open hip, supporting on elbow, looking at viewer",
     "pose_3rd": "landscape three-quarter view, lying on side, upper leg lifted high, open posture, looking at viewer",
-    "prose_core": "lying on her side propped on one elbow with her upper leg lifted high"
+    "prose_core": "lying on her side propped on one elbow with her upper leg lifted high",
+    "pov_visibility": "front_face_visible"
   },
   "P25": {
     "id": "P25",
@@ -2008,9 +2043,10 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "4. 侧卧·汤匙交叉系",
     "channel": "vaginal",
     "canvas": "横图 1216x832",
-    "pose_pov": "high angle, reclining on side, 1.3::crossed legs::, asymmetrical open thighs, looking up at viewer",
-    "pose_3rd": "overhead three-quarter view, reclining laterally with interlocked angled legs, looking at viewer",
-    "prose_core": "reclining laterally with angled parted thighs while looking toward the viewer"
+    "pose_pov": "1.45::pov::, 1.3::from above::, high angle, pov hands, grabbing thigh, reclining on side, 1.4::leg lift::, 1.35::spread legs::, one leg raised, straddling one leg, interlocked legs, looking at viewer",
+    "pose_3rd": "overhead three-quarter view, reclining laterally with interlocked angled legs, 1.35::spread legs::, one leg raised, looking at viewer",
+    "prose_core": "reclining laterally with one leg lifted and thighs parted in an interlocked scissor posture while looking toward the viewer",
+    "pov_visibility": "front_face_visible"
   },
   "P26": {
     "id": "P26",
@@ -2020,7 +2056,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "close cowboy shot, standing, face-to-face, 1.35::one leg lifted::, arms forward, looking at viewer",
     "pose_3rd": "three-quarter full-body shot, standing face-to-face, one leg hooked high at hip level, looking at viewer",
-    "prose_core": "standing upright face-to-face with one leg lifted high at hip level"
+    "prose_core": "standing upright face-to-face with one leg lifted high at hip level",
+    "pov_visibility": "front_face_visible"
   },
   "P27": {
     "id": "P27",
@@ -2030,7 +2067,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "close shot, 1.4::lifted::, feet off ground, legs wrapped around waist, arms around neck, looking at viewer",
     "pose_3rd": "three-quarter full-body shot, 1.4::carried::, suspended in air face-to-face, legs wrapped high, feet off ground",
-    "prose_core": "carried suspended in mid-air face-to-face with her arms around the neck and feet off the ground"
+    "prose_core": "carried suspended in mid-air face-to-face with her arms around the neck and feet off the ground",
+    "pov_visibility": "front_face_visible"
   },
   "P28": {
     "id": "P28",
@@ -2038,9 +2076,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "5. 站立·悬空抱举系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "high angle, carried from behind, knees lifted wide, feet dangling, looking back up at viewer",
+    "pose_pov": "1.45::pov::, 1.4::from above::, top-down, high angle, looking down, pov hands, top of head, foreshortening, standing, 1.35::suspended::, high above floor, distant floor, carried from behind, arms under knees, 1.35::spread legs::, m legs, feet off ground",
     "pose_3rd": "frontal full-body shot, 1.4::carried from behind::, facing viewer, lifted under knees in a wide M-shape, feet off ground",
-    "prose_core": "lifted in mid-air from behind facing forward with both knees held wide apart"
+    "prose_core": "lifted in mid-air from behind facing forward with both knees held wide apart",
+    "pov_visibility": "top_down_over_shoulder",
+    "prose_pov": "suspended high above the floor against the standing viewer's chest seen from directly above over the top of her head, looking down along her torso and wide M-spread legs cradled under both knees"
   },
   "P29": {
     "id": "P29",
@@ -2048,9 +2088,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "5. 站立·悬空抱举系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "frontal view through glass, standing, 1.4::against glass::, palms pressed on glass, flattened chest, fogged glass, looking at viewer",
-    "pose_3rd": "three-quarter view, standing, 1.4::against glass::, palms and chest pressed against clear windowpane, looking at viewer",
-    "prose_core": "standing with both palms and chest pressed flat against a clear glass pane"
+    "pose_pov": "1.45::pov::, 1.5::from behind::, 1.35::back::, 1.35::facing away::, standing, 1.4::pressed against glass::, palms on glass, window in front, back of head, bare back, shoulder blades, spine",
+    "pose_3rd": "frontal view through glass, standing, 1.4::against glass::, palms and flattened chest pressed against clear windowpane, fogged glass, looking at viewer",
+    "prose_core": "standing with both palms and chest pressed flat against a clear glass pane",
+    "pov_visibility": "rear_no_face",
+    "prose_pov": "standing facing away with both palms pressed against the glass window in front of her, showing the back of her head and bare slender back"
   },
   "P30": {
     "id": "P30",
@@ -2060,7 +2102,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "1.35::from above::, high angle, kneeling, upper body, 1.35::looking up::, looking at viewer, hands cupped near chin",
     "pose_3rd": "three-quarter high angle, kneeling, upper body, leaning forward, hands near mouth, looking up",
-    "prose_core": "kneeling and gazing upward from a high angle with hands raised near her chin"
+    "prose_core": "kneeling and gazing upward from a high angle with hands raised near her chin",
+    "pov_visibility": "front_face_visible"
   },
   "P31": {
     "id": "P31",
@@ -2070,7 +2113,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "1.35::close-up::, portrait, from above, leaning forward, teary eyes, blush, looking up at viewer",
     "pose_3rd": "side three-quarter close-up, leaning forward, hands resting on hair, teary eyes",
-    "prose_core": "in an intimate close-up leaning forward with misty eyes gazing upward"
+    "prose_core": "in an intimate close-up leaning forward with misty eyes gazing upward",
+    "pov_visibility": "front_face_visible"
   },
   "P32": {
     "id": "P32",
@@ -2080,17 +2124,20 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "top-down view, lying on back, 1.35::upside-down::, head tilted back over edge, hair hanging down, looking at viewer",
     "pose_3rd": "side three-quarter view, lying on back at edge, head hanging backward, hair cascading down",
-    "prose_core": "lying on her back with her head tilted backward over the edge and hair hanging down"
+    "prose_core": "lying on her back with her head tilted backward over the edge and hair hanging down",
+    "pov_visibility": "front_face_visible"
   },
   "P33": {
     "id": "P33",
     "title": "P33 · 上下交叠互侍 69 位 (Mutual 69)",
     "category": "6. 口部·上半身特写系",
-    "channel": "oral",
+    "channel": "sixty_nine",
     "canvas": "横图 1216x832",
-    "pose_pov": "low angle close view, straddling above, thighs framing view, leaning down",
-    "pose_3rd": "landscape side view, horizontal opposing posture, kneeling above on all fours, arched hips",
-    "prose_core": "poised horizontally in a mutual opposing posture with arched hips"
+    "pose_pov": "1.45::pov::, 1.35::from below::, worm's-eye view, 1.4::sixty-nine::, girl on top, straddling face, thighs straddling face, ass focus, close-up, 1.35::facing away::, hips above",
+    "pose_3rd": "landscape side view, 1.35::sixty-nine::, horizontal opposing posture, kneeling above on all fours, arched hips",
+    "prose_core": "poised horizontally above in a mutual sixty-nine posture with arched hips",
+    "pov_visibility": "rear_no_face",
+    "prose_pov": "straddling above the viewer's face in a close mutual sixty-nine posture facing away with her parted thighs and exposed lower anatomy directly overhead"
   },
   "P34": {
     "id": "P34",
@@ -2100,7 +2147,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "1.45::from below::, worm's-eye view, kneeling directly over viewer, thighs framing camera, looking down at viewer",
     "pose_3rd": "low-angle three-quarter shot, kneeling astride head level, looking down",
-    "prose_core": "kneeling astride directly overhead while looking down from a steep low angle"
+    "prose_core": "kneeling astride directly overhead while looking down from a steep low angle",
+    "pov_visibility": "front_face_visible"
   },
   "P35": {
     "id": "P35",
@@ -2110,7 +2158,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "1.35::from above::, close-up, kneeling, leaning forward, 1.35::looking up::, looking at viewer",
     "pose_3rd": "three-quarter high-angle cowboy shot, kneeling, leaning forward, arms pressed inward, looking at viewer",
-    "prose_core": "kneeling and leaning forward while pressing both arms inward around her chest"
+    "prose_core": "kneeling and leaning forward while pressing both arms inward around her chest",
+    "pov_visibility": "front_face_visible"
   },
   "P36": {
     "id": "P36",
@@ -2120,7 +2169,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "sitting, leaning back on hands, legs extended toward viewer, 1.35::foot focus::, foreshortening, looking at viewer",
     "pose_3rd": "three-quarter view, sitting leaned back, both legs raised forward with soles pressed together, looking at viewer",
-    "prose_core": "sitting leaned back on her hands with both feet extended forward and soles pressed together"
+    "prose_core": "sitting leaned back on her hands with both feet extended forward and soles pressed together",
+    "pov_visibility": "front_face_visible"
   },
   "P37": {
     "id": "P37",
@@ -2130,7 +2180,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "low angle, kneeling astride, leaning slightly forward, inner thighs pressed close, looking down at viewer",
     "pose_3rd": "three-quarter cowboy shot, kneeling astride with thighs pressed snugly together, looking at viewer",
-    "prose_core": "kneeling astride with her inner thighs pressed snugly together"
+    "prose_core": "kneeling astride with her inner thighs pressed snugly together",
+    "pov_visibility": "front_face_visible"
   },
   "P38": {
     "id": "P38",
@@ -2138,9 +2189,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "7. 外部部位·胸足腿手系",
     "channel": "glute",
     "canvas": "竖图 832x1216",
-    "pose_pov": "1.35::from behind::, close cowboy shot, kneeling, arched back, hips pushed back, 1.3::looking back::, over shoulder",
+    "pose_pov": "1.45::pov::, 1.35::from above::, high angle, close cowboy shot, 1.5::from behind::, 1.35::back::, 1.35::facing away::, kneeling, arched back, hips pushed back, squeezed glutes, back of head, bare back, spine",
     "pose_3rd": "rear three-quarter shot, kneeling, arched spine, hips raised, looking back at viewer",
-    "prose_core": "kneeling with her lower back arched and glutes pressed together while glancing back"
+    "prose_core": "kneeling with her lower back arched and glutes pressed together while glancing back",
+    "pov_visibility": "rear_no_face",
+    "prose_pov": "kneeling facing away with her lower back arched and glutes pressed together, showing the back of her head and bare back"
   },
   "P39": {
     "id": "P39",
@@ -2150,7 +2203,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "close cowboy shot, high angle, kneeling close, both hands raised together in front, shy gaze, looking at viewer",
     "pose_3rd": "three-quarter close shot, kneeling beside, both hands cupped together at chest height, looking at viewer",
-    "prose_core": "kneeling up close with both hands cupped together in front while gazing shyly"
+    "prose_core": "kneeling up close with both hands cupped together in front while gazing shyly",
+    "pov_visibility": "front_face_visible"
   },
   "P40": {
     "id": "P40",
@@ -2158,9 +2212,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "8. 柔韧进阶·展示系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "high angle, lifted, knees pulled wide toward shoulders, feet dangling, looking back up",
+    "pose_pov": "1.45::pov::, 1.4::from above::, top-down, high angle, looking down, pov hands, top of head, foreshortening, standing, 1.35::suspended::, high above floor, distant floor, full nelson, arms under armpits, lifted, knees pulled wide, feet dangling",
     "pose_3rd": "frontal full-body shot, 1.35::full nelson::, lifted from behind, arms behind neck, knees held wide apart, facing viewer",
-    "prose_core": "lifted in mid-air from behind with her knees drawn high and wide apart facing forward"
+    "prose_core": "lifted in mid-air from behind with her knees drawn high and wide apart facing forward",
+    "pov_visibility": "top_down_over_shoulder",
+    "prose_pov": "suspended high above the floor in a full-nelson hold against the standing viewer's chest seen from directly above over the top of her head, looking down along her arched torso and wide-drawn knees"
   },
   "P41": {
     "id": "P41",
@@ -2168,9 +2224,12 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "8. 柔韧进阶·展示系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "1.35::from above::, shoulders down, hips raised vertically, legs folded downward past ears, looking at viewer",
-    "pose_3rd": "side three-quarter shot, inverted folded posture, shoulders resting low, hips vertical in air",
-    "prose_core": "in an inverted folded posture with her shoulders low and hips raised vertically"
+    "pose_pov": "1.45::pov::, 1.4::from above::, steep high angle, looking down, pov hands, grabbing hips, 1.55::piledriver::, 1.5::upside-down::, inverted body, head at bottom, hips at top, shoulders on floor, pelvis raised high in air, ass up, ankles by ears, upside-down face",
+    "pose_3rd": "side three-quarter shot, 1.45::piledriver::, 1.35::upside-down::, inverted folded posture, shoulders resting low, hips vertical in air",
+    "prose_core": "in an upside-down inverted piledriver posture with her shoulders resting low on the floor, head at the bottom, and hips raised vertically at the top",
+    "pov_visibility": "front_face_visible",
+    "prose_pov": "folded upside-down in an inverted piledriver posture seen steeply from above with her raised hips and ankles at the top of the frame and her upside-down head resting on her shoulders at the bottom",
+    "extra_pov_neg": "head at top, upright, sitting, lying flat on back"
   },
   "P42": {
     "id": "P42",
@@ -2178,9 +2237,10 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "8. 柔韧进阶·展示系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "eye-level full-body, standing, 1.45::standing split::, one leg raised vertically upward, flexible, looking at viewer",
+    "pose_pov": "1.4::pov::, close-up, cowboy shot, pov hands, holding raised leg, standing, 1.45::standing split::, one leg raised vertically upward, flexible, looking at viewer",
     "pose_3rd": "three-quarter full-body shot, 1.45::standing split::, one leg extended straight upward, balanced posture, looking at viewer",
-    "prose_core": "balancing in a flexible standing vertical split with one leg raised straight upward"
+    "prose_core": "balancing in a flexible standing vertical split with one leg raised straight upward",
+    "pov_visibility": "front_face_visible"
   },
   "P43": {
     "id": "P43",
@@ -2190,17 +2250,20 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "frontal view, sitting, 1.45::m legs::, knees bent wide apart, hands resting on knees, leaning slightly back, looking at viewer",
     "pose_3rd": "three-quarter frontal shot, sitting, 1.45::m legs::, knees bent wide, soles flat, looking at viewer",
-    "prose_core": "sitting facing forward in an M-shaped open-knee posture while looking at the viewer"
+    "prose_core": "sitting facing forward in an M-shaped open-knee posture while looking at the viewer",
+    "pov_visibility": "front_face_visible"
   },
   "P44": {
     "id": "P44",
-    "title": "P44 · 跪趴塌腰回眸展示位 (Solo Rear-Arch Showcase)",
+    "title": "P44 · 跪趴塌腰展示位 · 客观回眸/POV纯背特写 (Solo Rear-Arch Showcase)",
     "category": "8. 柔韧进阶·展示系",
     "channel": "solo",
     "canvas": "横图 1216x832",
-    "pose_pov": "1.35::from behind::, all fours, deep arched back, raised hips, knees apart, 1.35::looking back::, over shoulder",
+    "pose_pov": "1.45::pov::, close-up, cowboy shot, 1.35::from above::, high angle, 1.5::from behind::, 1.35::back::, 1.35::facing away::, 1.35::ass focus::, pussy from behind, all fours, deep arched back, raised hips, knees apart, back of head, bare back, shoulder blades, spine",
     "pose_3rd": "three-quarter rear shot, kneeling on all fours, arched lower back, looking back over shoulder at viewer",
-    "prose_core": "kneeling on all fours with a deep arched back while turning her head over her shoulder"
+    "prose_core": "kneeling on all fours with a deep arched back while turning her head over her shoulder",
+    "pov_visibility": "rear_no_face",
+    "prose_pov": "kneeling up close on all fours facing away with a deep arched back and raised hips in intimate rear focus, showing the back of her head and bare spine"
   },
   "P45": {
     "id": "P45",
@@ -2210,7 +2273,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "1.3::from above::, lying on back, 1.35::spread legs::, knees bent wide, arched waist, looking at viewer",
     "pose_3rd": "three-quarter high angle, lying on back, spread legs, knees bent apart, hips slightly lifted, looking at viewer",
-    "prose_core": "lying on her back with her knees bent wide apart and waist arching sensitively"
+    "prose_core": "lying on her back with her knees bent wide apart and waist arching sensitively",
+    "pov_visibility": "front_face_visible"
   },
   "P46": {
     "id": "P46",
@@ -2218,9 +2282,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "9. 手部爱抚·指技前戏系",
     "channel": "grope_fingering",
     "canvas": "竖图 832x1216",
-    "pose_pov": "close cowboy shot, sitting on lap, back against chest, spread thighs, head tilted back, looking up at viewer",
+    "pose_pov": "1.45::pov::, 1.4::from above::, top-down, high angle, looking down, pov hands, top of head, foreshortening, sitting on lap, back against chest, 1.35::grabbing another's breast::, spread thighs",
     "pose_3rd": "frontal full-body shot, sitting held from behind against chest, 1.35::spread legs::, knees open, looking at viewer",
-    "prose_core": "held closely from behind with her back pressed against chest and thighs parted wide toward the camera"
+    "prose_core": "held closely from behind with her back pressed against chest and thighs parted wide toward the camera",
+    "pov_visibility": "top_down_over_shoulder",
+    "prose_pov": "sitting against the viewer's chest seen from directly above over the top of her head, looking down along her chest and wide-parted thighs"
   },
   "P47": {
     "id": "P47",
@@ -2230,7 +2296,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "low angle, close shot, reclining on back, 1.4::m legs::, knees wide apart, hips tilted forward, looking down at viewer",
     "pose_3rd": "low-angle three-quarter shot, reclining leaned back, wide M-shaped legs exposing groin clearly, looking at viewer",
-    "prose_core": "reclining with her legs spread wide in an M-shape and hips tilted openly forward"
+    "prose_core": "reclining with her legs spread wide in an M-shape and hips tilted openly forward",
+    "pov_visibility": "front_face_visible"
   },
   "P48": {
     "id": "P48",
@@ -2240,7 +2307,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "canvas": "竖图 832x1216",
     "pose_pov": "cowboy shot, standing, against wall, 1.35::one leg lifted::, open hip, leaning against wall, looking at viewer",
     "pose_3rd": "three-quarter full-body shot, standing pinned against wall, 1.35::one leg lifted::, knee hooked high, looking at viewer",
-    "prose_core": "standing leaned back with one leg lifted high to expose her open hip"
+    "prose_core": "standing leaned back with one leg lifted high to expose her open hip",
+    "pov_visibility": "front_face_visible"
   },
   "P49": {
     "id": "P49",
@@ -2248,9 +2316,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "9. 手部爱抚·指技前戏系",
     "channel": "fingering",
     "canvas": "横图 1216x832",
-    "pose_pov": "1.35::from behind::, all fours, arched back, raised hips, knees apart, 1.3::looking back::, over shoulder",
+    "pose_pov": "1.45::pov::, 1.35::from above::, high angle, 1.5::from behind::, 1.35::back::, 1.35::facing away::, all fours, arched back, raised hips, knees apart, back of head, bare back, shoulder blades, spine",
     "pose_3rd": "rear three-quarter shot, kneeling on all fours, chest low, hips raised high, looking back at viewer",
-    "prose_core": "kneeling on all fours with her spine arched low and hips raised while glancing back over her shoulder"
+    "prose_core": "kneeling on all fours with her spine arched low and hips raised while glancing back over her shoulder",
+    "pov_visibility": "rear_no_face",
+    "prose_pov": "kneeling on all fours facing away with her spine arched low and hips raised, showing the back of her head and bare back"
   },
   "P50": {
     "id": "P50",
@@ -2258,9 +2328,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "9. 手部爱抚·指技前戏系",
     "channel": "breast_grope",
     "canvas": "竖图 832x1216",
-    "pose_pov": "high angle, close cowboy shot, kneeling between legs, back against chest, head tilted back, looking up at viewer",
+    "pose_pov": "1.45::pov::, 1.4::from above::, top-down, high angle, looking down, pov hands, top of head, foreshortening, held from behind, back against chest, 1.35::grabbing another's breast::, arched chest",
     "pose_3rd": "frontal cowboy shot, held from behind, arched chest pushed forward, arms held down at sides, looking at viewer",
-    "prose_core": "held closely from behind with her chest arched forward"
+    "prose_core": "held closely from behind with her chest arched forward",
+    "pov_visibility": "top_down_over_shoulder",
+    "prose_pov": "held closely against the viewer's chest seen from directly above over the top of her head, looking down at her arched chest"
   },
   "P51": {
     "id": "P51",
@@ -2268,9 +2340,11 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "9. 手部爱抚·指技前戏系",
     "channel": "fingering",
     "canvas": "竖图 832x1216",
-    "pose_pov": "frontal low angle, 1.35::carried from behind::, lifted under knees, wide M-legs in air, looking down at viewer",
+    "pose_pov": "1.45::pov::, 1.4::from above::, top-down, high angle, looking down, pov hands, top of head, foreshortening, standing, 1.35::suspended::, high above floor, distant floor, carried from behind, arms under knees, 1.35::spread legs::, m legs, feet off ground",
     "pose_3rd": "frontal full-body shot, 1.35::carried from behind::, both knees cradled high and wide apart, feet off ground, facing viewer",
-    "prose_core": "cradled from behind under both knees with her legs held wide open facing forward"
+    "prose_core": "cradled from behind under both knees with her legs held wide open facing forward",
+    "pov_visibility": "top_down_over_shoulder",
+    "prose_pov": "suspended high above the floor against the standing viewer's chest seen from directly above over the top of her head, looking down along her torso and wide M-spread legs"
   },
   "TN01": {
     "id": "TN01",

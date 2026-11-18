@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   ALL_POSITIONS_CHAPTERS,
+  ALL_POSITIONS_TEMPLATES,
   BUNDLED_CUSTOM_PRESETS,
   EXPRESSION_PRESETS,
   FREE_ACTION_STARTERS,
@@ -771,8 +772,274 @@ async function main(): Promise<void> {
     assert(maTok400.posTokens <= 400, `${ma7Vid} exceeded 3-Vibe 400 T5 limit: ${maTok400.posTokens}`);
   }
 
+  // 14. Verify Section 2E First-Person POV Optical & Gaze Consistency Audit across P01~P51
+  const expectedRearNoFace = new Set([
+    "P12",
+    "P13",
+    "P17",
+    "P18",
+    "P19",
+    "P20",
+    "P21",
+    "P22",
+    "P23",
+    "P29",
+    "P33",
+    "P38",
+    "P44",
+    "P49",
+  ]);
+  const expectedTopDown = new Set(["P15", "P28", "P40", "P46", "P50", "P51"]);
+  for (let i = 1; i <= 51; i++) {
+    const pid = `P${String(i).padStart(2, "0")}`;
+    const tpl = ALL_POSITIONS_TEMPLATES[pid];
+    assert(tpl, `Missing template ${pid}`);
+    const expectedVis = expectedRearNoFace.has(pid)
+      ? "rear_no_face"
+      : expectedTopDown.has(pid)
+        ? "top_down_over_shoulder"
+        : "front_face_visible";
+    assert.equal(tpl.pov_visibility, expectedVis, `${pid} pov_visibility mismatch`);
+  }
+
+  const povAuditCfg = {
+    ...createDefaultCharacterConfig(),
+    style_preset: "🧬✨ M2 单画师极细净线赛璐璐风（mikozin 0.62 + 净黑细线 · 内置3槽Vibe调校）",
+    lighting_preset: "💎👁️ 极细净黑线 · 丝绒渐变瞳双眼皮睫毛 + 三阶奶桃锁骨柔影（M2 Razor-Fine Cel）",
+    body_preset: "袖珍娇小窄肩细腰笔直长腿·微Q萌圆脸（0.25 chibi + short slender mini-lady）",
+    outfit_preset: "🐰 逆兔女郎装 · 经典黑爱心胸贴 + 腿环过膝袜（Reverse Bunnysuit · 胸贴版）",
+    expr_preset: "💢 雌小鬼嘲讽·嚣张挑衅（mesugaki, smug, evil smile, jitome, naughty face, blush）",
+    extra_char_tags: "silver hair, aqua eyes",
+    pos_show_penis: true,
+    pos_stage: "🔗 4. 事后拔出 · 脱出拉丝/外射（pull out · 刚拔出拉丝与穴口白浊流淌）",
+  };
+
+  // Group 1 & 3: rear_no_face POV must suppress ALL face/eye expressions AND front-chest/navel tags, while 3rd-person retains them
+  for (const pid of expectedRearNoFace) {
+    const [povItem] = generateScenePrompts(pid, povAuditCfg, "pov");
+    const spPov = splitPromptPosAndNeg(povItem.prompt);
+    const povNegSet = new Set(spPov.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+    for (const bannedPos of [
+      "looking back",
+      "looking at viewer",
+      "mesugaki",
+      "smug",
+      "jitome",
+      "gradient eyes",
+      "thick eyelashes",
+      "eyelid crease",
+      "aqua eyes",
+      "short face",
+      "round face",
+      "tareme",
+      "blush stickers",
+      "nose blush",
+      "open jacket",
+      "bare breasts",
+      "heart pasties",
+      "black pasties",
+      "nipples",
+      "midriff",
+      "navel",
+      "red bowtie",
+      "cum on stomach",
+      "with a cute large head",
+    ]) {
+      assert(
+        !spPov.posPrompt.toLowerCase().includes(bannedPos),
+        `Rear POV ${pid} leaked front/face token '${bannedPos}': ${spPov.posPrompt}`
+      );
+    }
+    for (const reqNeg of ["looking back", "looking at viewer", "face", "eyes", "bare breasts", "nipples"]) {
+      assert(povNegSet.has(reqNeg), `Rear POV ${pid} missing anti-turnback UC lock '${reqNeg}'`);
+    }
+    if (ALL_POSITIONS_TEMPLATES[pid].channel !== "solo") {
+      assert(!povNegSet.has("from behind"), `Rear POV ${pid} must not block 'from behind' in UC`);
+      assert(povNegSet.has("male back") && povNegSet.has("male head"), `Rear POV ${pid} must block male back/head`);
+    }
+  }
+
+  // Verify 3rd-person mode on P17 is completely unaffected (retains looking back, expression override, aqua eyes, and Reverse Bunnysuit chest)
+  const [p17Third] = generateScenePrompts("P17", povAuditCfg, "3rd");
+  const spP17Third = splitPromptPosAndNeg(p17Third.prompt);
+  assert(
+    spP17Third.posPrompt.includes("looking back") &&
+      spP17Third.posPrompt.includes("1.35::mesugaki::") &&
+      spP17Third.posPrompt.includes("aqua eyes") &&
+      spP17Third.posPrompt.includes("1.4::heart pasties::"),
+    "3rd-person P17 must retain looking back, global expression override, eye color, and front outfit tags"
+  );
+
+  // Verify 2.5D lighting on Rear POV also suppresses blush stickers / nose blush & facial prose
+  const [p18CelPov] = generateScenePrompts(
+    "P18",
+    {
+      ...povAuditCfg,
+      lighting_preset: "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）",
+    },
+    "pov"
+  );
+  assert(
+    !p18CelPov.prompt.includes("blush stickers") &&
+      !p18CelPov.prompt.includes("nose blush") &&
+      !p18CelPov.prompt.includes("rosy cheeks"),
+    "Rear POV P18 under 2.5D lighting must suppress blush stickers and rosy cheeks prose"
+  );
+
+  // Group 2: top_down_over_shoulder POV looks down over crown of head -> keeps front chest/thighs, suppresses face/eyes
+  for (const pid of expectedTopDown) {
+    const [tdItem] = generateScenePrompts(pid, povAuditCfg, "pov");
+    const spTd = splitPromptPosAndNeg(tdItem.prompt);
+    const tdNegSet = new Set(spTd.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+    assert(
+      spTd.posPrompt.includes("top-down") &&
+        spTd.posPrompt.includes("top of head") &&
+        spTd.posPrompt.includes("1.4::heart pasties::"),
+      `Top-down POV ${pid} must include top-down/top of head and retain visible front chest tags`
+    );
+    for (const bannedTd of [
+      "mesugaki",
+      "jitome",
+      "gradient eyes",
+      "aqua eyes",
+      "looking up at viewer",
+      "frontal low angle",
+      "looking down at viewer",
+      "rabbit tail",
+    ]) {
+      assert(!spTd.posPrompt.toLowerCase().includes(bannedTd), `Top-down POV ${pid} leaked '${bannedTd}'`);
+    }
+    assert(
+      tdNegSet.has("front view") &&
+        tdNegSet.has("straight-on") &&
+        tdNegSet.has("face") &&
+        tdNegSet.has("eyes") &&
+        tdNegSet.has("third-person") &&
+        tdNegSet.has("male back"),
+      `Top-down POV ${pid} missing UC locks`
+    );
+  }
+
+  // Group 4: front_face_visible POV retains face/expressions/eyes and blocks 3rd-person male back/head occlusion
+  for (const pid of ["P01", "P03", "P11", "P26", "P27", "P42"]) {
+    const [ffItem] = generateScenePrompts(pid, povAuditCfg, "pov");
+    const spFf = splitPromptPosAndNeg(ffItem.prompt);
+    const ffNegSet = new Set(spFf.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+    assert(
+      spFf.posPrompt.includes("pov crotch") &&
+        spFf.posPrompt.includes("pov hands") &&
+        spFf.posPrompt.includes("1.35::mesugaki::") &&
+        spFf.posPrompt.includes("aqua eyes"),
+      `Frontal POV ${pid} must include pov crotch/hands and retain face expressions & eye color`
+    );
+    for (const reqCropNeg of ["from behind", "male back", "male head", "male shoulders", "over-the-shoulder"]) {
+      assert(ffNegSet.has(reqCropNeg), `Frontal POV ${pid} missing male-back crop guard '${reqCropNeg}'`);
+    }
+  }
+
+  // 15. Verify Post-Audit Live-Render Confirmed Edge-Case Fixes (P20, P25, P28/P40/P51, P33, P41, P44 + 3D Radar POV Lock)
+  // (1) P20: upright arm-pull without grabbing another's hip + blocks hands on floor / all fours
+  const [p20Pov] = generateScenePrompts("P20", povAuditCfg, "pov");
+  const spP20 = splitPromptPosAndNeg(p20Pov.prompt);
+  const p20NegSet = new Set(spP20.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    spP20.posPrompt.includes("1.45::arms pulled back::") &&
+      spP20.posPrompt.includes("1.4::wrists held::") &&
+      !spP20.posPrompt.includes("grabbing another's hip") &&
+      !spP20.posPrompt.includes("1.35::from above::") &&
+      p20NegSet.has("hands on floor") &&
+      p20NegSet.has("all fours"),
+    "P20 POV must enforce upright wrist-pull without hip-grab or floor-bracing"
+  );
+
+  // (2) P25: open scissor leg-lift without crossed legs + strips rabbit tail in POV
+  const [p25Pov] = generateScenePrompts("P25", povAuditCfg, "pov");
+  const spP25 = splitPromptPosAndNeg(p25Pov.prompt);
+  assert(
+    spP25.posPrompt.includes("1.4::leg lift::") &&
+      spP25.posPrompt.includes("1.35::spread legs::") &&
+      spP25.posPrompt.includes("grabbing thigh") &&
+      !spP25.posPrompt.includes("crossed legs") &&
+      !spP25.posPrompt.includes("rabbit tail"),
+    "P25 POV must open thighs with leg lift + grabbing thigh and strip crossed legs / rabbit tail"
+  );
+
+  // (3) P28 / P40 / P51: suspended mid-air elevation + Global 3D Radar leftover azimuth=0 must NOT break POV!
+  for (const suspId of ["P28", "P40", "P51"] as const) {
+    const [sItem] = generateScenePrompts(
+      suspId,
+      { ...povAuditCfg, cam_enable_override: true, cam_azimuth: 0, cam_elevation: 12 },
+      "pov"
+    );
+    const spSusp = splitPromptPosAndNeg(sItem.prompt);
+    assert(
+      spSusp.posPrompt.includes("1.35::suspended::") &&
+        spSusp.posPrompt.includes("high above floor") &&
+        spSusp.posPrompt.includes("top-down") &&
+        !spSusp.posPrompt.includes("front view") &&
+        !spSusp.posPrompt.includes("mesugaki"),
+      `${suspId} POV must include mid-air suspension and ignore leftover 3D Camera azimuth=0 override`
+    );
+  }
+  // Confirm 3D Camera Radar STILL works normally in 3rd-person mode!
+  const [p28Cam3rd] = generateScenePrompts(
+    "P28",
+    { ...povAuditCfg, cam_enable_override: true, cam_azimuth: 90, cam_elevation: 0 },
+    "3rd"
+  );
+  assert(p28Cam3rd.subTitle.includes("🎥"), "3D Camera Radar override must remain active on 3rd-person mode");
+
+  // (4) P33: dual-channel sixty_nine exposes lower anatomy + open bottom + supports uterus x-ray
+  const [p33SkirtPov] = generateScenePrompts(
+    "P33",
+    {
+      ...povAuditCfg,
+      outfit_preset: "学院百褶短裙套装（白衬衫+百褶裙 · 撩裙不脱裙）",
+      enable_uterus_xray: true,
+    },
+    "pov"
+  );
+  const spP33 = splitPromptPosAndNeg(p33SkirtPov.prompt);
+  assert(
+    spP33.posPrompt.includes("1.35::pussy::") &&
+      spP33.posPrompt.includes("1.3::spread pussy::") &&
+      spP33.posPrompt.includes("1.3::cunnilingus::") &&
+      spP33.posPrompt.includes("skirt lift") &&
+      spP33.posPrompt.includes("panties aside") &&
+      spP33.posPrompt.includes("1.35::x-ray::") &&
+      !spP33.posPrompt.includes("lying on back"),
+    "P33 POV must inject lower anatomy + open skirt/panties aside + uterus x-ray without lying on back"
+  );
+
+  // (5) P41: inverted piledriver with upside-down + hips at top + head at bottom + anti-upright UC
+  const [p41Pov] = generateScenePrompts("P41", povAuditCfg, "pov");
+  const spP41 = splitPromptPosAndNeg(p41Pov.prompt);
+  const p41NegSet = new Set(spP41.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    spP41.posPrompt.includes("1.55::piledriver::") &&
+      spP41.posPrompt.includes("1.5::upside-down::") &&
+      spP41.posPrompt.includes("head at bottom") &&
+      spP41.posPrompt.includes("hips at top") &&
+      p41NegSet.has("head at top") &&
+      p41NegSet.has("upright"),
+    "P41 POV must enforce inverted piledriver geometry and block upright collapse"
+  );
+
+  // (6) P44: close rear framing + cum on ass routing + clarified title
+  const [p44Pov] = generateScenePrompts("P44", povAuditCfg, "pov");
+  const spP44 = splitPromptPosAndNeg(p44Pov.prompt);
+  assert(
+    p44Pov.subTitle.includes("客观回眸/POV纯背特写") &&
+      spP44.posPrompt.includes("close-up") &&
+      spP44.posPrompt.includes("1.35::ass focus::") &&
+      spP44.posPrompt.includes("pussy from behind") &&
+      spP44.posPrompt.includes("cum on ass") &&
+      !spP44.posPrompt.includes("cum on stomach"),
+    "P44 POV must include close rear focus and route post-climax fluid to cum on ass"
+  );
+
   console.log(
-    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts: 55 Positions x2 + MA0~MA10 + Free Action, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
+    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts: 55 Positions x2 + MA0~MA10 + Free Action, POV Optical & Gaze Audit Passed, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
   );
 }
 

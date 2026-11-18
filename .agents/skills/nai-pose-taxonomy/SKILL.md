@@ -100,6 +100,87 @@ When hiding partner anatomy (`pos_show_penis = False`), **never revert the femal
      - Receiver box: `target#fellatio`, `target#breast grab`, `target#fingering`, `target#kissing cheek`
      - Symmetric shared action (both boxes): `mutual#french kiss`, `mutual#holding hands`, `mutual#hug`, `mutual#tribadism`
 
+### E. First-Person POV Optical & Anatomical Consistency Audit (`全系列体位 POV 光学遮挡与防扭头修正总表`)
+Across `P01`–`P51`, NovelAI V5 forces physically impossible body rotations or 3rd-person camera drift whenever **injected face/expression/outfit/male-torso tags contradict what the partner's eyes can actually see in `pov`**. All affected poses fall into **4 optical failure groups**:
+
+#### Group 1: Strict Rear-Facing POV — Anti-180° Owl Head-Turn (`纯背向视线组`)
+- **Affected Poses**:
+  - **Core Rear-Entry / Doggy / Ass-Focus**: `P17`, `P18`, `P19`, `P20`, `P21`, `P22`, `P38`, `P44`, `P49` (partner behind looking forward/down: `1.35::from above::, high angle`)
+  - **Reverse Cowgirl (Supine Partner Looking Up at Her Back)**: `P12`, `P13` (**same 4-step rear sanitization**, except swap camera elevation to `1.35::from below::, low angle` looking up at her arched spine, shoulder blades, and hips!)
+  - **Side-Rear Spooning (Optional Strict No-Turnback)**: `P23` (nape/back-of-head `nape, back of head, from behind` instead of full frontal face)
+- **4-Step Simultaneous Fix (Leaving Even One Restores Head-Turn)**:
+  1. **Pose & POV Anchors**: Strip `looking back`, `looking back over shoulder`, `over shoulder`, `head turned back`, `looking at viewer`; inject `1.45::pov::, pov hands, pov crotch, grabbing another's hip, 1.5::from behind::, 1.35::back::, 1.35::facing away::, back of head, bare back, shoulder blades, spine` (+ `from above, high angle` for `P17`–`P22`/`P38`/`P49`, or `from below, low angle` for `P12`/`P13`) and rewrite `prose_core` to `"facing away showing the back of her head and bare slender back"`.
+  2. **Suppress ALL Facial/Eye Expressions**: Gate off `expPos` (`smug, jitome, mesugaki, half-closed eyes, blush`), `gradient eyes` in `headPos`, and `blush stickers, nose blush` in Post-pass 4.5; replace with somatic cues (`trembling, twitching, arched spine`).
+  3. **Sanitize Front-Only Outfit Tags**: Strip `open jacket, bare breasts, nipples, 1.3::nipples::, pasties, heart pasties, bare stomach, midriff, navel, red bowtie, cleavage` from `posOutfit` so V5 never twists her chest sideways to show a nipple/navel.
+  4. **Anti-Turnback Negative Lock**: Prepend `looking back, looking at viewer, face, eyes, front view, profile, bare breasts, nipples, navel, midriff, red bowtie` to `extraNeg` / `scene_negative`.
+
+#### Group 2: Cradled / Seated-on-Lap Rear-Embrace POV (`背后怀抱坐怀/悬空托举组 · 最严重第三人称穿帮组`)
+- **Affected Poses**: `P15` (背靠坐姿观音位), `P28` (背向悬空抱举 Reverse Ekiben), `P40` (双腋穿臂 Full Nelson), `P46` (背后环抱揉胸指交), `P50` (背后环抱双手揉胸), `P51` (背后抱腿大开脚指交).
+- **Bug Diagnosis**: In true 1st-person POV, the heroine's back is pressed directly against the viewer's chest, so the viewer **looks straight down over her shoulders/top of head at her chest, stomach, and spread thighs (`from above, top-down`)**! Currently:
+  - `P28` (`looking back up`) & `P51` (`frontal low angle, carried from behind, looking down at viewer`) mistakenly describe a **3rd-person frontal camera standing in front of both people**!
+  - `P15`, `P40`, `P46`, `P50` include `looking up at viewer / looking back up`, forcing her neck to crane 180° backward while often spawning a 3rd-person faceless male behind her.
+- **Fix**:
+  - Replace `pose_pov` with **over-the-shoulder downward chest/lap POV**: `1.45::pov::, 1.4::from above::, top-down, high angle, looking down, pov hands, top of head, foreshortening` (+ `1.35::grabbing another's breast::` for `P46`/`P50`, or `arms under knees, spread legs, m legs` for `P28`/`P51`, or `arms under armpits` for `P40`).
+  - **Same Facial Gating as Group 1** if pure downward body/crown-of-head POV is desired (`top of head, hair crown`, suppress eye/mouth expression tags, block `male face, male head, third-person` in UC); or if chin-tilted-back side-cheek glimpse is kept, never use `frontal low angle` or `looking down at viewer`.
+
+#### Group 3: Mutual 69 & Extreme Face-Occlusion POV (`69互侍与跨骑遮脸组`)
+- **Affected Poses**:
+  - **`P33` (上下交叠 69 位)**: Viewer is lying underneath looking up into her thighs/hips while her head is down at the viewer's lap facing away (`facing away`). Any facial/eye expression tags (`mesugaki, jitome, gradient eyes, blush stickers`) shatter the 69 geometry and flip her around face-to-face! **Apply the exact same Facial/Eye Gating + `face, eyes, looking at viewer` UC lock as Group 1**, and anchor `pose_pov` with `1.45::pov::, lying on back, 1.4::sixty-nine::, thighs straddling face, ass focus, close-up, facing away`.
+  - **`P29` (玻璃窗贴胸后入位)**: `pose_pov` currently says `"frontal view through glass ... looking at viewer"` — that is the **outside bystander's view through the window**, NOT the male partner's 1st-person POV standing behind her indoors! Keep `"frontal view through glass"` strictly in `pose_3rd`, and fix `pose_pov` using **Group 1's pure rear-facing POV** (`1.45::pov::, 1.5::from behind::, pressed against glass, palms on glass, back of head, bare back, window in front`).
+
+#### Group 4: Male-Back Self-Occlusion in Frontal POV (`正面体位男伴后背挡镜头伪POV问题`)
+- **Affected Poses**: `P01`–`P11`, `P14`, `P16`, `P26`, `P27`, `P30`–`P32`, `P34`–`P37`, `P39`, `P41`, `P45`, `P47`, `P48`.
+- **Cause**: `storyEngine.ts` injects `1boy, hetero, faceless male, 1.35::pov::, pov hands` without blocking male upper-body rear views, so V5 frequently draws a **3rd-person over-the-shoulder shot** with a broad male back/head blocking the bottom 40% of the canvas (especially in `P26` standing wall-pin, `P27` Ekiben, `P03` folded press, `P11` leaning-back cowgirl).
+- **Fix**:
+  - In `pov` mode (`maleCode === "normal"`), replace generic `faceless male` torso drift with **strict foreground limb/groin-only cropping**: inject `pov crotch` (when `showP` on vaginal/oral/chest/thigh) + `pov hands`, and append **`male back, male head, male shoulders, from behind male, over-the-shoulder`** to `partnerNeg`!
+  - Minor gaze conflict fixes inside frontal `pose_pov`:
+    - `P11` (后仰撑手女上位): `head tilted back` conflicts with expression `looking at viewer` — keep gaze natural/upward or drop `head tilted back` when `looking down at viewer` is active.
+    - `P42` (站立一字马): `eye-level full-body` looks like a 3rd-person studio photo; add `pov hands, holding raised leg, close-up` for genuine 1st-person interaction.
+
+#### Unified `web/src/` Verification Checklist (For Auditing Workflow Edits)
+1. **Pose Metadata Classification**: Every `P01`–`P51` template in `engineConstants.ts` cleanly distinguishes its `pov` optical visibility (`front_face_visible` vs. `rear_no_face` [`P12, P13, P17–P23, P29, P33, P38, P44, P49`] vs. `top_down_over_shoulder` [`P15, P28, P40, P46, P50, P51`]).
+2. **Global Module Gating in `storyEngine.ts`**: Whenever `isPov` + `rear_no_face` (or `top_down_over_shoulder`) is active, verify **all three** leak paths are gated: (a) `expPos` & Post-pass 0 `applyExpressionToPrompt`, (b) `headPos` `gradient eyes` & Post-pass 4.5 `blush stickers, nose blush`, and (c) front-only `posOutfit` chest/navel tags (`bare breasts, nipples, midriff, navel, open jacket, red bowtie, pasties` on `rear_no_face`, plus `rabbit tail` on `top_down_over_shoulder` where her back is pressed against the viewer).
+3. **True 1st-Person Male Cropping**: In `isPov && maleCode === "normal"`, verify `male back, male head, male shoulders, male face, over-the-shoulder` are blocked in `partnerNeg` so `POV` never degrades into an over-the-shoulder 3rd-person shot.
+4. **Build & Token Budget Gate**: Run `npm --prefix web run verify` (all scenes `<= 502` T5 tokens, zero `:::` or nested negative syntax bugs) and `npm --prefix web run build` + `NovelAI_Workbench.html` sync check.
+
+#### Post-Audit & Live-Render Confirmed Edge-Case Fixes (`P20` · `P25` · `P28` · `P33` · `P41` · `P44` 实测出图验核细则)
+All 6 poses were live-rendered on NovelAI V5 Full (`28 steps, Scale 6.8`) in `POV` mode to verify the exact failure modes on screen:
+
+1. **`P20` (直立跪姿背拉手后入位 · Live Render `232851_P20_s2062292514.png` ❌ Failed Arm-Pull)**:
+   - **Live Visual Verdict**: Pure rear back-of-head framing succeeded cleanly, **BUT her arms braced straight forward on the floor identically to `P17`/`P21`** — zero `arms pulled back` posture!
+   - **Root Cause**: `1.3::arms behind back::` was overridden by `pov hands, grabbing another's hip` (`storyEngine.ts:1961`, placing the partner's hands on her hips instead of pulling her wrists) + `1.35::from above::, high angle` pushing her torso forward onto her hands.
+   - **Exact Fix**:
+     - In `P20.pose_pov`: replace `1.35::from above::, high angle` with `slight high angle`, replace `1.3::arms behind back::` with **`1.45::arms pulled back::, 1.4::wrists held::, holding wrists, torso upright, arched chest`**, add `hands on floor, all fours, supporting hands forward` to `P20` `extraNeg`, and in `storyEngine.ts` suppress `grabbing another's hip` when `sceneId === "P20"`.
+
+2. **`P25` (侧身交错剪刀位 · Live Render `232918_P25_s2834812877.png` ❌ Failed Clamped Legs & Missing Partner)**:
+   - **Live Visual Verdict**: Rendered a **3rd-person solo-looking shot with both black-stockinged thighs clamped tightly crossed (`crossed legs`)**, zero visible partner body/limbs, and a floating cutaway X-ray!
+   - **Root Cause**: (a) `1.3::crossed legs::` clamps both thighs shut in Danbooru; (b) `P25.pose_pov` lacked `pov, pov hands, pov crotch`; (c) `rabbit tail` poked out awkwardly under her side waist.
+   - **Exact Fix**:
+     - Replace `P25.pose_pov` with **`1.45::pov::, 1.3::from above::, high angle, pov hands, grabbing thigh, reclining on side, 1.4::leg lift::, 1.35::spread legs::, one leg raised, straddling one leg, interlocked legs, looking at viewer`**, and never use `crossed legs` on vaginal channels.
+
+3. **`P28` (背向悬空抱举 Reverse Ekiben · Live Render `232943_P28_s4096518945.png` ✅ Optical Success + Minor Grounding Tweak)**:
+   - **Live Visual Verdict**: **Huge improvement!** `top_down_over_shoulder` rendered an authentic 1st-person downward view over her purple hair crown, red bowtie, bare breasts, womb X-ray, and wide M-legs held under her knees by the viewer's arms — zero 180° head-turn and zero 3rd-person camera flip!
+   - **Minor Visual Defect**: Because of `top-down` + `furry beige rug, wooden floor`, her thighs appeared resting on the rug rather than suspended high in mid-air (`Reverse Ekiben`).
+   - **Exact Fix**: Add **`standing, 1.35::suspended::, high above floor, distant floor`** to `P28.pose_pov` (and `P40`/`P51`), plus keep `front view, straight-on` in `isTopDownOverShoulderPov` `extraNeg` and strip `rabbit tail` from `posOutfit` for safety across seeds.
+   - **Global 3D-Radar Guard (`storyEngine.ts:1416, 2684`)**: Also ensure leftover `cam_enable_override: true` (`azimuth=0`) does not silently disable `pov_visibility` when `perspective_mode === "pov"`.
+
+4. **`P33` (上下交叠互侍 69 位 · Live Render `233011_P33_s2314473413.png` ❌ CRITICAL Black-Crotch Hallucination)**:
+   - **Live Visual Verdict**: The 69 rear-straddle camera framing (`girl on top`, thighs framing view, head buried at bottom oral) worked, **BUT a solid black leotard/panty strip materialized right across her crotch completely covering her lower anatomy**, even though she wore the open-crotch Reverse Bunnysuit AND `panties, leotard` were in Negative UC! Also zero womb X-ray appeared despite `enable_uterus_xray: true`.
+   - **Root Cause (`channel: "oral"` Mismatch)**: Because `P33` uses `channel: "oral"` + `isRearNoFacePov`, `storyEngine.ts` omitted `m.anat_pos` (`groin, pussy, labia, spread pussy`) completely AND stripped the oral tags! In NovelAI V5, **showing a close-up female butt/crotch (`ass focus, close-up`) WITHOUT `pussy` in the positive prompt forces V5's safety/clothing prior to paint a black modesty gusset**! Meanwhile `m.outfit_upper_oral` (`line 1505`) leaves skirted outfits closed, and `resolveUterusXraySpec` (`line 2950`) skips `oral`.
+   - **Exact Fix**:
+     - Give `P33` a dedicated dual-channel branch (or `channel: "sixty_nine"`): use **`m.outfit_pos` (open bottom)**, always inject **`m.anat_pos` + `1.35::pussy::, 1.3::spread pussy::, pussy from behind, 1.3::cunnilingus::`** alongside distant-head `oral, fellatio` (keeping `cum` at lower mouth edge without facial eyes), add `"sixty_nine"` to `wombChannels` in `resolveUterusXraySpec`, and replace `lying on back` in `P33.pose_pov` with `from below, worm's-eye view, girl on top, straddling face`.
+
+5. **`P41` (倒立折腰高举臀位 Piledriver · Live Render `233039_P41_s165065121.png` ❌ Completely Unfolded Into Upright `P02` Missionary)**:
+   - **Live Visual Verdict**: **100% collapsed into normal upright Legs-Up Missionary (`P02`/`P03`)!** Her head was right-side-up at the TOP of the canvas (`y = 0.2`) and her pelvis was at the BOTTOM (`y = 0.85`) — the exact opposite of an inverted piledriver!
+   - **Root Cause**: `P41` was marked `pov_visibility: "front_face_visible"`, injecting upright `looking at viewer` + full facial expressions while omitting `upside-down` and `piledriver`, so V5 placed her head at the top of the vertical `832x1216` canvas.
+   - **Exact Fix**:
+     - Rewrite `P41.pose_pov` to force vertical inversion (**hips at top, upside-down head at bottom**): **`1.45::pov::, 1.4::from above::, steep high angle, looking down, pov hands, grabbing hips, 1.55::piledriver::, 1.5::upside-down::, inverted body, head at bottom, hips at top, shoulders on floor, pelvis raised high in air, ass up, ankles by ears, upside-down face`**, and add `head at top, upright, sitting, lying flat on back` to `P41` `extraNeg`.
+
+6. **`P44` (跪趴塌腰展示位 · Live Render `233111_P44_s2900981985.png` ⚠️ Rear View OK, Needs Close Framing & Rear Fluid Routing)**:
+   - **Live Visual Verdict**: Pure rear-facing all-fours posture + womb X-ray + squirting rendered cleanly without any head-turn! However, because `channel: "solo"` lacks `pov hands` or `close-up`, the camera floated slightly far back like a 3rd-person center-symmetric diagram, and its Chinese title still says `回眸展示位` (`looking back`) while POV now suppresses `looking back` (plus `solo` `after_inside`/`pull_out` injects `cum on stomach` which gets stripped on rear views).
+   - **Exact Fix**:
+     - Add `close-up, cowboy shot, 1.35::ass focus::, pussy from behind` to `P44.pose_pov` for intimate first-person proximity, route `solo` rear-POV post-climax fluids to `cumdrip, cum on thighs, cum on ass` instead of `cum on stomach`, and update `P44` POV subtitle/label clarity (`客观回眸 / POV纯背特写`).
+
 ---
 
 ## 3. Ten Complete Posture Families (`P01`–`P51` + `MP01`–`MP15` Multi-Person Reference)

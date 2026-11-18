@@ -38,11 +38,12 @@ Use this skill when diagnosing low prompt adherence, conflicting tags, framing i
 
 ## Common Conflict & Fix Checklist
 
-### 1. Framing Collapse (Upper Body Taking Over / Cowboy Shot Turning Into Portrait)
-- **Cause**: Micro-facial tags pull the camera up, OR putting `-4::full body::` in negative weights forces an extreme upper-body crop that cuts off the crotch/thighs.
+### 1. Framing Collapse (Upper Body Taking Over / Cowboy Shot Turning Into Portrait) & Rear-POV 180° Head-Turn Fix
+- **Cause**: Micro-facial tags pull the camera up, OR putting `-4::full body::` in negative weights forces an extreme upper-body crop that cuts off the crotch/thighs. Similarly, in **rear-entry POV (`from behind, pov`)**, leaving facial/iris expression tags (`gradient eyes, smug, jitome, blush stickers, nose blush`), front-chest outfit tags (`bare breasts, nipples, midriff, navel, red bowtie`), or `looking back` forces V5 to twist her neck 180° ("owl head-turn") or rotate her torso sideways.
 - **Fix**:
   - Never put heavy negative weight on `full body` when doing low-angle crotch shots! Instead, suppress `-2::upper body, portrait, headshot::` if needed.
   - Anchor low-angle shots with `from below, low angle, cowboy shot` + lower-body anchors (`bare thighs`, `upskirt`, `spread legs`).
+  - For **strict rear-facing POV (pure back & back-of-head view)**, simultaneously: (1) replace `looking back` with `1.45::pov::, pov hands, pov crotch, grabbing another's hip, 1.5::from behind::, 1.35::from above::, high angle, 1.35::back::, 1.35::facing away::, back of head, bare back, shoulder blades, spine`; (2) strip all facial/eye expression tags & `gradient eyes`; (3) strip front-only torso outfit tags (`bare breasts, nipples, bare stomach, midriff, navel, open jacket, red bowtie, pasties`); and (4) block `looking back, looking at viewer, face, eyes, front view, profile, bare breasts, nipples, navel, midriff, red bowtie` in Negative UC.
 
 ### 2. Pixel Art Granularity Control (Too Smooth vs. Yellow/Muddy)
 - **If pixel art looks too smooth / high-res cel-shaded**:

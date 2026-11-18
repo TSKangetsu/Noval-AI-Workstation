@@ -2917,18 +2917,24 @@ export class WorkbenchApp {
       this.el("span", "", "▾")
     );
 
-    const camActive = Boolean(this.cfg.cam_enable_override);
+    const isPosPovMode =
+      this.actionMode === "positions" &&
+      this.activeSceneId in ALL_POSITIONS_TEMPLATES &&
+      this.cfg.perspective_mode === "pov";
+    const camActive = Boolean(this.cfg.cam_enable_override) && !isPosPovMode;
     const shotCode = CAMERA_SHOT_PRESETS[this.cfg.cam_shot_preset] ?? "auto";
-    const camShort = camActive
-      ? describeCameraShort(
-          true,
-          this.cfg.cam_azimuth,
-          this.cfg.cam_elevation,
-          shotCode,
-          this.cfg.cam_wide_lens,
-          this.cfg.cam_dutch_angle
-        )
-      : "随动作默认";
+    const camShort = isPosPovMode
+      ? "POV第一人称锁定"
+      : camActive
+        ? describeCameraShort(
+            true,
+            this.cfg.cam_azimuth,
+            this.cfg.cam_elevation,
+            shotCode,
+            this.cfg.cam_wide_lens,
+            this.cfg.cam_dutch_angle
+          )
+        : "随动作默认";
     this.elCamTrigger.classList.toggle("active", camActive);
     this.elCamTrigger.innerHTML = "";
     this.elCamTrigger.append(
