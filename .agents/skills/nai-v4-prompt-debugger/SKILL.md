@@ -31,9 +31,10 @@ Use this skill when diagnosing low prompt adherence, conflicting tags, framing i
    - **CRITICAL**: Keep heavy inline negative lists out of Character boxes whenever possible—overloading a Character box with `-3::long list::` disrupts pose/action attention! Only add minimal targeted inline negatives (e.g., `-2.5::clothes, bustier, skirt, sleeves, panties::`) if outfits bleed from Character Reference.
 3. **File Output for Sensitive Prompts**:
    - Always write complete NSFW / uncensored test prompt sets directly to a workspace file (e.g., `new.txt`) to avoid chat stream safety interruptions.
-4. **Colon-Prefixed Emoticon Tags (`:3`, `:p`, `:o`) & Clean Open-Eye Pairing**:
+4. **`::` Delimiter Safety (Emoticon Tags `:3` & Non-Nesting `-2::...::` Blocks)**:
    - Never wrap colon-prefixed tags like `:3` in weight syntax (`1.2:::3::` creates `:::` triple-colon parser corruption); keep `:3, closed mouth` unweighted.
    - Pairing `:3` with `smug, naughty face` induces slightly half-lidded eyes; when crisp normal open eyes (`正常睁眼 + W猫嘴`) are desired, omit `smug` and use `:3, closed mouth, open eyes, light blush`.
+   - **Never nest `w::tag::` inside an inline negative `-2::...::` block**: NovelAI `::` delimiters do not nest — `-2::a, 1.8::labia::, b::` closes prematurely right after `1.8::`, dumping bare `1.8` into Negative UC while leaking `labia::, b::` onto the end of the Positive prompt. Always strip inner weights inside negative lists.
 
 ## Common Conflict & Fix Checklist
 

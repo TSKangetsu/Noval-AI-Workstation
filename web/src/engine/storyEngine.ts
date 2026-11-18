@@ -34,7 +34,11 @@ import {
   STYLE_PRESETS,
 } from "../data/engineConstants";
 import { applyCameraOverrideToPrompt, describeCameraShort } from "./cameraRig";
-import { countPromptT5Tokens } from "./t5Tokenizer";
+import {
+  applySmartQualitySuffix,
+  countPromptT5Tokens,
+  splitPromptPosAndNeg,
+} from "./t5Tokenizer";
 import type { CharacterConfig, PerspectiveMode, ScenePromptItem } from "./types";
 
 export function sanitizeStyleForTransparentBg(headPos: string): string {
@@ -908,7 +912,12 @@ export function buildCommonModules(
 
   const reqState = OUTFIT_STATE_PRESETS[cfg.outfit_state_mode] ?? "auto";
   let effState: string;
-  if (!cfg.enable_outfit || !cfg.enable_clothing_state || reqState === "intact") {
+  if (
+    !cfg.enable_outfit ||
+    !cfg.enable_clothing_state ||
+    reqState === "intact" ||
+    bottomType === "open_groin"
+  ) {
     effState = "intact";
   } else if (outfitKind === "nude") {
     effState = "nude";
@@ -1017,6 +1026,7 @@ export function buildCommonModules(
       : outfitIntact;
   const f00ActiveUndress =
     cfg.enable_clothing_state &&
+    bottomType !== "open_groin" &&
     ["keep_bottom_aside", "half_off", "bottomless"].includes(reqState);
   const frontOutfitTags = f00ActiveUndress ? joinTags(frontDesign, statePos) : frontDesign;
   if (f00ActiveUndress && cfg.enable_outfit && outfitKind === "preset") {
@@ -1024,13 +1034,20 @@ export function buildCommonModules(
   }
 
   const isCanonLegwear = cfg.legwear_preset === "🌟 随角色原设鞋袜 / 不强制赤足";
+  const hasOutfitLockedStockings = cfg.enable_outfit && outfitInfo.lock_stockings === "1";
   let legNormal = "";
   let footHoldTags = "soles, toes, soles together";
   let solesRear = "soles";
   let legProse = "feet";
   let frontLegTags = "bare thighs";
 
-  if (cfg.enable_legwear) {
+  if (hasOutfitLockedStockings) {
+    legNormal = "";
+    footHoldTags = "black thighhighs, clothed feet, soles, soles together";
+    solesRear = "soles";
+    legProse = "black-stockinged feet";
+    frontLegTags = "";
+  } else if (cfg.enable_legwear) {
     let legFootLook: string;
     [legNormal, legFootLook, legProse] =
       LEGWEAR_PRESETS[cfg.legwear_preset] ?? LEGWEAR_PRESETS["赤足裸腿（barefoot 默认）"];
@@ -1121,13 +1138,18 @@ export function buildCommonModules(
   }
 
   const intactNeg =
-    cfg.enable_outfit && effState === "intact" && outfitKind !== "nude" && outfitKind !== "custom"
+    cfg.enable_outfit &&
+    effState === "intact" &&
+    outfitKind !== "nude" &&
+    outfitKind !== "custom" &&
+    bottomType !== "open_groin"
       ? "nude, topless, bottomless"
       : "";
+  const outfitExtraNeg = cfg.enable_outfit ? outfitInfo.extra_neg || "" : "";
   const isTune2 = cfg.style_preset.includes("M6-Tune2");
   const commonTailNeg = isTune2
-    ? joinTags(anatNeg, canonNeg, intactNeg, envExtraNeg)
-    : joinTags(styleNeg, bodyFullNeg, anatNeg, canonNeg, intactNeg, envExtraNeg);
+    ? joinTags(anatNeg, outfitExtraNeg, canonNeg, intactNeg, envExtraNeg)
+    : joinTags(styleNeg, bodyFullNeg, anatNeg, outfitExtraNeg, canonNeg, intactNeg, envExtraNeg);
 
   return {
     head_pos: headPos,
@@ -1211,6 +1233,9 @@ export function generateScenePrompts(
         maTailNeg
       );
     }
+    const maHasInherentNsfwOutfit = /\b(nude|reverse bunnysuit|pasties|nipples|micro bikini)\b/i.test(
+      maOutfit
+    );
     if (maTailNeg) {
       let negTokens = maTailNeg
         .split(",")
@@ -1219,13 +1244,13 @@ export function generateScenePrompts(
       if (tpl.allow_multi_views) {
         negTokens = negTokens.filter((t) => t.toLowerCase() !== "multiple views");
       }
-      if (nsfwOn) {
+      if (nsfwOn || maHasInherentNsfwOutfit) {
         negTokens = negTokens.filter((t) => t.toLowerCase() !== "nsfw");
-      } else if (!maOutfit.includes("nude") && !negTokens.some((t) => t.toLowerCase() === "nsfw")) {
+      } else if (!negTokens.some((t) => t.toLowerCase() === "nsfw")) {
         negTokens.unshift("nsfw");
       }
       maTailNeg = negTokens.join(", ");
-    } else if (!nsfwOn && !maOutfit.includes("nude")) {
+    } else if (!nsfwOn && !maHasInherentNsfwOutfit) {
       maTailNeg = "nsfw";
     }
     let maScene = isMa7Nsfw
@@ -1331,7 +1356,12 @@ export function generateScenePrompts(
 
     let posOutfit: string;
     if (channel === "chest" || channel === "breast_grope") {
-      if (cfg.enable_outfit && cfg.enable_clothing_state && !m.outfit_pos.includes("nude")) {
+      if (
+        cfg.enable_outfit &&
+        cfg.enable_clothing_state &&
+        !m.outfit_pos.includes("nude") &&
+        !m.outfit_pos.includes("bare breasts")
+      ) {
         posOutfit = joinTags(m.outfit_intact, "clothes lift, breasts out, nipples");
       } else {
         posOutfit = m.outfit_pos;
@@ -1341,7 +1371,8 @@ export function generateScenePrompts(
         cfg.enable_outfit &&
         cfg.enable_clothing_state &&
         !m.outfit_pos.includes("nude") &&
-        !m.outfit_pos.includes("breasts out")
+        !m.outfit_pos.includes("breasts out") &&
+        !m.outfit_pos.includes("bare breasts")
       ) {
         posOutfit = joinTags(m.outfit_pos, "clothes lift, breasts out, nipples");
       } else {
@@ -2118,11 +2149,18 @@ export function generateScenePrompts(
       }
     }
 
-    if (stageCode === "prolapse" && tailNegUsed) {
+    const organTargetsNipple = /\bnipples?\b/i.test(organTags);
+    if ((stageCode === "prolapse" || organTargetsNipple) && tailNegUsed) {
       tailNegUsed = tailNegUsed
         .split(",")
         .map((t) => t.trim())
-        .filter((t) => t && t.toLowerCase() !== "gaping")
+        .filter((t) => {
+          const low = t.toLowerCase();
+          if (!low) return false;
+          if (stageCode === "prolapse" && low === "gaping") return false;
+          if (organTargetsNipple && low === "nipples") return false;
+          return true;
+        })
         .join(", ");
     }
 
@@ -2233,7 +2271,10 @@ export function generateScenePrompts(
       }
     }
 
-    if (!nsfwOn && !freeOutfit.includes("nude") && !/\bnsfw\b/i.test(rawFreeTags)) {
+    const freeHasInherentNsfwOutfit = /\b(nude|reverse bunnysuit|pasties|nipples|micro bikini)\b/i.test(
+      freeOutfit
+    );
+    if (!nsfwOn && !freeHasInherentNsfwOutfit && !/\bnsfw\b/i.test(rawFreeTags)) {
       const existingNegs = tailNegUsed
         .split(",")
         .map((t) => t.trim())
@@ -2241,7 +2282,7 @@ export function generateScenePrompts(
       if (!existingNegs.some((t) => t.toLowerCase() === "nsfw")) {
         tailNegUsed = joinTags("nsfw", tailNegUsed);
       }
-    } else if (nsfwOn && tailNegUsed) {
+    } else if ((nsfwOn || freeHasInherentNsfwOutfit) && tailNegUsed) {
       tailNegUsed = tailNegUsed
         .split(",")
         .map((t) => t.trim())
@@ -2495,7 +2536,7 @@ export function generateScenePrompts(
   // Post-pass 5: Smart Positive Budget Guard (accounts for exact comma T5 tokens, Web UI Quality Toggle headroom, and V4.5 Vibe reservation)
   results = results.map((item) => {
     if (item.prompt.startsWith("[Base Prompt]")) return item;
-    if (countPromptT5Tokens(item.prompt).api_pos_tokens <= maxPosBudget) return item;
+    if (measureEffectivePosTokens(item.prompt) <= maxPosBudget) return item;
     return {
       ...item,
       prompt: enforcePositiveTokenBudget(item.prompt, maxPosBudget),
@@ -2728,12 +2769,17 @@ function deduplicatePositiveTagPrefix(rawPrompt: string): string {
   return negBlocks.length > 0 ? `${rebuiltPos}, ${negBlocks.join(", ")}` : rebuiltPos;
 }
 
+function measureEffectivePosTokens(rawPrompt: string): number {
+  const { posPrompt } = splitPromptPosAndNeg(rawPrompt);
+  return countPromptT5Tokens(applySmartQualitySuffix(posPrompt, true)).api_pos_tokens;
+}
+
 function enforcePositiveTokenBudget(
   rawPrompt: string,
   maxPosTokens = 510,
   allowTagTrim = true
 ): string {
-  if (countPromptT5Tokens(rawPrompt).api_pos_tokens <= maxPosTokens) {
+  if (measureEffectivePosTokens(rawPrompt) <= maxPosTokens) {
     return rawPrompt;
   }
 
@@ -2777,20 +2823,20 @@ function enforcePositiveTokenBudget(
 
       for (let keep = bodyClauses.length - 1; keep >= 1; keep--) {
         const cand = rebuild(`${tagsPart}, ${stylePrefix}: ${bodyClauses.slice(0, keep).join(", ")}.`);
-        if (countPromptT5Tokens(cand).api_pos_tokens <= maxPosTokens) {
+        if (measureEffectivePosTokens(cand) <= maxPosTokens) {
           return cand;
         }
       }
 
       const styleOnlyCand = rebuild(`${tagsPart}, ${stylePrefix}.`);
-      if (countPromptT5Tokens(styleOnlyCand).api_pos_tokens <= maxPosTokens) {
+      if (measureEffectivePosTokens(styleOnlyCand) <= maxPosTokens) {
         return styleOnlyCand;
       }
 
       const prefixClauses = stylePrefix.split(/,\s+/).filter(Boolean);
       for (let keep = prefixClauses.length - 1; keep >= 1; keep--) {
         const cand = rebuild(`${tagsPart}, ${prefixClauses.slice(0, keep).join(", ")}.`);
-        if (countPromptT5Tokens(cand).api_pos_tokens <= maxPosTokens) {
+        if (measureEffectivePosTokens(cand) <= maxPosTokens) {
           return cand;
         }
       }
@@ -2798,7 +2844,7 @@ function enforcePositiveTokenBudget(
       const clauses = prosePart.split(/;\s+|,\s+/).filter(Boolean);
       for (let keep = clauses.length - 1; keep >= 1; keep--) {
         const cand = rebuild(`${tagsPart}, ${clauses.slice(0, keep).join(", ")}.`);
-        if (countPromptT5Tokens(cand).api_pos_tokens <= maxPosTokens) {
+        if (measureEffectivePosTokens(cand) <= maxPosTokens) {
           return cand;
         }
       }
@@ -2806,7 +2852,7 @@ function enforcePositiveTokenBudget(
 
     // Fallback: keep 100% of Danbooru tags and drop trailing T5 prose
     const tagsOnlyCand = rebuild(tagsPart);
-    if (!allowTagTrim || countPromptT5Tokens(tagsOnlyCand).api_pos_tokens <= maxPosTokens) {
+    if (!allowTagTrim || measureEffectivePosTokens(tagsOnlyCand) <= maxPosTokens) {
       return tagsOnlyCand;
     }
     // Extreme custom-tag overflow fallback: trim trailing unessential tags until within budget
@@ -2814,7 +2860,7 @@ function enforcePositiveTokenBudget(
     while (tagTokens.length > 10) {
       tagTokens.pop();
       const shrunk = rebuild(tagTokens.join(", "));
-      if (countPromptT5Tokens(shrunk).api_pos_tokens <= maxPosTokens) {
+      if (measureEffectivePosTokens(shrunk) <= maxPosTokens) {
         return shrunk;
       }
     }

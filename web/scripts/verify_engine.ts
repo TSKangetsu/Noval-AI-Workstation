@@ -495,6 +495,63 @@ async function main(): Promise<void> {
     displayHost: "studio-tunnel.example.com",
   });
 
+  // 11. Verify Calibrated Reverse Bunnysuit Outfits (Variant A Heart Pasties & Variant B Bare Nipples)
+  for (const [revKey, expectPasties] of [
+    ["🐰 逆兔女郎装 · 经典黑爱心胸贴 + 腿环过膝袜（Reverse Bunnysuit · 胸贴版）", true],
+    ["🐰 逆兔女郎装 · 无胸贴直露乳首 + 腿环过膝袜（Reverse Bunnysuit · 全露版）", false],
+  ] as const) {
+    const revCfg = {
+      ...createDefaultCharacterConfig(),
+      outfit_preset: revKey,
+      pos_token_limit: computeSafePosTokenLimit({ isV45: true, activeVibeCount: 3 }),
+    };
+    for (const sid of ["MA1", "P01", "P36", "P50", "FREE"]) {
+      const [item] = generateScenePrompts(sid, revCfg, "3rd");
+      assert(item, `Missing prompt for ${sid} with ${revKey}`);
+      const split = splitPromptPosAndNeg(item.prompt);
+      assert(
+        split.posPrompt.includes("1.5::reverse bunnysuit::") &&
+          split.posPrompt.includes("1.4::black cropped jacket::") &&
+          split.posPrompt.includes("1.35::zettai ryouiki::"),
+        `Reverse bunnysuit structural tags missing in ${sid}`
+      );
+      assert(
+        !split.posPrompt.includes("clothes lift") && !split.posPrompt.includes("panties aside"),
+        `Reverse bunnysuit must keep intact open_groin state without clothes lift / panties aside in ${sid}`
+      );
+      assert(
+        split.negPrompt.includes("playboy bunny") &&
+          split.negPrompt.includes("crotchless pantyhose") &&
+          !split.negPrompt.split(",").map((s) => s.trim()).includes("nsfw"),
+        `Reverse bunnysuit must block playboy bunny & crotchless pantyhose without injecting 'nsfw' into UC in ${sid}`
+      );
+      if (expectPasties) {
+        assert(split.posPrompt.includes("1.4::heart pasties::"));
+        if (sid === "P50") {
+          assert(
+            !split.negPrompt.split(",").map((s) => s.trim()).includes("nipples"),
+            "P50 breast_grope should unblock 'nipples' in UC when organTags target nipples"
+          );
+        } else {
+          assert(split.negPrompt.split(",").map((s) => s.trim()).includes("nipples"));
+        }
+      } else {
+        assert(split.posPrompt.includes("1.3::nipples::"));
+        assert(split.negPrompt.split(",").map((s) => s.trim()).includes("pasties"));
+      }
+      const sepTok = countSeparatedT5Tokens({
+        posPrompt: split.posPrompt,
+        sceneNegPrompt: split.negPrompt,
+        ucPresetMode: "heavy",
+        appendQuality: true,
+      });
+      assert(
+        sepTok.posTokens <= 400,
+        `Reverse bunnysuit ${sid} exceeded 3-Vibe 400 T5 limit: ${sepTok.posTokens}`
+      );
+    }
+  }
+
   console.log(
     `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts: 51 Positions x2 + MA0~MA10 + Free Action, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
   );

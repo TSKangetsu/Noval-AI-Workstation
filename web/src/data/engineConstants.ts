@@ -334,6 +334,30 @@ export const OUTFIT_PRESETS: Record<string, Record<string, string>> = {
     "kind": "preset",
     "bottom_type": "leotard"
   },
+  "🐰 逆兔女郎装 · 经典黑爱心胸贴 + 腿环过膝袜（Reverse Bunnysuit · 胸贴版）": {
+    "design_tags": "1.5::reverse bunnysuit::, bunny ears, fake animal ears, black bunny ears, detached collar, white collar, red bowtie, 1.4::black cropped jacket::, 1.35::bolero::, short sleeves, open jacket, 1.45::black pasties::, 1.4::heart pasties::, covered nipples, bare breasts, bare stomach, midriff, navel, wrist cuffs, white cuffs, bare hips, bare thighs, 1.35::zettai ryouiki::, black thighhighs, thigh strap, rabbit tail",
+    "state_tags": "",
+    "sleep_extra": "",
+    "prose": "her black reverse bunnysuit cropped bolero jacket with black heart pasties, collar bowtie, wrist cuffs, and thigh-strapped black thighhighs",
+    "intact_prose": "a black reverse bunnysuit with a cropped open bolero jacket, black heart pasties, white collar and red bowtie, bare midriff and hips, and thigh-strapped black thighhighs",
+    "extra_neg": "playboy bunny, black leotard, leotard, pantyhose, full pantyhose, crotchless pantyhose, panties, bra, covered torso, covered stomach, nipples",
+    "lock_stockings": "1",
+    "allow_canon": "0",
+    "kind": "preset",
+    "bottom_type": "open_groin"
+  },
+  "🐰 逆兔女郎装 · 无胸贴直露乳首 + 腿环过膝袜（Reverse Bunnysuit · 全露版）": {
+    "design_tags": "1.5::reverse bunnysuit::, bunny ears, fake animal ears, black bunny ears, detached collar, white collar, red bowtie, 1.4::black cropped jacket::, 1.35::bolero::, short sleeves, open jacket, bare breasts, 1.3::nipples::, bare stomach, midriff, navel, wrist cuffs, white cuffs, bare hips, bare thighs, 1.35::zettai ryouiki::, black thighhighs, thigh strap, rabbit tail",
+    "state_tags": "",
+    "sleep_extra": "",
+    "prose": "her black reverse bunnysuit cropped bolero jacket with exposed breasts, collar bowtie, wrist cuffs, and thigh-strapped black thighhighs",
+    "intact_prose": "a black reverse bunnysuit with a cropped open bolero jacket, exposed breasts, white collar and red bowtie, bare midriff and hips, and thigh-strapped black thighhighs",
+    "extra_neg": "playboy bunny, black leotard, leotard, pantyhose, full pantyhose, crotchless pantyhose, panties, bra, covered torso, covered stomach, pasties",
+    "lock_stockings": "1",
+    "allow_canon": "0",
+    "kind": "preset",
+    "bottom_type": "open_groin"
+  },
   "系带微距比基尼泳装（Micro Bikini · 拨开互动）": {
     "design_tags": "bikini, micro bikini, string bikini, side-tie bikini bottom",
     "state_tags": "bikini aside, swimsuit aside",

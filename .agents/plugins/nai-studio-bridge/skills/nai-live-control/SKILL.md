@@ -17,11 +17,13 @@ description: >-
 
 1. **Inspect First (`nai_get_state` / `nai_list_options`)**:
    - Call `nai_get_state` to see the user's current character, outfit, style, active scene (`P01..P51`, `MA0..MA10`, `FREE`), compiled Positive/Negative prompts, T5 token counts, and Vibe slots.
+   - **Cross-Check Model vs. CFG Drift**: Verify `api_settings.scale` and `cfg_rescale` match the active `model` — if `nai-diffusion-5-full` (`V5 High`) still carries leftover V4.5 Vibe settings (`scale: 5.0, cfg_rescale: 0.28`), recalibrate via `nai_update_config` to `scale: 6.5 ~ 7.0, cfg_rescale: 0.0` (and conversely restore `scale: 5.0, cfg_rescale: 0.28` when switching back to multi-slot V4.5 Vibe).
    - Before setting enum fields (`style_preset`, `outfit_preset`, `body_preset`, `lighting_preset`, etc.), call `nai_list_options` for that category so you pass the exact preset key string rather than guessing.
 
 2. **Push Changes Live (`nai_update_config` / `nai_set_manual_prompt`)**:
    - For structured config changes (switching character tags, extra_char_tags, outfit, style, scale/rescale, pose stage, condom, x-ray, or free action tags), call `nai_update_config`. Note that changing `style_preset` automatically syncs the recommended `lighting_preset` and any bundled Vibe pack unless `lighting_preset` is explicitly passed.
-   - For surgical tag weight tweaks on the currently displayed prompt without altering underlying presets, call `nai_set_manual_prompt` (`replace_target` + `replace_with` or full `positive` / `negative`).
+   - For surgical tag tweaks or **multi-character partitioned scenes** (`[Base Prompt]` + `[Character 1 (B3)]` + `[Character 2 (D3)]` with `source#` / `target#` / `mutual#`), call `nai_set_manual_prompt`. Note that `nai_set_manual_prompt` sets `is_manual_prompt_locked: true`; call `nai_set_manual_prompt({ unlock: true })` whenever returning the webpage to automatic engine prompt compilation.
+   - **Multi-Character Manual Lock Ordering Rule**: Calling `nai_update_config` (including changing `canvas_preset`, `action_mode`, or UI toggles by the user) re-runs the single-character prompt compiler and **unlocks/overwrites manual `[Base Prompt]` + `[Character N]` edits**. Always execute in strict order: (1) `nai_update_config` to set canvas/model/steps first → (2) `nai_set_manual_prompt` passing BOTH `positive` and `negative` together (staying `<= safe_pos_limit`, e.g., `<= 502` tokens) → (3) `nai_generate`.
 
 3. **Manage Presets & Vibes (`nai_manage_presets` / `nai_manage_vibes`)**:
    - Use `nai_manage_presets` (`select` | `save` | `delete` | `restore_defaults`) to persist or switch presets in the user's browser `localStorage`.

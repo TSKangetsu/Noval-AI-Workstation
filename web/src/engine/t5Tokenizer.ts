@@ -412,9 +412,18 @@ export function buildFullNegativeString(options: {
   extraUc?: string;
 }): string {
   const fullPosLower = options.posPrompt.toLowerCase();
-  const wantsNsfw = ["nsfw", "rating:explicit", "uncensored", "nude", "pussy", "penis"].some(
-    (tag) => fullPosLower.includes(tag)
-  );
+  const wantsNsfw = [
+    "nsfw",
+    "rating:explicit",
+    "uncensored",
+    "nude",
+    "pussy",
+    "penis",
+    "reverse bunnysuit",
+    "pasties",
+    "nipples",
+    "micro bikini",
+  ].some((tag) => fullPosLower.includes(tag));
   const ucParts: string[] = [];
   if (options.ucPresetMode === "heavy") {
     if (!wantsNsfw) ucParts.push("nsfw");

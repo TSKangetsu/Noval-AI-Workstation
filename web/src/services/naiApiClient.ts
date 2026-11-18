@@ -239,9 +239,18 @@ export function buildNaiGeneratePayload(options: {
     " " +
     charCaptions.map((c) => c.char_caption).join(" ")
   ).toLowerCase();
-  const wantsNsfw = ["nsfw", "rating:explicit", "uncensored", "nude", "pussy", "penis"].some(
-    (tag) => fullPosLower.includes(tag)
-  );
+  const wantsNsfw = [
+    "nsfw",
+    "rating:explicit",
+    "uncensored",
+    "nude",
+    "pussy",
+    "penis",
+    "reverse bunnysuit",
+    "pasties",
+    "nipples",
+    "micro bikini",
+  ].some((tag) => fullPosLower.includes(tag));
 
   const ucParts: string[] = [];
   if (effectiveUcPreset === "heavy") {

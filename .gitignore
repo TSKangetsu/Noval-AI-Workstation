@@ -1,6 +1,7 @@
 # NovelAI API 私密配置与本地生成图片（防止误上传 Token）
 nai_api_config.json
 outputs/
+new.txt
 
 # 本地打包归档与参考图目录
 *.7z

@@ -3,9 +3,10 @@ name: nai-character-crafting
 description: >-
   Translates reference character sheets (such as community mascots like the
   Gemini catgirl or original designs) into accurate Danbooru hair, accessory,
-  fantasy outfit cut, and body-proportion tags. Use this skill when adapting a
-  new character image, tuning body proportions (slender, bust size, youthful
-  vs. mature), or reconstructing complex anime outfit patterns.
+  fantasy/fetish outfit cut (including calibrated Reverse Bunnysuit), and
+  body-proportion tags. Use this skill when adapting a new character image,
+  tuning body proportions (slender, bust size, youthful vs. mature), or
+  reconstructing complex anime outfit patterns.
 ---
 
 # NovelAI Character Sheet Translation & Proportion Tuning
@@ -59,3 +60,30 @@ To achieve a cute large-headed, short-jawed mini-lady silhouette (`~4.6H`) with 
 
 When extracting a reusable **Style Preset** or **Body Preset** from a user's full character generation prompt:
 - Strip character identity (`javelin (azur lane)`), hair/eye color tags, character-specific ornament blocks (`crown, tiara`), sample clothing (`white camisole`, `sports bikini`), sample backgrounds (`white bedsheet`, `simple background, white background`), sample camera angles (`slightly from above`, `from above`), and `safe` rating tags so the preset never pollutes other characters or NSFW scenes.
+
+## 5. Calibrated Reverse Bunnysuit (`逆兔女郎`) Structural Deconstruction
+
+Writing `reverse bunnysuit` alone in V4.5 / V5 often omits the signature cropped bolero jacket, and pairing `crotchless` or `highleg` with `black thighhighs` causes stockings to creep up over the pelvis as crotchless pantyhose. Deconstruct the 8 canonical pieces explicitly:
+
+### Variant A: Classic Heart-Pasties Reverse Bunnysuit (`经典黑爱心胸贴 + 腿环过膝袜版`)
+- **Positive Outfit Tags**:
+  ```text
+  1.5::reverse bunnysuit::, bunny ears, fake animal ears, black bunny ears, detached collar, white collar, red bowtie, 1.4::black cropped jacket::, 1.35::bolero::, short sleeves, open jacket, 1.45::black pasties::, 1.4::heart pasties::, covered nipples, bare breasts, bare stomach, midriff, navel, wrist cuffs, white cuffs, bare hips, bare thighs, 1.35::zettai ryouiki::, black thighhighs, thigh strap, rabbit tail
+  ```
+- **Companion Negative (`UC`)**:
+  ```text
+  playboy bunny, black leotard, leotard, pantyhose, full pantyhose, crotchless pantyhose, panties, bra, covered torso, covered stomach, nipples
+  ```
+
+### Variant B: Bare-Nipple Exposed Reverse Bunnysuit (`无胸贴直露乳首版`)
+- Replace the pasties segment with `bare breasts, 1.3::nipples::`, add `pasties` to UC, and remove `nipples` from UC:
+  ```text
+  1.5::reverse bunnysuit::, bunny ears, fake animal ears, black bunny ears, detached collar, white collar, red bowtie, 1.4::black cropped jacket::, 1.35::bolero::, short sleeves, open jacket, bare breasts, 1.3::nipples::, bare stomach, midriff, navel, wrist cuffs, white cuffs, bare hips, bare thighs, 1.35::zettai ryouiki::, black thighhighs, thigh strap, rabbit tail
+  ```
+
+### Critical Pitfalls & Pose Pairing Rules
+1. **Never Pair `crotchless` / `highleg` with `thighhighs`**: Including `crotchless` pulls black stockings upward into high-waisted crotchless tights. Use `bare hips, bare thighs, 1.35::zettai ryouiki::, black thighhighs, thigh strap` + UC `pantyhose, full pantyhose, crotchless pantyhose` instead.
+2. **Block Standard Leotard Drift**: Always block `playboy bunny, black leotard, leotard, covered torso, covered stomach` in UC so the model never fills in the bare midriff as a standard bunny leotard.
+3. **Keep Outfit State `intact` Across `P01`–`P51` & `FREE` Prose Hygiene**:
+   - Because the midriff and groin are already unobstructed, set `outfit_state_mode` to `intact` (`🔒 全程完整穿戴不掀脱`) so `clothes lift, panties aside` are not injected.
+   - When testing long weighted `custom_outfit_tags` in `FREE` mode, disable `enable_t5_prose` (or avoid duplicating weighted tags inside prose) so raw `1.5::...::` syntax is not echoed twice in the T5 tail sentence.
