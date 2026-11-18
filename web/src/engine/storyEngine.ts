@@ -1207,9 +1207,11 @@ export function generateScenePrompts(
   if (sceneId in MULTI_ANGLE_TEMPLATES) {
     const tpl = MULTI_ANGLE_TEMPLATES[sceneId];
     const m = buildCommonModules(cfg, defEyesOpen);
-    const nsfwOn = cfg.enable_multi_angle_nsfw;
+    const forceNsfw = Boolean(tpl.force_nsfw);
+    const nsfwOn = forceNsfw || cfg.enable_multi_angle_nsfw;
     const isMa7Nsfw = sceneId === "MA7" && nsfwOn;
-    const maOutfit = isMa7Nsfw ? m.outfit_pos : m.front_outfit_tags;
+    let charCoreMa = m.char_core;
+    let maOutfit = isMa7Nsfw || forceNsfw ? m.outfit_pos : m.front_outfit_tags;
     const maShirtProse = isMa7Nsfw ? m.outfit_prose_clause : m.front_shirt_prose;
     const maLeg = m.front_leg_tags;
     const nsfwPrefix = nsfwOn ? "rating:explicit, nsfw, uncensored" : "";
@@ -1225,6 +1227,25 @@ export function generateScenePrompts(
       } else {
         anatMa = "groin, pussy, labia, 1.25::spread pussy::, 1.25::spreading own pussy::, fingers";
       }
+    } else if (forceNsfw) {
+      if (maOutfit) {
+        maOutfit = maOutfit
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => t && t.toLowerCase() !== "rabbit tail")
+          .join(", ");
+      }
+      if (anatMa) {
+        anatMa = anatMa
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => {
+            if (!t) return false;
+            if (t.toLowerCase() === "labia") return false;
+            return !/^(0\.\d+)::/.exec(t);
+          })
+          .join(", ");
+      }
     }
     let maTailNeg = m.common_tail_neg;
     if (isMa7Nsfw) {
@@ -1232,6 +1253,58 @@ export function generateScenePrompts(
         "covering crotch, covering pussy, covering breasts, censor, mosaic censoring, bar censor, gaping",
         maTailNeg
       );
+    }
+    if (tpl.extra_neg) {
+      let tplNeg = tpl.extra_neg;
+      if (cfg.enable_uterus_xray && !tpl.builtin_xray) {
+        const xrayAllow = new Set([
+          "x-ray",
+          "cross-section",
+          "uterus",
+          "cervix",
+          "internal cumshot",
+          "cutaway",
+        ]);
+        tplNeg = tplNeg
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => t && !xrayAllow.has(t.toLowerCase()))
+          .join(", ");
+      }
+      maTailNeg = joinTags(tplNeg, maTailNeg);
+    }
+    if (tpl.unlock_belly) {
+      charCoreMa = charCoreMa
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => {
+          const low = t.toLowerCase();
+          return low !== "slim waist" && low !== "-0.40::plump::" && low !== "-0.4::plump::";
+        })
+        .join(", ");
+      maOutfit = maOutfit
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => {
+          const low = t.toLowerCase();
+          return low !== "midriff" && low !== "navel";
+        })
+        .join(", ");
+      if (maTailNeg) {
+        maTailNeg = maTailNeg
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => t && !["plump", "curvy"].includes(t.toLowerCase()))
+          .join(", ");
+      }
+    }
+    if (forceNsfw && maTailNeg) {
+      const dryFluidConflicts = new Set(["dripping", "splash"]);
+      maTailNeg = maTailNeg
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t && !dryFluidConflicts.has(t.toLowerCase()))
+        .join(", ");
     }
     const maHasInherentNsfwOutfit = /\b(nude|reverse bunnysuit|pasties|nipples|micro bikini)\b/i.test(
       maOutfit
@@ -1256,6 +1329,13 @@ export function generateScenePrompts(
     let maScene = isMa7Nsfw
       ? "cowboy shot, 1.35::upper body::, legs apart, head tilt, peace sign near cheek, playful cheerful expression, one eye slightly narrowed, looking at viewer, blurred warm indoor background"
       : String(tpl.scene);
+    const hasCustomGlobalEnv =
+      cfg.enable_background &&
+      Boolean(m.bg_couch) &&
+      (ENV_PRESETS[cfg.env_preset]?.code ?? "auto") !== "auto";
+    if (hasCustomGlobalEnv && maScene.includes("blurred warm indoor background")) {
+      maScene = maScene.replace("blurred warm indoor background", m.bg_couch);
+    }
     if (is25dCelLightingCode(LIGHTING_PRESETS[cfg.lighting_preset]?.code)) {
       if ((sceneId === "MA9" || sceneId === "MA10") && !/\bclear blue sky\b/i.test(maScene)) {
         maScene = maScene.replace("large floor-to-ceiling window,", "large floor-to-ceiling window, clear blue sky,");
@@ -1264,9 +1344,12 @@ export function generateScenePrompts(
         .replace(/(?:,\s*)?backlighting\b/gi, "")
         .replace(/(?:,\s*)?sunlight\b/gi, "");
     }
-    const maBaseProse = isMa7Nsfw
+    let maBaseProse = isMa7Nsfw
       ? "in a thighs-up shot tilting her head and making a playful peace sign near her cheek with one hand while her other hand reaches down to spread her pussy open toward the camera with a cheerful expression."
       : tpl.prose;
+    if (hasCustomGlobalEnv && m.loc_prose && forceNsfw) {
+      maBaseProse = `${maBaseProse.replace(/\.+\s*$/, "")}${m.loc_prose}.`;
+    }
     if (exprCtrl.active) {
       for (const baked of [
         "playful cheerful expression",
@@ -1287,6 +1370,18 @@ export function generateScenePrompts(
       }
       maScene = maScene.replace(/^[ ,]+|[ ,]+$/g, "");
       maScene = joinTags(maScene, exprCtrl.pos_tags_str);
+    } else if (tpl.default_expr_tags && cfg.enable_expression) {
+      const exprStr = exprIf(cfg, tpl.default_expr_tags, "", sceneId);
+      if (hasCustomGlobalEnv && maScene.includes(m.bg_couch)) {
+        maScene = maScene.replace(m.bg_couch, `${exprStr}, ${m.bg_couch}`);
+      } else if (maScene.includes("blurred warm indoor background")) {
+        maScene = maScene.replace(
+          "blurred warm indoor background",
+          `${exprStr}, blurred warm indoor background`
+        );
+      } else {
+        maScene = joinTags(maScene, exprStr);
+      }
     }
     const maSubTitle = isMa7Nsfw
       ? "【MA7 · 近景歪头比耶 + 单手掰穴 (1.25 Spread)】"
@@ -1294,7 +1389,7 @@ export function generateScenePrompts(
     const pMa = joinTags(
       m.head_pos,
       "1girl, solo",
-      m.char_core,
+      charCoreMa,
       maOutfit,
       maLeg,
       nsfwPrefix,
@@ -1307,7 +1402,12 @@ export function generateScenePrompts(
   } else if (sceneId in ALL_POSITIONS_TEMPLATES) {
     const tpl = ALL_POSITIONS_TEMPLATES[sceneId];
     const channel = tpl.channel;
-    const m = buildCommonModules(cfg, defEyesOpen);
+    const isTentacle = channel === "tentacle";
+    const lockSceneEnv = Boolean(tpl.lock_scene_env);
+    const cfgForModules = lockSceneEnv
+      ? { ...cfg, env_preset: "🔄 随本幕/体位工具栏默认环境" }
+      : cfg;
+    const m = buildCommonModules(cfgForModules, defEyesOpen);
     const transBg = Boolean(cfg.pos_transparent_bg);
     const maleCode = POS_MALE_MODE_PRESETS[cfg.pos_male_mode] ?? "normal";
     const showP = Boolean(cfg.pos_show_penis);
@@ -1318,7 +1418,9 @@ export function generateScenePrompts(
     );
     const isPullOutLike = stageCode === "pull_out" || stageCode === "prolapse";
     const condomBadge =
-      condomOn && (channel === "vaginal" || (!isManualFemale && channel !== "solo" && showP))
+      !isTentacle &&
+      condomOn &&
+      (channel === "vaginal" || (!isManualFemale && channel !== "solo" && showP))
         ? channel === "vaginal" && isPullOutLike
           ? " · [🎈套留外口自溢]"
           : channel === "vaginal" && (stageCode === "during" || stageCode === "after_inside")
@@ -1326,13 +1428,15 @@ export function generateScenePrompts(
             : " · [🎈戴套]"
         : "";
     const catTailWrapActive =
+      !isTentacle &&
       Boolean(cfg.add_cat_ears) &&
       channel !== "solo" &&
       !isManualFemale &&
       showP &&
       isPullOutLike;
-    const stageBadge =
-      stageCode === "during"
+    const stageBadge = isTentacle
+      ? ""
+      : stageCode === "during"
         ? isManualFemale
           ? " · [💦高潮迸发]"
           : " · [💦射精中]"
@@ -1387,6 +1491,7 @@ export function generateScenePrompts(
     const posLeg = channel === "foot" ? m.leg_foot : m.leg_normal;
     const poseRaw = isPov ? tpl.pose_pov : tpl.pose_3rd;
 
+    let charCoreUsed = m.char_core;
     let headUsed: string;
     let bgUsed: string;
     let bgProse: string;
@@ -1396,8 +1501,13 @@ export function generateScenePrompts(
     const scenePreset =
       POS_SCENE_PRESETS[cfg.pos_scene] ??
       POS_SCENE_PRESETS["🛋️ 默认暖光室内沙发（indoors, couch, lamp）"];
-    const sceneBadge =
-      !transBg && cfg.enable_background && scenePreset.badge ? scenePreset.badge : "";
+    const sceneBadge = transBg
+      ? ""
+      : lockSceneEnv
+        ? tpl.env_badge || " · [🐙暗窟内置环境]"
+        : cfg.enable_background && scenePreset.badge
+          ? scenePreset.badge
+          : "";
     if (transBg) {
       headUsed = sanitizeStyleForTransparentBg(m.head_pos);
       bgUsed = "2.0::transparent background::, has alpha, alpha transparency, no background";
@@ -1406,6 +1516,39 @@ export function generateScenePrompts(
       transNeg =
         "background, simple background, white background, black background, gradient background, " +
         "indoors, outdoors, scenery, furniture, bed, couch, sofa, pillow, window, curtains, wall, floor, drop shadow";
+    } else if (lockSceneEnv) {
+      const stripDaylightSet = new Set([
+        "warm lighting",
+        "sunlight",
+        "overexposure",
+        "light rays",
+      ]);
+      headUsed = m.head_pos
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => {
+          if (!t) return false;
+          const bare = t.replace(/^-?\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+          return !stripDaylightSet.has(bare);
+        })
+        .join(", ");
+      bgUsed = tpl.env_tags || "";
+      bgProse = tpl.env_prose || "";
+      poseUsed = poseRaw;
+      transNeg = tpl.env_neg || "";
+      if (tailNegUsed) {
+        tailNegUsed = tailNegUsed
+          .split(",")
+          .map((t) => t.trim())
+          .filter(
+            (t) =>
+              t &&
+              !["dark", "dim lighting", "harsh shadow", "harsh shadows", "high contrast"].includes(
+                t.toLowerCase()
+              )
+          )
+          .join(", ");
+      }
     } else if (cfg.enable_background && scenePreset.code !== "default_couch") {
       headUsed = scenePreset.unblock_dark
         ? m.head_pos.replace(/,\s*warm lighting\b/gi, "")
@@ -1455,13 +1598,85 @@ export function generateScenePrompts(
       transNeg = "";
     }
 
+    if (tpl.unlock_belly) {
+      charCoreUsed = charCoreUsed
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => {
+          const low = t.toLowerCase();
+          return low !== "slim waist" && low !== "-0.40::plump::" && low !== "-0.4::plump::";
+        })
+        .join(", ");
+      posOutfit = posOutfit
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => {
+          const low = t.toLowerCase();
+          return low !== "midriff" && low !== "navel";
+        })
+        .join(", ");
+      if (tailNegUsed) {
+        tailNegUsed = tailNegUsed
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => t && !["plump", "curvy"].includes(t.toLowerCase()))
+          .join(", ");
+      }
+    }
+
     let actorTags: string;
     let organTags: string;
     let partnerProse: string;
     let organProse: string;
     let extraNeg: string;
 
-    if (channel === "solo") {
+    if (isTentacle) {
+      actorTags = isPov ? "1girl, solo, 1.3::pov::" : "1girl, solo";
+      if (sceneId !== "TN03" && posOutfit) {
+        posOutfit = posOutfit
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => t && t.toLowerCase() !== "rabbit tail")
+          .join(", ");
+      }
+      if (tailNegUsed) {
+        const dryConflictSet = new Set([
+          "body oil",
+          "oily skin",
+          "flying sweatdrops",
+          "dripping",
+          "splash",
+        ]);
+        tailNegUsed = tailNegUsed
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => t && !dryConflictSet.has(t.toLowerCase()))
+          .join(", ");
+      }
+      const tnAnatPos = m.anat_pos
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => {
+          if (!t) return false;
+          if (t.toLowerCase() === "labia") return false;
+          const mWeight = /^(0\.\d+)::/.exec(t);
+          return !mWeight;
+        })
+        .join(", ");
+      organTags = joinTags(tnAnatPos, tpl.raw_action_tags || "");
+      partnerProse = "";
+      organProse = "";
+      let tnExtraNeg = tpl.extra_scene_neg || "";
+      if (cfg.enable_uterus_xray && !tpl.builtin_xray && tnExtraNeg) {
+        const xrayAllow = new Set(["x-ray", "cross-section", "uterus", "cervix", "cutaway"]);
+        tnExtraNeg = tnExtraNeg
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => t && !xrayAllow.has(t.toLowerCase()))
+          .join(", ");
+      }
+      extraNeg = tnExtraNeg;
+    } else if (channel === "solo") {
       actorTags = "1girl, solo";
       if (stageCode === "before") {
         organTags = joinTags(
@@ -2164,7 +2379,12 @@ export function generateScenePrompts(
         .join(", ");
     }
 
-    const expPos = exprIf(cfg, "furrowed brow, half-closed eyes, watery eyes, blush");
+    const expPos = exprIf(
+      cfg,
+      tpl.default_expr_tags || "furrowed brow, half-closed eyes, watery eyes, blush",
+      "",
+      sceneId
+    );
     const remPos = "sweat";
     const fullNeg = joinTags(extraNeg, transNeg, tailNegUsed);
     const povLbl = isPov ? "第一人称 (POV)" : "第三人称 (客观镜头)";
@@ -2173,7 +2393,7 @@ export function generateScenePrompts(
     const pPos = joinTags(
       headUsed,
       actorTags,
-      m.char_core,
+      charCoreUsed,
       bgUsed,
       poseUsed,
       posLeg,
@@ -2468,7 +2688,14 @@ export function generateScenePrompts(
         }
         nextPrompt = `${posPart}${negSuffix}`;
       }
-      if (cfg.enable_t5_prose && activeLight.prose && !nextPrompt.startsWith("[Base Prompt]")) {
+      const isLockedDarkEnv = Boolean(ALL_POSITIONS_TEMPLATES[sceneId]?.lock_scene_env);
+      const skipDaylightProse = isLockedDarkEnv && activeLight.code === "window_golden_rim";
+      if (
+        cfg.enable_t5_prose &&
+        activeLight.prose &&
+        !skipDaylightProse &&
+        !nextPrompt.startsWith("[Base Prompt]")
+      ) {
         let resolvedLightProse = activeLight.prose;
         if (activeLight.code === "milky_peach_3tier_cel") {
           if (!hasTankTopForLight) {
@@ -2557,7 +2784,9 @@ function resolveUterusXraySpec(
 ): { tags: string; prose: string } | null {
   const baseTags = "1.35::x-ray::, 1.35::cross-section::, 1.4::uterus::, cervix";
   if (sceneId in ALL_POSITIONS_TEMPLATES) {
-    const ch = ALL_POSITIONS_TEMPLATES[sceneId].channel;
+    const tpl = ALL_POSITIONS_TEMPLATES[sceneId];
+    if (tpl.builtin_xray) return null;
+    const ch = tpl.channel;
     const wombChannels = new Set([
       "vaginal",
       "solo",
@@ -2565,6 +2794,7 @@ function resolveUterusXraySpec(
       "grope_fingering",
       "clit_tease",
       "thigh",
+      "tentacle",
     ]);
     if (!wombChannels.has(ch)) return null;
     const stageCode = POS_STAGE_PRESETS[cfg.pos_stage] ?? "before";
@@ -2623,7 +2853,10 @@ function resolveUterusXraySpec(
   }
 
   if (
-    (sceneId in MULTI_ANGLE_TEMPLATES && sceneId !== "MA0" && cfg.enable_multi_angle_nsfw) ||
+    (sceneId in MULTI_ANGLE_TEMPLATES &&
+      sceneId !== "MA0" &&
+      !MULTI_ANGLE_TEMPLATES[sceneId]?.builtin_xray &&
+      (cfg.enable_multi_angle_nsfw || Boolean(MULTI_ANGLE_TEMPLATES[sceneId]?.force_nsfw))) ||
     (sceneId === "FREE" && cfg.free_action_nsfw)
   ) {
     return {

@@ -1230,7 +1230,7 @@ export const MULTI_ANGLE_CHAPTERS: Array<{ id: string; title: string; actor_type
   }
 ];
 
-export const MULTI_ANGLE_TEMPLATES: Record<string, { title: string; canvas: string; allow_multi_views: boolean; scene: string; prose: string }> = {
+export const MULTI_ANGLE_TEMPLATES: Record<string, { title: string; canvas: string; allow_multi_views: boolean; scene: string; prose: string; force_nsfw?: boolean; unlock_belly?: boolean; builtin_xray?: boolean; extra_neg?: string; default_expr_tags?: string }> = {
   "MA0": {
     "title": "MA0 · 三视图设定表 (Three-View Sheet)",
     "canvas": "横图 1216x832",
@@ -1286,6 +1286,42 @@ export const MULTI_ANGLE_TEMPLATES: Record<string, { title: string; canvas: stri
     "allow_multi_views": false,
     "scene": "1.3::close-up::, portrait, head tilt, peace sign near cheek, playful cheerful expression, one eye slightly narrowed, looking at viewer, blurred warm indoor background",
     "prose": "in a close-up portrait tilting her head and making a playful peace sign near her cheek with a cheerful expression."
+  },
+    "MA7A": {
+    "title": "MA7 · 派生① 饱满圆腹溢流版 (无透视)",
+    "canvas": "竖图 832x1216",
+    "allow_multi_views": false,
+    "scene": "1.55::pregnant::, 1.45::stomach bulge::, 1.35::cum inflation::, round pregnant belly, protruding navel, 1.25::spread pussy::, 1.25::spreading own pussy::, fingers, after vaginal, 1.4::cum::, 1.45::cum in pussy::, 1.4::cumdrip::, cowboy shot, legs apart, head tilt, peace sign near cheek, hand on belly, looking at viewer, blurred warm indoor background",
+    "prose": "cowboy shot with legs apart, tilting her head with a peace sign near her cheek while resting her other hand below her taut, round heavily pregnant belly with a protruding navel and spreading her overflowing cum-dripping pussy with her fingers.",
+    "force_nsfw": true,
+    "unlock_belly": true,
+    "builtin_xray": false,
+    "extra_neg": "covering crotch, covering pussy, covering breasts, censor, mosaic censoring, bar censor, gaping, x-ray, cross-section, uterus, cervix, internal cumshot, cutaway, fetus, baby, embryo, umbilical cord, 1boy, male, penis, phallus, testicles",
+    "default_expr_tags": "1.35::mesugaki::, 1.3::smug::, smirk, evil smile, grin, naughty face, 1.2::half-closed eyes::, jitome, blush"
+  },
+  "MA7B": {
+    "title": "MA7 · 派生② 饱满圆腹+内部透视版",
+    "canvas": "竖图 832x1216",
+    "allow_multi_views": false,
+    "scene": "1.55::pregnant::, 1.45::stomach bulge::, 1.4::cum inflation::, round pregnant belly, protruding navel, 1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.55::cum in uterus::, 1.25::spread pussy::, 1.25::spreading own pussy::, fingers, after vaginal, 1.4::cum::, 1.45::cum in pussy::, 1.4::cumdrip::, cowboy shot, legs apart, head tilt, peace sign near cheek, hand on belly, looking at viewer, blurred warm indoor background",
+    "prose": "cowboy shot with legs apart, tilting her head with a peace sign near her cheek while resting her hand below her taut, round heavily pregnant belly with a protruding navel and spreading her overflowing cum-dripping pussy with her fingers, accompanied by an anatomical cross-section x-ray cutaway window showing her distended womb filled to capacity.",
+    "force_nsfw": true,
+    "unlock_belly": true,
+    "builtin_xray": true,
+    "extra_neg": "covering crotch, covering pussy, covering breasts, censor, mosaic censoring, bar censor, gaping, fetus, baby, embryo, umbilical cord, 1boy, male, penis, phallus, testicles, skeleton, bones, skull, ribcage, gore",
+    "default_expr_tags": "1.35::mesugaki::, 1.3::smug::, smirk, evil smile, grin, naughty face, 1.2::half-closed eyes::, jitome, blush"
+  },
+  "MA7C": {
+    "title": "MA7 · 派生③ 纤细平腹+内部透视满盈版",
+    "canvas": "竖图 832x1216",
+    "allow_multi_views": false,
+    "scene": "cowboy shot, 1.35::upper body::, legs apart, head tilt, peace sign near cheek, 1.25::spread pussy::, 1.25::spreading own pussy::, fingers, after vaginal, 1.4::cum::, 1.45::cum in pussy::, 1.35::cumdrip::, 1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.55::cum in uterus::, cum inflation, looking at viewer, blurred warm indoor background",
+    "prose": "cowboy shot with legs apart, tilting her head with a peace sign near her cheek while spreading her overflowing cum-dripping pussy with her fingers, accompanied by an anatomical cross-section x-ray cutaway showing her womb filled to capacity.",
+    "force_nsfw": true,
+    "unlock_belly": false,
+    "builtin_xray": true,
+    "extra_neg": "covering crotch, covering pussy, covering breasts, censor, mosaic censoring, bar censor, gaping, pregnant, stomach bulge, fetus, baby, embryo, umbilical cord, 1boy, male, penis, phallus, testicles, skeleton, bones, skull, ribcage, gore",
+    "default_expr_tags": "1.35::mesugaki::, 1.3::smug::, smirk, evil smile, grin, naughty face, 1.2::half-closed eyes::, jitome, blush"
   },
   "MA8": {
     "title": "MA8 · 盘腿托腮柔毯前倾 (Cross-Legged Chin Rest)",
@@ -1388,7 +1424,8 @@ export const POS_CATEGORIES: string[] = [
   "6. 口部·上半身特写系",
   "7. 外部部位·胸足腿手系",
   "8. 柔韧进阶·展示系",
-  "9. 手部爱抚·指技前戏系"
+  "9. 手部爱抚·指技前戏系",
+  "10. 触手缠缚·苗床产卵系"
 ];
 
 export const ALL_POSITIONS_CHAPTERS: Array<{ id: string; title: string; category: string; actor_type: string }> = [
@@ -1697,10 +1734,34 @@ export const ALL_POSITIONS_CHAPTERS: Array<{ id: string; title: string; category
     "title": "P51 · 背后抱腿大开脚正面指交展示位 (Cradled M-Spread Fingering)",
     "category": "9. 手部爱抚·指技前戏系",
     "actor_type": "AllPos"
+  },
+  {
+    "id": "TN01",
+    "title": "TN01 · 悬空M字吊缚缠绕·前戏玩弄 (Suspended M-Spread Coiled Tease)",
+    "category": "10. 触手缠缚·苗床产卵系",
+    "actor_type": "AllPos"
+  },
+  {
+    "id": "TN02",
+    "title": "TN02 · 悬空M字深部贯通+子宫透视 (Suspended Deep Cervical + Womb X-Ray)",
+    "category": "10. 触手缠缚·苗床产卵系",
+    "actor_type": "AllPos"
+  },
+  {
+    "id": "TN03",
+    "title": "TN03 · 侧视跪趴前后双端串烧同步 (Side All-Fours Dual-End Spitroast)",
+    "category": "10. 触手缠缚·苗床产卵系",
+    "actor_type": "AllPos"
+  },
+  {
+    "id": "TN04",
+    "title": "TN04 · 触手巢穴鼓腹产卵+荧光卵囊透视 (Tentacle Pit Oviposition + Egg X-Ray)",
+    "category": "10. 触手缠缚·苗床产卵系",
+    "actor_type": "AllPos"
   }
 ];
 
-export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string; category: string; channel: string; canvas: string; pose_pov: string; pose_3rd: string; prose_core: string }> = {
+export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string; category: string; channel: string; canvas: string; pose_pov: string; pose_3rd: string; prose_core: string; lock_scene_env?: boolean; env_tags?: string; env_prose?: string; env_badge?: string; env_neg?: string; unlock_belly?: boolean; builtin_xray?: boolean; raw_action_tags?: string; extra_scene_neg?: string; default_expr_tags?: string }> = {
   "P01": {
     "id": "P01",
     "title": "P01 · 标准仰卧传教士位 (Classic Supine)",
@@ -2210,6 +2271,86 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "pose_pov": "frontal low angle, 1.35::carried from behind::, lifted under knees, wide M-legs in air, looking down at viewer",
     "pose_3rd": "frontal full-body shot, 1.35::carried from behind::, both knees cradled high and wide apart, feet off ground, facing viewer",
     "prose_core": "cradled from behind under both knees with her legs held wide open facing forward"
+  },
+  "TN01": {
+    "id": "TN01",
+    "title": "TN01 · 悬空M字吊缚缠绕·前戏玩弄 (Suspended M-Spread Coiled Tease)",
+    "category": "10. 触手缠缚·苗床产卵系",
+    "channel": "tentacle",
+    "canvas": "竖图 832x1216",
+    "pose_pov": "cowboy shot",
+    "pose_3rd": "cowboy shot",
+    "prose_core": "suspended in mid-air with wrists and ankles bound by glistening bioluminescent tentacles",
+    "default_expr_tags": "frustrated, humiliated, v-shaped eyebrows, teary eyes, clenched teeth, heavy blush",
+    "lock_scene_env": true,
+    "env_tags": "dark cavern, glowing bioluminescent mist",
+    "env_prose": " in a dark cavern filled with glowing bioluminescent mist",
+    "env_badge": " · [🐙荧光暗窟]",
+    "env_neg": "indoors, bedroom, bed, couch, sofa, pillow, bedsheet, curtains, bright window, sunlight, outdoors, shallow water, cherry blossoms, furry beige rug",
+    "unlock_belly": false,
+    "builtin_xray": false,
+    "raw_action_tags": "1.55::tentacles::, 1.45::tentacle sex::, 1.35::slimy::, 1.3::slime (substance)::, suction cups, purple tentacles, 1.4::suspended::, lifted in air, feet off ground, wrists bound, bound wrists, bound ankles, 1.35::spread legs::, m legs, 1.3::tentacles on breasts::, nipple tweak, glistening skin, sweat, pussy juice, looking at viewer",
+    "extra_scene_neg": "1boy, male, penis, human hands, extra fingers, extra legs, extra arms, multiple boys, phallus, testicles, x-ray, cross-section, uterus, pregnant, stomach bulge, censor, mosaic censoring, bar censor, covering crotch, covering breasts"
+  },
+  "TN02": {
+    "id": "TN02",
+    "title": "TN02 · 悬空M字深部贯通+子宫透视 (Suspended Deep Cervical + Womb X-Ray)",
+    "category": "10. 触手缠缚·苗床产卵系",
+    "channel": "tentacle",
+    "canvas": "竖图 832x1216",
+    "pose_pov": "cowboy shot",
+    "pose_3rd": "cowboy shot",
+    "prose_core": "suspended in mid-air with wrists bound by glistening tentacles and an anatomical cutaway view",
+    "default_expr_tags": "torogao, bedroom eyes, heart-shaped pupils, open mouth, tongue out, saliva, heavy blush, teardrops",
+    "lock_scene_env": true,
+    "env_tags": "dark cavern, glowing bioluminescent mist",
+    "env_prose": " in a dark cavern filled with glowing bioluminescent mist",
+    "env_badge": " · [🐙荧光暗窟]",
+    "env_neg": "indoors, bedroom, bed, couch, sofa, pillow, bedsheet, curtains, bright window, sunlight, outdoors, shallow water, cherry blossoms, furry beige rug",
+    "unlock_belly": true,
+    "builtin_xray": true,
+    "raw_action_tags": "1.6::tentacles::, 1.55::tentacle sex::, 1.45::vaginal::, 1.35::cervical penetration::, 1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.5::cum in uterus::, 1.4::cum::, 1.4::cumdrip::, stomach bulge, 1.35::slimy::, suction cups, purple tentacles, 1.35::suspended::, lifted in air, wrists bound, 1.35::spread legs::, m legs, tentacles on breasts, glistening skin, sweat, looking at viewer",
+    "extra_scene_neg": "1boy, male, penis, human hands, extra fingers, extra legs, extra arms, multiple boys, phallus, testicles, fetus, baby, embryo, umbilical cord, skeleton, bones, skull, ribcage, gore, censor, mosaic censoring, bar censor, covering crotch, covering breasts"
+  },
+  "TN03": {
+    "id": "TN03",
+    "title": "TN03 · 侧视跪趴前后双端串烧同步 (Side All-Fours Dual-End Spitroast)",
+    "category": "10. 触手缠缚·苗床产卵系",
+    "channel": "tentacle",
+    "canvas": "横图 1216x832",
+    "pose_pov": "",
+    "pose_3rd": "",
+    "prose_core": "on all fours seen from the side amidst coiling bioluminescent tentacles",
+    "default_expr_tags": "ahegao, rolling eyes, heart-shaped pupils, heavy blush, drooling",
+    "lock_scene_env": true,
+    "env_tags": "dark cavern, glowing bioluminescent mist",
+    "env_prose": " in a dark cavern filled with glowing bioluminescent mist",
+    "env_badge": " · [🐙荧光暗窟]",
+    "env_neg": "indoors, bedroom, bed, couch, sofa, pillow, bedsheet, curtains, bright window, sunlight, outdoors, shallow water, cherry blossoms, furry beige rug",
+    "unlock_belly": false,
+    "builtin_xray": false,
+    "raw_action_tags": "1.6::tentacles::, 1.55::tentacle sex::, 1.45::spitroast::, 1.45::all fours::, arched back, from side, 1.45::oral::, 1.4::fellatio::, tentacle in mouth, 1.45::vaginal::, 1.35::double penetration::, cum, cumdrip, saliva, 1.35::slimy::, suction cups, purple tentacles, tentacles on breasts, glistening skin, sweat",
+    "extra_scene_neg": "1boy, male, penis, human hands, extra fingers, extra legs, extra arms, multiple boys, phallus, testicles, censor, mosaic censoring, bar censor, covering crotch, covering breasts"
+  },
+  "TN04": {
+    "id": "TN04",
+    "title": "TN04 · 触手巢穴鼓腹产卵+荧光卵囊透视 (Tentacle Pit Oviposition + Egg X-Ray)",
+    "category": "10. 触手缠缚·苗床产卵系",
+    "channel": "tentacle",
+    "canvas": "竖图 832x1216",
+    "pose_pov": "cowboy shot",
+    "pose_3rd": "cowboy shot",
+    "prose_core": "reclining bound inside a glowing tentacle nest with a rounded distended belly and centered cutaway view",
+    "default_expr_tags": "torogao, heart-shaped pupils, tongue out, heavy blush, saliva",
+    "lock_scene_env": true,
+    "env_tags": "dark cavern, tentacle pit, glowing bioluminescent mist",
+    "env_prose": " inside a dark cavern nest filled with glowing bioluminescent mist",
+    "env_badge": " · [🐙暗窟苗床]",
+    "env_neg": "indoors, bedroom, bed, couch, sofa, pillow, bedsheet, curtains, bright window, sunlight, outdoors, shallow water, cherry blossoms, furry beige rug",
+    "unlock_belly": true,
+    "builtin_xray": true,
+    "raw_action_tags": "1.6::tentacles::, 1.55::tentacle sex::, 1.55::oviposition::, 1.45::eggs::, 1.5::stomach bulge::, cum inflation, round belly, 1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, 1.5::eggs in uterus::, reclining, spread legs, m legs, bound wrists, 1.35::slimy::, slime (substance), purple tentacles, glistening skin, sweat, looking at viewer",
+    "extra_scene_neg": "1boy, male, penis, human hands, extra fingers, extra legs, extra arms, multiple boys, phallus, testicles, fetus, baby, embryo, umbilical cord, skeleton, bones, skull, ribcage, gore, censor, mosaic censoring, bar censor, covering crotch, covering breasts"
   }
 };
 

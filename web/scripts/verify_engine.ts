@@ -552,8 +552,227 @@ async function main(): Promise<void> {
     }
   }
 
+  // 12. Verify Tentacle Series TN01~TN04 Built-In Environment Lock & Mixed Sequential Batch Isolation
+  assert.equal(ALL_POSITIONS_CHAPTERS.length, 55, "Expected 55 positions (P01..P51 + TN01..TN04)");
+  const mixedBatchCfg = {
+    ...createDefaultCharacterConfig(),
+    body_preset: "袖珍娇小窄肩细腰笔直长腿·微Q萌圆脸（0.25 chibi + short slender mini-lady）",
+    outfit_preset: "🐰 逆兔女郎装 · 经典黑爱心胸贴 + 腿环过膝袜（Reverse Bunnysuit · 胸贴版）",
+    lighting_preset: "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）",
+    pos_scene: "🪟 晨光纱帘白床明亮卧室（bright window, curtains, sunlit bedroom, white bedsheet）",
+    env_preset: "🌸 落樱浅滩水波·粉霞晴空焦散（shallow water, cherry blossoms, caustics, pink sky）",
+    enable_background: true,
+    pos_token_limit: computeSafePosTokenLimit({ isV45: true, activeVibeCount: 3 }),
+  };
+
+  const mixedQueue = ["P01", "TN01", "TN02", "TN03", "TN04", "P18"];
+  for (const sid of mixedQueue) {
+    const [it] = generateScenePrompts(sid, mixedBatchCfg, "3rd");
+    assert(it, `Missing batch item for ${sid}`);
+    const sp = splitPromptPosAndNeg(it.prompt);
+    assert(!sp.posPrompt.includes("::::"), `${sid} must never produce malformed :::: quadruple colons`);
+    if (sid.startsWith("TN")) {
+      assert(
+        sp.posPrompt.includes("dark cavern") && sp.posPrompt.includes("glowing bioluminescent mist"),
+        `${sid} must use built-in dark cavern bioluminescent environment`
+      );
+      assert(
+        !sp.posPrompt.includes("white bedsheet") &&
+          !sp.posPrompt.includes("shallow water") &&
+          !sp.posPrompt.includes("cherry blossoms"),
+        `${sid} must block external pos_scene & env_preset during mixed batch`
+      );
+      assert(
+        sp.posPrompt.includes("1girl, solo") && !sp.posPrompt.includes("1boy"),
+        `${sid} must enforce 1girl, solo isolation`
+      );
+      assert(
+        !sp.posPrompt.includes("three-quarter view") && !sp.posPrompt.includes("full body"),
+        `${sid} must not inject three-quarter view / full body zoom-out conflict`
+      );
+      assert(
+        !sp.posPrompt.includes("0.65::"),
+        `${sid} must strip fractional 0.65:: anatomy down-weight`
+      );
+      if (sid === "TN01") {
+        assert(
+          sp.posPrompt.includes("frustrated") &&
+            sp.posPrompt.includes("humiliated") &&
+            sp.posPrompt.includes("clenched teeth"),
+          "TN01 must default to humiliated/frustrated/clenched teeth expression"
+        );
+      }
+      if (sid === "TN02") {
+        assert(
+          sp.posPrompt.includes("torogao") &&
+            sp.posPrompt.includes("bedroom eyes") &&
+            sp.posPrompt.includes("heart-shaped pupils") &&
+            sp.posPrompt.includes("teardrops"),
+          "TN02 must default to melting torogao + heart pupils + teardrops expression"
+        );
+      }
+      if (sid === "TN03") {
+        assert(it.canvas.includes("1216x832"), "TN03 must default to 1216x832 landscape");
+        assert(
+          sp.posPrompt.includes("rolling eyes") &&
+            sp.posPrompt.includes("heart-shaped pupils") &&
+            sp.posPrompt.includes("drooling") &&
+            !sp.posPrompt.includes("tongue out"),
+          "TN03 must use climax rolling eyes + heart pupils + drooling WITHOUT tongue out"
+        );
+      } else {
+        assert(
+          !sp.posPrompt.includes("rabbit tail"),
+          `${sid} frontal supine/suspended posture must strip rabbit tail`
+        );
+      }
+      if (sid === "TN04") {
+        assert(
+          sp.posPrompt.includes("torogao") &&
+            sp.posPrompt.includes("heart-shaped pupils") &&
+            sp.posPrompt.includes("tongue out") &&
+            sp.posPrompt.includes("saliva"),
+          "TN04 must default to torogao + heart pupils + tongue out + saliva expression"
+        );
+        assert(sp.posPrompt.includes("tentacle pit"), "TN04 must include tentacle pit");
+        assert(sp.posPrompt.includes("cowboy shot"), "TN04 must frame as cowboy shot");
+        const negSet = new Set(sp.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+        assert(
+          !sp.posPrompt.includes("slim waist") &&
+            !sp.posPrompt.includes("-0.40::plump::") &&
+            !negSet.has("plump") &&
+            !negSet.has("curvy"),
+          "TN04 must unlock belly expansion in both Positive and Negative"
+        );
+        for (const reqNeg of [
+          "1boy",
+          "male",
+          "human hands",
+          "extra fingers",
+          "umbilical cord",
+          "censor",
+          "mosaic censoring",
+          "bar censor",
+          "covering crotch",
+          "covering breasts",
+        ]) {
+          assert(negSet.has(reqNeg), `TN04 missing required negative guard: ${reqNeg}`);
+        }
+        for (const bannedDryNeg of [
+          "body oil",
+          "oily skin",
+          "flying sweatdrops",
+          "dripping",
+          "splash",
+        ]) {
+          assert(!negSet.has(bannedDryNeg), `TN04 must strip slime-drying negative tag: ${bannedDryNeg}`);
+        }
+        assert(
+          !(negSet.has("oil painting") && negSet.has("oil painting (medium)")),
+          "TN04 negative must deduplicate oil painting vs oil painting (medium)"
+        );
+      }
+      const sepTok = countSeparatedT5Tokens({
+        posPrompt: sp.posPrompt,
+        sceneNegPrompt: sp.negPrompt,
+        ucPresetMode: "heavy",
+        appendQuality: true,
+      });
+      assert(sepTok.posTokens <= 400, `${sid} exceeded 3-Vibe 400 T5 limit: ${sepTok.posTokens}`);
+    } else {
+      assert(
+        sp.posPrompt.includes("white bedsheet"),
+        `Non-tentacle pose ${sid} in mixed batch must preserve user's chosen pos_scene without contamination`
+      );
+    }
+  }
+
+  // Even if user previously toggled external enable_background OFF, TN series still uses its prompt's built-in environment (unless transparent_bg is ON)
+  const bgOffTn = generateScenePrompts("TN01", { ...mixedBatchCfg, enable_background: false }, "3rd")[0];
+  assert(bgOffTn.prompt.includes("dark cavern"), "TN01 must retain prompt built-in environment even when external enable_background is false");
+  const transBgTn = generateScenePrompts("TN01", { ...mixedBatchCfg, pos_transparent_bg: true }, "3rd")[0];
+  assert(
+    transBgTn.prompt.includes("transparent background") && !transBgTn.prompt.includes("dark cavern"),
+    "Transparent background toggle should still cleanly override TN01 background when explicitly enabled"
+  );
+
+  // 13. Verify MA7 Derived Variants (MA7A, MA7B, MA7C — Top Buttons Only, Single MA7 in Bottom List)
+  assert.equal(MULTI_ANGLE_CHAPTERS.length, 11, "Bottom Multi-Angle list must remain MA0~MA10 (11 items)");
+  const ma7TestCfg = {
+    ...createDefaultCharacterConfig(),
+    body_preset: "袖珍娇小窄肩细腰笔直长腿·微Q萌圆脸（0.25 chibi + short slender mini-lady）",
+    outfit_preset: "🐰 逆兔女郎装 · 经典黑爱心胸贴 + 腿环过膝袜（Reverse Bunnysuit · 胸贴版）",
+    lighting_preset: "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）",
+  };
+  for (const ma7Vid of ["MA7A", "MA7B", "MA7C"] as const) {
+    const [maItem] = generateScenePrompts(ma7Vid, ma7TestCfg, "3rd");
+    assert(maItem, `Missing prompt for ${ma7Vid}`);
+    const spMa = splitPromptPosAndNeg(maItem.prompt);
+    assert(
+      !/[^\x00-\x7F]/.test(spMa.posPrompt) && !/[^\x00-\x7F]/.test(spMa.negPrompt),
+      `${ma7Vid} must be 100% pure ASCII English tags without leaked Chinese header text`
+    );
+    const maNegSet = new Set(spMa.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+    assert(
+      spMa.posPrompt.includes("peace sign near cheek") &&
+        spMa.posPrompt.includes("1.35::mesugaki::") &&
+        !spMa.posPrompt.includes("rabbit tail") &&
+        !spMa.posPrompt.includes("0.65::"),
+      `${ma7Vid} must include peace sign + default mesugaki expression and strip frontal rabbit tail / 0.65::`
+    );
+    assert(
+      !maNegSet.has("dripping") && !maNegSet.has("splash") && maNegSet.has("censor"),
+      `${ma7Vid} negative must strip dripping/splash and retain anti-censor guards`
+    );
+    if (ma7Vid === "MA7A" || ma7Vid === "MA7B") {
+      assert(
+        spMa.posPrompt.includes("1.55::pregnant::") &&
+          !spMa.posPrompt.includes("slim waist") &&
+          !maNegSet.has("plump") &&
+          !maNegSet.has("curvy"),
+        `${ma7Vid} must unlock round belly silhouette in both Positive and Negative`
+      );
+    } else {
+      assert(
+        spMa.posPrompt.includes("slim waist") &&
+          maNegSet.has("pregnant") &&
+          maNegSet.has("stomach bulge"),
+        "MA7C flat-belly x-ray variant must preserve slim waist and block pregnant / stomach bulge"
+      );
+    }
+    if (ma7Vid === "MA7A") {
+      assert(maNegSet.has("x-ray") && maNegSet.has("uterus"), "MA7A default must block x-ray cutaway");
+    } else {
+      assert(
+        spMa.posPrompt.includes("1.45::x-ray::") && !maNegSet.has("x-ray"),
+        `${ma7Vid} must include built-in x-ray cutaway without blocking x-ray in UC`
+      );
+    }
+    const maTok502 = countSeparatedT5Tokens({
+      posPrompt: spMa.posPrompt,
+      sceneNegPrompt: spMa.negPrompt,
+      ucPresetMode: "heavy",
+      appendQuality: true,
+    });
+    assert(maTok502.posTokens <= 502, `${ma7Vid} exceeded 502 T5 limit: ${maTok502.posTokens}`);
+
+    const [maItem400] = generateScenePrompts(
+      ma7Vid,
+      { ...ma7TestCfg, pos_token_limit: 400 },
+      "3rd"
+    );
+    const spMa400 = splitPromptPosAndNeg(maItem400.prompt);
+    const maTok400 = countSeparatedT5Tokens({
+      posPrompt: spMa400.posPrompt,
+      sceneNegPrompt: spMa400.negPrompt,
+      ucPresetMode: "heavy",
+      appendQuality: true,
+    });
+    assert(maTok400.posTokens <= 400, `${ma7Vid} exceeded 3-Vibe 400 T5 limit: ${maTok400.posTokens}`);
+  }
+
   console.log(
-    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts: 51 Positions x2 + MA0~MA10 + Free Action, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
+    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts: 55 Positions x2 + MA0~MA10 + Free Action, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
   );
 }
 

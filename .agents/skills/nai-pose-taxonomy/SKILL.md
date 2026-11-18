@@ -1,6 +1,6 @@
 ---
 name: nai-pose-taxonomy
-description: Comprehensive NovelAI V4.5 / V5 posture, two-person & multi-person (MMF/FFM threesome, yuri, group/surrounded) interaction taxonomy, 5-stage progression, condom & uterus x-ray physics, transparent background, and partner-visibility decoupling reference. Covers 10 posture families (P01-P51 + MP01-MP15 multi-person actions), V4.5/V5 [Character N (A1..E5)] spatial partitioning & source#/target#/mutual# tags, MA0-MA10 multi-angle showcase, FREE custom action mode, and V5 native RGBA cutout rules.
+description: Comprehensive NovelAI V4.5 / V5 posture, two-person & multi-person (MMF/FFM threesome, yuri, group/surrounded) & tentacle/oviposition/pregnant-belly interaction taxonomy, 5-stage progression, condom & uterus x-ray physics, transparent background, and partner-visibility decoupling reference. Covers 11 posture families (P01-P51 + MP01-MP15 multi-person + TN01-TN04 tentacle & belly-inflation actions), V4.5/V5 [Character N (A1..E5)] spatial partitioning & source#/target#/mutual# tags, MA0-MA10 multi-angle showcase, FREE custom action mode, and V5 native RGBA cutout rules.
 ---
 
 # NovelAI V4.5 / V5 Full Posture & Interaction Taxonomy Skill
@@ -231,6 +231,28 @@ girl, <Character A tag & hair/eye/outfit>, kneeling on left, leaning right, chee
 [Character 2 (D3)]
 girl, <Character B tag & hair/eye/outfit>, kneeling on right, leaning left, cheek-to-cheek, mutual#holding hands, looking up at viewer, naughty smile
 ```
+
+### Family 11: Tentacle, Oviposition & Belly-Inflation Postures (`11. 触手缠缚·苗床产卵与孕肚膨腹系 · TN01–TN04`)
+
+Empirically calibrated on NovelAI V5 Full (`28 steps, Scale 6.8`):
+
+#### Core Hygiene & Anti-Bleed Rules for Tentacle / Belly-Inflation Scenes
+1. **Strict Anti-Human-Limb Isolation (`1girl, solo` + UC)**:
+   - High-intensity interaction tags (`spitroast, double penetration, vaginal, fellatio`) strongly bias V5 toward spawning phantom faceless-male hands or torsos unless explicitly blocked.
+   - Always keep `1girl, solo` for single-heroine tentacle scenes and append `1boy, male, penis, human hands, extra fingers, extra legs, extra arms` to `extra_uc`.
+2. **Cavern / Bioluminescent Environment Synergy**:
+   - Replacing bright bedroom tags (`indoors, bedroom, bed, white bedsheet, bright window`) with `dark cavern, glowing bioluminescent mist` (plus `tentacle pit` for nest/oviposition scenes) dramatically improves translucent slime specular highlights and rim-lit tentacle depth.
+3. **Belly-Inflation / Pregnant Silhouette Unlock on Slender Mini-Lady Presets**:
+   - Standard petite/slender body presets inject `slim waist, -0.40::plump::` in Positive and `plump, curvy` in Negative, which flatten abdominal expansion.
+   - Whenever generating **heavily pregnant (`1.55::pregnant::, 1.45::stomach bulge::, round pregnant belly, protruding navel`)** or **oviposition / cum-inflation belly** scenes on a petite character, strip `slim waist, -0.40::plump::` (and outfit `midriff, navel` if conflicting) from Positive and strip `plump, curvy` from Negative while retaining `1.2::petite::, 1.3::slender::, 1.3::slender legs::, narrow shoulders, 1.25::narrow hips::` — preserving slender limbs with a taut, round inflated belly.
+   - Always add `fetus, baby, embryo, umbilical cord` to `extra_uc` when combining belly bulge with `x-ray, cross-section, uterus` (and conversely add `x-ray, cross-section, uterus, cervix, internal cumshot, cutaway` to `extra_uc` when pure external belly surface without cutaway is desired).
+
+| Code | Subtype Name | Core Danbooru Action & Anatomy Delta Tags | Recommended Framing & Notes |
+| :--- | :--- | :--- | :--- |
+| `TN01` | Suspended M-Spread Coiled Tease (`悬空M字吊缚缠绕·前戏玩弄`) | `dark cavern, glowing bioluminescent mist, 1.55::tentacles::, 1.45::tentacle sex::, 1.35::slimy::, 1.3::slime (substance)::, suction cups, purple tentacles, 1.4::suspended::, lifted in air, feet off ground, wrists bound, bound wrists, bound ankles, 1.35::spread legs::, m legs, 1.3::tentacles on breasts::, nipple tweak, glistening skin, sweat, pussy juice, looking at viewer` | Vertical `832x1216`; pair with humiliated/teary expression; block `x-ray, uterus, pregnant, stomach bulge` in UC for pure external tease |
+| `TN02` | Suspended Deep Cervical + Womb X-Ray (`悬空M字深部贯通+子宫透视`) | `dark cavern, glowing bioluminescent mist, 1.6::tentacles::, 1.55::tentacle sex::, 1.45::vaginal::, 1.35::cervical penetration::, 1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.5::cum in uterus::, 1.4::cum::, 1.4::cumdrip::, stomach bulge, 1.35::slimy::, suction cups, purple tentacles, 1.35::suspended::, lifted in air, wrists bound, 1.35::spread legs::, m legs, tentacles on breasts, glistening skin, sweat, looking at viewer` | Vertical `832x1216`; embeds an inline abdominal cross-section window aligned with the lower-body tentacle |
+| `TN03` | Side All-Fours Dual-End Spitroast (`侧视跪趴前后双端串烧同步`) | `dark cavern, glowing bioluminescent mist, 1.6::tentacles::, 1.55::tentacle sex::, 1.45::spitroast::, 1.45::all fours::, arched back, from side, 1.45::oral::, 1.4::fellatio::, tentacle in mouth, 1.45::vaginal::, 1.35::double penetration::, cum, cumdrip, saliva, 1.35::slimy::, suction cups, purple tentacles, tentacles on breasts, glistening skin, sweat` | Landscape `1216x832` (`from side` essential so oral + rear tentacles both read cleanly without foreshortening) |
+| `TN04` | Tentacle Pit Oviposition + Egg X-Ray (`触手巢穴鼓腹产卵+荧光卵囊透视`) | `dark cavern, tentacle pit, glowing bioluminescent mist, 1.6::tentacles::, 1.55::tentacle sex::, 1.55::oviposition::, 1.45::eggs::, 1.5::stomach bulge::, cum inflation, round belly, 1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, 1.5::eggs in uterus::, reclining, spread legs, m legs, bound wrists, 1.35::slimy::, slime (substance), purple tentacles, glistening skin, sweat, looking at viewer` | Vertical `832x1216`; strip `slim waist, -0.40::plump::` (Pos) & `plump, curvy` (Neg) for full rounded belly expansion |
 
 ---
 

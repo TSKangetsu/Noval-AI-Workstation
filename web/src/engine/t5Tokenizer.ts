@@ -302,12 +302,17 @@ function stripInlineNegsKeepingTune2(text: string): { posClean: string; negParts
 }
 
 export function deduplicateCommaTags(raw: string): string {
+  const parts = raw
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const lowerAll = new Set(parts.map((p) => p.toLowerCase()));
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const part of raw.split(",")) {
-    const t = part.trim();
-    if (!t) continue;
+  for (const t of parts) {
     const key = t.toLowerCase();
+    // Collapse redundant 'oil painting' when canonical 'oil painting (medium)' is already present
+    if (key === "oil painting" && lowerAll.has("oil painting (medium)")) continue;
     if (!seen.has(key)) {
       seen.add(key);
       out.push(t);

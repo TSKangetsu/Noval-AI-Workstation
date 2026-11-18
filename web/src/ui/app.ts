@@ -1,5 +1,6 @@
 import {
   ALL_POSITIONS_CHAPTERS,
+  ALL_POSITIONS_TEMPLATES,
   BODY_PRESETS,
   BUILTIN_CHARACTERS,
   BUST_PRESETS,
@@ -20,6 +21,7 @@ import {
   MODEL_V5_FULL_MEDIUM,
   MORPH_PRESETS,
   MULTI_ANGLE_CHAPTERS,
+  MULTI_ANGLE_TEMPLATES,
   OUTFIT_PRESETS,
   OUTFIT_STATE_PRESETS,
   PIGMENT_PRESETS,
@@ -145,6 +147,7 @@ export class WorkbenchApp {
 
   private actionMode: ActionMode = "positions";
   private activeSceneId = "P01";
+  private activeMa7Variant: "" | "MA7A" | "MA7B" | "MA7C" = "";
   private activePosCategory = POS_CATEGORIES[0];
   private posSearchQuery = "";
   private checkedPositionIds = new Set<string>(["P01"]);
@@ -1612,7 +1615,7 @@ export class WorkbenchApp {
     const modeBar = this.el("div", "action-mode-bar");
     const seg = this.el("div", "seg-group");
     const modes: Array<[ActionMode, string]> = [
-      ["positions", "🔞 51式体位库"],
+      ["positions", "🔞 体位动作库"],
       ["multi_angle", "✨ 多角度日常"],
       ["free", "✍️ 自由手写动作"],
     ];
@@ -1622,7 +1625,7 @@ export class WorkbenchApp {
       b.addEventListener("click", () => {
         this.actionMode = m;
         this.isManualPromptEdited = false;
-        if (m === "positions" && !this.activeSceneId.startsWith("P")) {
+        if (m === "positions" && !(this.activeSceneId in ALL_POSITIONS_TEMPLATES)) {
           this.activeSceneId = "P01";
         } else if (m === "multi_angle" && !this.activeSceneId.startsWith("MA")) {
           this.activeSceneId = "MA1";
@@ -1728,6 +1731,10 @@ export class WorkbenchApp {
     }
     r1.appendChild(povSeg);
 
+    const activePosTpl = ALL_POSITIONS_TEMPLATES[this.activeSceneId];
+    const isTentacleScene = activePosTpl?.channel === "tentacle";
+    const hasBuiltinXray = Boolean(activePosTpl?.builtin_xray);
+
     const maleCodeLabels: Record<string, string> = {
       normal: "👤正常",
       translucent: "👻半透",
@@ -1736,12 +1743,14 @@ export class WorkbenchApp {
     };
     for (const [fullKey, code] of Object.entries(POS_MALE_MODE_PRESETS)) {
       const shortLbl = maleCodeLabels[code] || compactOptionText(fullKey, 8);
+      const isActiveMale = isTentacleScene ? code === "off" : this.cfg.pos_male_mode === fullKey;
       const c = this.el(
         "button",
-        `chip-btn${this.cfg.pos_male_mode === fullKey ? " active" : ""}`,
+        `chip-btn${isActiveMale ? " active" : ""}`,
         shortLbl
       );
-      c.title = fullKey;
+      c.title = isTentacleScene ? "触手系动作固定使用单女主防人形肢体串染" : fullKey;
+      c.disabled = isTentacleScene;
       c.addEventListener("click", () => {
         this.cfg.pos_male_mode = fullKey;
         this.onCfgChanged();
@@ -1764,10 +1773,11 @@ export class WorkbenchApp {
       const shortLbl = stageCodeLabels[code] || compactOptionText(fullKey, 10);
       const c = this.el(
         "button",
-        `chip-btn${this.cfg.pos_stage === fullKey ? " active" : ""}`,
+        `chip-btn${!isTentacleScene && this.cfg.pos_stage === fullKey ? " active" : ""}`,
         shortLbl
       );
-      c.title = fullKey;
+      c.title = isTentacleScene ? "触手系子型号 (TN01~TN04) 已内置各自独立阶段与解剖结构" : fullKey;
+      c.disabled = isTentacleScene;
       c.addEventListener("click", () => {
         this.cfg.pos_stage = fullKey;
         this.onCfgChanged();
@@ -1779,7 +1789,8 @@ export class WorkbenchApp {
     // Row 3: Aux Toggles (Show Penis / Condom / Uterus X-Ray / Transparent BG)
     const r3 = this.el("div", "ctrl-inline-row");
     r3.appendChild(this.el("span", "ctrl-tag-lbl", "叠加"));
-    const isSoloMaleOff = (POS_MALE_MODE_PRESETS[this.cfg.pos_male_mode] ?? "normal") === "off";
+    const isSoloMaleOff =
+      isTentacleScene || (POS_MALE_MODE_PRESETS[this.cfg.pos_male_mode] ?? "normal") === "off";
     const auxItems: Array<[string, boolean, () => void, boolean?]> = [
       [
         "🍆 显器官",
@@ -1793,21 +1804,23 @@ export class WorkbenchApp {
       ],
       [
         "🎈 戴套",
-        this.cfg.enable_condom,
+        !isTentacleScene && this.cfg.enable_condom,
         () => {
           this.cfg.enable_condom = !this.cfg.enable_condom;
           this.onCfgChanged();
           this.renderRightModeView();
         },
+        isTentacleScene,
       ],
       [
         "🔬 子宫透视",
-        this.cfg.enable_uterus_xray,
+        hasBuiltinXray || this.cfg.enable_uterus_xray,
         () => {
           this.cfg.enable_uterus_xray = !this.cfg.enable_uterus_xray;
           this.onCfgChanged();
           this.renderRightModeView();
         },
+        hasBuiltinXray,
       ],
       [
         "🏁 透明底",
@@ -1826,25 +1839,44 @@ export class WorkbenchApp {
       r3.appendChild(b);
     }
 
-    // Row 4: Scene Environment Bar with inline Enable Switch
+    // Row 4: Scene Environment Bar with inline Enable Switch (auto-locked for TN poses)
     const r4 = this.buildPosSceneRow();
     this.elContextCtrlBox.append(r1, r2, r3, r4);
   }
 
   private buildPosSceneRow(): HTMLElement {
     const r = this.el("div", "ctrl-inline-row");
+    const isLockedEnvScene =
+      this.actionMode === "positions" &&
+      Boolean(ALL_POSITIONS_TEMPLATES[this.activeSceneId]?.lock_scene_env);
+
     const envSw = this.el(
       "button",
-      `switch-pill${this.cfg.enable_background ? " on" : ""}`,
-      this.cfg.enable_background ? "环境ON" : "环境OFF"
+      `switch-pill${!isLockedEnvScene && this.cfg.enable_background ? " on" : ""}`,
+      isLockedEnvScene ? "内置环境" : this.cfg.enable_background ? "环境ON" : "环境OFF"
     );
-    envSw.title = "开关背景环境词条";
+    envSw.title = isLockedEnvScene
+      ? "当前触手系动作强制使用提示词内置暗窟荧光环境（自动屏蔽其他环境预设；混合连出时其他普通体位仍保留各自环境）"
+      : "开关背景环境词条";
+    envSw.disabled = isLockedEnvScene;
     envSw.addEventListener("click", () => {
       this.cfg.enable_background = !this.cfg.enable_background;
       this.onCfgChanged();
       this.renderRightModeView();
     });
     r.appendChild(envSw);
+
+    if (isLockedEnvScene) {
+      const lockedChip = this.el(
+        "button",
+        `chip-btn${!this.cfg.pos_transparent_bg ? " active" : ""}`,
+        this.cfg.pos_transparent_bg ? "🏁 已切透明底" : "🔒 提示词内置暗窟环境"
+      );
+      lockedChip.disabled = true;
+      lockedChip.title =
+        "触手系列自动禁用外部环境并采用提示词内置暗窟荧光环境；批量连出混合体位时按单幕独立生效，互不污染";
+      r.appendChild(lockedChip);
+    }
 
     const sceneShort: Array<[string, string]> = [
       ["🛋️ 默认暖光室内沙发（indoors, couch, lamp）", "🛋️沙发"],
@@ -1856,11 +1888,13 @@ export class WorkbenchApp {
     for (const [fullKey, shortLbl] of sceneShort) {
       const b = this.el(
         "button",
-        `chip-btn${this.cfg.enable_background && !this.cfg.pos_transparent_bg && this.cfg.pos_scene === fullKey ? " active" : ""}`,
+        `chip-btn${!isLockedEnvScene && this.cfg.enable_background && !this.cfg.pos_transparent_bg && this.cfg.pos_scene === fullKey ? " active" : ""}`,
         shortLbl
       );
-      b.title = fullKey;
-      b.disabled = !this.cfg.enable_background || this.cfg.pos_transparent_bg;
+      b.title = isLockedEnvScene
+        ? `当前触手动作已自动禁用外部环境（连出其他普通体位时仍使用你原选的环境）`
+        : fullKey;
+      b.disabled = isLockedEnvScene || !this.cfg.enable_background || this.cfg.pos_transparent_bg;
       b.addEventListener("click", () => {
         this.cfg.pos_scene = fullKey;
         this.onCfgChanged();
@@ -1872,12 +1906,17 @@ export class WorkbenchApp {
   }
 
   private buildMultiAngleContextControls(): void {
+    const activeMaTpl = MULTI_ANGLE_TEMPLATES[this.activeSceneId];
+    const isForcedMaNsfw = Boolean(activeMaTpl?.force_nsfw);
+    const hasMaBuiltinXray = Boolean(activeMaTpl?.builtin_xray);
+
     const r1 = this.el("div", "ctrl-inline-row");
     const btnNsfw = this.el(
       "button",
-      `chip-btn${this.cfg.enable_multi_angle_nsfw ? " active" : ""}`,
-      "🔞 开启 R-18 解剖 / MA7掰穴差分"
+      `chip-btn${isForcedMaNsfw || this.cfg.enable_multi_angle_nsfw ? " active" : ""}`,
+      isForcedMaNsfw ? "🔞 派生内置 R-18" : "🔞 开启 R-18 解剖 / MA7掰穴差分"
     );
+    btnNsfw.disabled = isForcedMaNsfw;
     btnNsfw.addEventListener("click", () => {
       this.cfg.enable_multi_angle_nsfw = !this.cfg.enable_multi_angle_nsfw;
       this.onCfgChanged();
@@ -1886,16 +1925,43 @@ export class WorkbenchApp {
 
     const btnXray = this.el(
       "button",
-      `chip-btn${this.cfg.enable_multi_angle_nsfw && this.cfg.enable_uterus_xray ? " active" : ""}`,
+      `chip-btn${hasMaBuiltinXray || ((isForcedMaNsfw || this.cfg.enable_multi_angle_nsfw) && this.cfg.enable_uterus_xray) ? " active" : ""}`,
       "🔬 子宫透视"
     );
-    btnXray.disabled = !this.cfg.enable_multi_angle_nsfw;
+    btnXray.disabled = hasMaBuiltinXray || (!isForcedMaNsfw && !this.cfg.enable_multi_angle_nsfw);
     btnXray.addEventListener("click", () => {
       this.cfg.enable_uterus_xray = !this.cfg.enable_uterus_xray;
       this.onCfgChanged();
       this.renderRightModeView();
     });
     r1.append(btnNsfw, btnXray);
+
+    // Row 1.5: MA7 3 Dedicated Derived Variant Buttons (Top-only; bottom list keeps single MA7)
+    const rMa7 = this.el("div", "ctrl-inline-row");
+    rMa7.appendChild(this.el("span", "ctrl-tag-lbl", "MA7派生"));
+    const ma7Variants: Array<["MA7A" | "MA7B" | "MA7C", string, string]> = [
+      ["MA7A", "🤰 ①圆腹无透视", "MA7 歪头比耶派生①：饱满圆腹溢流版（无透视窗 · 再次点击切回原版 MA7）"],
+      ["MA7B", "🤰🔬 ②圆腹+透视", "MA7 歪头比耶派生②：饱满圆腹 + 内部透视窗版（再次点击切回原版 MA7）"],
+      ["MA7C", "🔬 ③平腹+透视", "MA7 歪头比耶派生③：纤细平腹 + 内部透视满盈版（再次点击切回原版 MA7）"],
+    ];
+    for (const [vid, vLbl, vTip] of ma7Variants) {
+      const vb = this.el(
+        "button",
+        `chip-btn${this.activeMa7Variant === vid && this.activeSceneId === vid ? " active" : ""}`,
+        vLbl
+      );
+      vb.title = vTip;
+      vb.addEventListener("click", () => {
+        if (this.activeMa7Variant === vid && this.activeSceneId === vid) {
+          this.activeMa7Variant = "";
+          this.selectScene("MA7");
+        } else {
+          this.activeMa7Variant = vid;
+          this.selectScene(vid);
+        }
+      });
+      rMa7.appendChild(vb);
+    }
 
     const r2 = this.el("div", "ctrl-inline-row");
     const envSw = this.el(
@@ -1932,7 +1998,7 @@ export class WorkbenchApp {
       r2.appendChild(b);
     }
 
-    this.elContextCtrlBox.append(r1, r2);
+    this.elContextCtrlBox.append(r1, rMa7, r2);
   }
 
   private buildFreeContextControls(): void {
@@ -2007,7 +2073,7 @@ export class WorkbenchApp {
 
     const catScroll = this.el("div", "cat-pills-scroll");
     const shortCatLabel = (c: string) =>
-      c === "全部体位 (All)" ? "全部 (51)" : c.split("·")[0]?.trim() || c;
+      c === "全部体位 (All)" ? `全部 (${ALL_POSITIONS_CHAPTERS.length})` : c.split("·")[0]?.trim() || c;
     for (const cat of POS_CATEGORIES) {
       const b = this.el(
         "button",
@@ -2018,6 +2084,15 @@ export class WorkbenchApp {
       b.title = cat;
       b.addEventListener("click", () => {
         this.activePosCategory = cat;
+        if (cat !== "全部体位 (All)") {
+          const curCat = ALL_POSITIONS_TEMPLATES[this.activeSceneId]?.category;
+          if (curCat !== cat) {
+            const firstMatch = ALL_POSITIONS_CHAPTERS.find((ch) => ch.category === cat);
+            if (firstMatch) {
+              this.selectScene(firstMatch.id);
+            }
+          }
+        }
         this.buildPoseFilterControlsReset();
         this.renderPoseCards();
       });
@@ -2081,10 +2156,10 @@ export class WorkbenchApp {
     }
 
     for (const ch of items) {
-      const card = this.el(
-        "div",
-        `pose-card${this.activeSceneId === ch.id ? " selected" : ""}`
-      );
+      const isSelectedCard =
+        this.activeSceneId === ch.id ||
+        (!isPos && ch.id === "MA7" && this.activeSceneId.startsWith("MA7"));
+      const card = this.el("div", `pose-card${isSelectedCard ? " selected" : ""}`);
 
       const chk = this.el("input") as HTMLInputElement;
       chk.type = "checkbox";
@@ -2104,16 +2179,20 @@ export class WorkbenchApp {
         titleCol.appendChild(this.el("span", "pose-sub-title", sub));
       }
 
+      const resolveMaId = (rawId: string) =>
+        !isPos && rawId === "MA7" && this.activeMa7Variant ? this.activeMa7Variant : rawId;
+
       const rowActs = this.el("div", "pose-row-actions");
       const btnRandRun = this.el("button", "btn btn-xs btn-icon", "🎲");
       btnRandRun.title = "强制使用新随机 Seed 生成此动作";
       btnRandRun.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        this.selectScene(ch.id);
+        const effId = resolveMaId(ch.id);
+        this.selectScene(effId);
         const count = this.apiSettings.batch_count || 1;
         void this.runGenerationQueue(
           Array.from({ length: count }, () => ({
-            sceneId: ch.id,
+            sceneId: effId,
             forceRandomSeed: true,
           }))
         );
@@ -2122,18 +2201,23 @@ export class WorkbenchApp {
       const btnRun = this.el("button", "btn btn-xs btn-primary", "⚡生图");
       btnRun.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        this.selectScene(ch.id);
+        const effId = resolveMaId(ch.id);
+        this.selectScene(effId);
         const count = this.apiSettings.batch_count || 1;
         void this.runGenerationQueue(
           Array.from({ length: count }, () => ({
-            sceneId: ch.id,
+            sceneId: effId,
           }))
         );
       });
       rowActs.append(btnRandRun, btnRun);
 
       card.addEventListener("click", () => {
-        this.selectScene(ch.id);
+        if (!isPos && ch.id === "MA7") {
+          this.selectScene(this.activeMa7Variant || "MA7");
+        } else {
+          this.selectScene(ch.id);
+        }
       });
 
       card.append(chk, idBadge, titleCol, rowActs);
@@ -2144,11 +2228,34 @@ export class WorkbenchApp {
   }
 
   private selectScene(sceneId: string): void {
+    const prevId = this.activeSceneId;
     this.activeSceneId = sceneId;
+    if (sceneId === "MA7A" || sceneId === "MA7B" || sceneId === "MA7C") {
+      this.activeMa7Variant = sceneId;
+    }
     this.isManualPromptEdited = false;
     for (const card of Array.from(this.elPoseListWrap.children)) {
       const badge = card.querySelector(".pose-id-badge");
-      card.classList.toggle("selected", badge?.textContent === sceneId);
+      const bid = badge?.textContent || "";
+      card.classList.toggle(
+        "selected",
+        bid === sceneId || (bid === "MA7" && sceneId.startsWith("MA7"))
+      );
+    }
+    if (this.actionMode === "positions") {
+      const prevTpl = ALL_POSITIONS_TEMPLATES[prevId];
+      const nextTpl = ALL_POSITIONS_TEMPLATES[sceneId];
+      if (
+        Boolean(prevTpl?.lock_scene_env) !== Boolean(nextTpl?.lock_scene_env) ||
+        prevTpl?.channel !== nextTpl?.channel ||
+        Boolean(prevTpl?.builtin_xray) !== Boolean(nextTpl?.builtin_xray)
+      ) {
+        this.elContextCtrlBox.innerHTML = "";
+        this.buildPositionsContextControls();
+      }
+    } else if (this.actionMode === "multi_angle") {
+      this.elContextCtrlBox.innerHTML = "";
+      this.buildMultiAngleContextControls();
     }
     this.refreshSceneAndPrompt();
   }
@@ -2166,7 +2273,9 @@ export class WorkbenchApp {
     const orderedIds =
       this.actionMode === "positions"
         ? ALL_POSITIONS_CHAPTERS.filter((c) => this.checkedPositionIds.has(c.id)).map((c) => c.id)
-        : MULTI_ANGLE_CHAPTERS.filter((c) => this.checkedMultiAngleIds.has(c.id)).map((c) => c.id);
+        : MULTI_ANGLE_CHAPTERS.filter((c) => this.checkedMultiAngleIds.has(c.id)).map((c) =>
+            c.id === "MA7" && this.activeMa7Variant ? this.activeMa7Variant : c.id
+          );
     if (orderedIds.length === 0) return;
     const repeats = this.apiSettings.batch_count || 1;
     const queue: Array<{ sceneId: string }> = [];
@@ -3759,7 +3868,7 @@ export class WorkbenchApp {
         } else if (sid.startsWith("MA")) {
           this.actionMode = "multi_angle";
           this.activeSceneId = sid;
-        } else if (sid.startsWith("P")) {
+        } else if (sid in ALL_POSITIONS_TEMPLATES || sid.startsWith("P")) {
           this.actionMode = "positions";
           this.activeSceneId = sid;
         }
