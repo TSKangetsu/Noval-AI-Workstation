@@ -1,0 +1,11 @@
+{
+  "name": "nai-studio-bridge",
+  "displayName": "NAI Studio 2.0 网页实时控制桥",
+  "version": "2.0.0",
+  "description": "连接并直接实时控制浏览器中打开的 NovelAI_Workbench.html 单页工作台：读取状态、切换画风穿搭体位、微调提示词、导入管理 Vibe 槽位、保存删除预设及按需触发网页生图。",
+  "suggestedPrompts": [
+    "读取我现在打开的网页状态，把画风改成清透奶桃并切换到 MA10",
+    "把当前网页提示词里的锁骨权重调高到 1.35，顺便保存成新预设",
+    "帮我在网页切到 P22 蛙式俯卧位，直接生一张看看效果"
+  ]
+}

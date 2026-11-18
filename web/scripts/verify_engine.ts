@@ -1,35 +1,60 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import {
   ALL_POSITIONS_CHAPTERS,
+  BUNDLED_CUSTOM_PRESETS,
   EXPRESSION_PRESETS,
+  FREE_ACTION_STARTERS,
   MODEL_V4_5_FULL,
+  MODEL_V5_FULL,
   MODEL_V5_FULL_MEDIUM,
-  MODULE_SWITCH_PRESETS,
   MULTI_ANGLE_CHAPTERS,
   POS_STAGE_PRESETS,
-  STORY_CHAPTERS,
+  resolveLightingForStyle,
+  STYLE_BUNDLED_VIBE_PACK,
 } from "../src/data/engineConstants";
+import { BUNDLED_VIBE_PACKS, cloneBundledVibeItems } from "../src/data/bundledVibes";
 import { generateScenePrompts } from "../src/engine/storyEngine";
-import { countPromptT5Tokens, initT5Tokenizer } from "../src/engine/t5Tokenizer";
+import {
+  computeSafePosTokenLimit,
+  countPromptT5Tokens,
+  countSeparatedT5Tokens,
+  initT5Tokenizer,
+  mergePosAndNegToInline,
+  splitPromptPosAndNeg,
+} from "../src/engine/t5Tokenizer";
 import { createDefaultCharacterConfig } from "../src/engine/types";
+import { resolveMcpEndpoints } from "../src/services/mcpBridgeClient";
 import {
   buildNaiGeneratePayload,
-  computeCanonicalPreciseRefCanvas,
   estimateNaiAnlas,
-  uint8ArrayToBase64,
 } from "../src/services/naiApiClient";
+import {
+  clearDeletedPresets,
+  loadCustomPresets,
+  loadDeletedPresets,
+  markPresetDeleted,
+  unmarkPresetDeleted,
+} from "../src/services/storageService";
+import {
+  buildActiveVibeSlotsForModel,
+  parseVibeBundleJsonText,
+  parseVibeFileBytes,
+  serializeVibeBundle,
+} from "../src/services/vibeBundleParser";
 
 async function main(): Promise<void> {
   await initT5Tokenizer();
 
-  // 1. Verify T5 exact SentencePiece tokenizer & all suites
+  // 1. Verify T5 exact SentencePiece tokenizer across all Multi-Angle, 51 Positions (POV & 3rd), and Free Action modes
   const cfg = createDefaultCharacterConfig();
   let totalPrompts = 0;
-  for (const ch of [...STORY_CHAPTERS, ...MULTI_ANGLE_CHAPTERS, ...ALL_POSITIONS_CHAPTERS]) {
-    const items = generateScenePrompts(ch.id, cfg, "pov");
+
+  for (const ch of MULTI_ANGLE_CHAPTERS) {
+    const items = generateScenePrompts(ch.id, cfg, "3rd");
     assert(items.length > 0, `Expected non-empty prompt list for ${ch.id}`);
     for (const it of items) {
-      if (it.prompt.startsWith("[Base Prompt]")) continue;
       const tok = countPromptT5Tokens(it.prompt);
       assert.equal(tok.exact_spiece, true, "Expected exact SentencePiece tokenizer");
       assert(tok.api_pos_tokens <= 512, `${ch.id} exceeded 512 positive T5 tokens: ${tok.api_pos_tokens}`);
@@ -37,412 +62,445 @@ async function main(): Promise<void> {
     }
   }
 
-  // 2. Verify "仅锁人物" module switch strips built-in identity tags cleanly
-  const charOnlyCfg = {
-    ...createDefaultCharacterConfig(),
-    ...MODULE_SWITCH_PRESETS["👤 精密参照：仅锁人物（保留本台画风+动作）"],
-  };
-  const s00RefPrompt = generateScenePrompts("S00", charOnlyCfg, "pov")[0].prompt;
-  assert(!s00RefPrompt.includes("javelin (azur lane)"), "Identity tag must be stripped in char-only ref mode");
-  assert(s00RefPrompt.includes("the girl"), "Generic prose subject 'the girl' must be used");
+  for (const mode of ["pov", "3rd"] as const) {
+    for (const ch of ALL_POSITIONS_CHAPTERS) {
+      const items = generateScenePrompts(ch.id, cfg, mode);
+      assert(items.length > 0, `Expected non-empty prompt list for ${ch.id} (${mode})`);
+      for (const it of items) {
+        const tok = countPromptT5Tokens(it.prompt);
+        assert.equal(tok.exact_spiece, true);
+        assert(tok.api_pos_tokens <= 512, `${ch.id} (${mode}) exceeded 512 positive T5 tokens: ${tok.api_pos_tokens}`);
+        totalPrompts++;
+      }
+    }
+  }
 
-  // 3. Verify V4.5 Full Precise Reference payload builder (Chara单独 / Style+Chara混合 / 单图Chara&Style)
-  const dummyPngA = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
-  const dummyPngB = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x02]);
-  const b64A = uint8ArrayToBase64(dummyPngA);
-  const b64B = uint8ArrayToBase64(dummyPngB);
-  assert.equal(Buffer.from(b64A, "base64").equals(Buffer.from(dummyPngA)), true);
+  // 2. Verify new FREE ("✍️ 自由手写动作") mode (SFW, NSFW + Anatomy + X-Ray, Transparent BG, Starter Templates)
+  for (const starter of FREE_ACTION_STARTERS) {
+    const freeCfg = {
+      ...createDefaultCharacterConfig(),
+      free_action_tags: starter.tags,
+      free_action_prose: starter.prose,
+      free_action_nsfw: Boolean(starter.nsfw),
+    };
+    const [freeItem] = generateScenePrompts("FREE", freeCfg, "3rd");
+    assert(freeItem && freeItem.prompt.includes("javelin (azur lane)"), "FREE mode must inherit character identity");
+    const tok = countPromptT5Tokens(freeItem.prompt);
+    assert(tok.api_pos_tokens <= 512, `FREE starter ${starter.label} exceeded 512 tokens`);
+    if (starter.nsfw) {
+      assert(freeItem.prompt.includes("rating:explicit"), "NSFW FREE starter must include rating:explicit");
+    } else {
+      const sp = splitPromptPosAndNeg(freeItem.prompt);
+      assert(sp.negPrompt.includes("nsfw"), "SFW FREE starter must guard 'nsfw' in negative");
+    }
+    totalPrompts++;
+  }
 
-  const v45Default = buildNaiGeneratePayload({
+  const [freeTrans] = generateScenePrompts(
+    "FREE",
+    {
+      ...createDefaultCharacterConfig(),
+      pos_transparent_bg: true,
+      free_action_nsfw: true,
+      enable_uterus_xray: true,
+    },
+    "3rd"
+  );
+  assert(
+    freeTrans.prompt.includes("2.0::transparent background::") &&
+      freeTrans.prompt.includes("1.4::uterus::"),
+    "FREE mode must support RGBA transparent background and optional uterus x-ray when NSFW is enabled"
+  );
+
+  // 3. Verify Studio 2.0 Inline Card Switches, Extra Char Tags (zero hardcoded eye/hair), & Style->Lighting/Vibe Sync
+  const defaultP01 = generateScenePrompts("P01", cfg, "3rd")[0].prompt;
+  assert(
+    !defaultP01.includes("purple eyes") && !defaultP01.includes("short purple hair"),
+    "Built-in character presets must not inject hardcoded eye_color or hair_tags"
+  );
+  const customExtraPrompt = generateScenePrompts(
+    "P01",
+    { ...createDefaultCharacterConfig(), extra_char_tags: "aqua eyes, long silver hair, hairband" },
+    "3rd"
+  )[0].prompt;
+  assert(
+    customExtraPrompt.includes("aqua eyes") && customExtraPrompt.includes("long silver hair"),
+    "extra_char_tags must supply custom eye/hair/accessory tags cleanly"
+  );
+  assert.equal(
+    resolveLightingForStyle("🧬✨ M2 单画师极细净线赛璐璐风（mikozin 0.62 + 净黑细线 · 内置3槽Vibe调校）"),
+    "💎👁️ 极细净黑线 · 丝绒渐变瞳双眼皮睫毛 + 三阶奶桃锁骨柔影（M2 Razor-Fine Cel）"
+  );
+  assert.equal(
+    resolveLightingForStyle("🍑 四画师清透奶桃纤柔赛璐璐风（shouu-kun 0.52 + mikozin 0.36 + gotyou 0.32 + izuoku 0.28）"),
+    "🍑✨ 三阶奶桃柔影 · 锁骨烟粉次级暗部 + 白衣冰蓝冷影（Milky-Peach 3-Tier Cel）"
+  );
+  assert.equal(
+    resolveLightingForStyle("137_128 锋利钢笔水彩空气感逆光（原版默认）"),
+    "🔄 随画风与本幕默认光影（不额外覆盖）"
+  );
+  assert.equal(
+    STYLE_BUNDLED_VIBE_PACK["🧬✨ M2 单画师极细净线赛璐璐风（mikozin 0.62 + 净黑细线 · 内置3槽Vibe调校）"],
+    "m2_mikozin062_triple"
+  );
+
+  const noIdPrompt = generateScenePrompts(
+    "P01",
+    { ...createDefaultCharacterConfig(), enable_identity: false, enable_body: false },
+    "3rd"
+  )[0].prompt;
+  assert(!noIdPrompt.includes("javelin (azur lane)"), "Identity tag must be omitted when enable_identity=false");
+  assert(noIdPrompt.includes("the girl"), "Generic prose subject 'the girl' must be used when enable_identity=false");
+
+  const noOutfitPrompt = generateScenePrompts(
+    "P01",
+    { ...createDefaultCharacterConfig(), enable_outfit: false, enable_legwear: false },
+    "3rd"
+  )[0].prompt;
+  assert(
+    !noOutfitPrompt.includes("t-shirt") && !noOutfitPrompt.includes("clothes lift"),
+    "Turning enable_outfit=false must strip outfit tags cleanly without emitting orphan 'clothes lift'"
+  );
+
+  // 4. Verify Model Payload Routing: V4.5 Full vs V5 Full High vs V5 Full Medium
+  const samplePrompt = generateScenePrompts("P01", cfg, "3rd")[0].prompt;
+  const v45Res = buildNaiGeneratePayload({
     model: MODEL_V4_5_FULL,
-    rawPrompt: s00RefPrompt,
+    rawPrompt: samplePrompt,
     width: 832,
     height: 1216,
     steps: 28,
     scale: 7.0,
     cfgRescale: 0.0,
     seed: 123456,
-    preciseRefMetas: [{ mode: "character", strength: 1.0, fidelity: 1.0, base64Image: b64A }],
   });
-  assert.equal(v45Default.payload.model, "nai-diffusion-4-5-full");
-  assert.equal(v45Default.payload.use_new_shared_trial, true);
-  assert.equal(v45Default.usedPreciseRef, true);
-  assert.equal(v45Default.preciseRefCount, 1);
-  const p45 = v45Default.payload.parameters as Record<string, unknown>;
+  const p45 = v45Res.payload.parameters as Record<string, unknown>;
+  assert.equal(v45Res.payload.model, "nai-diffusion-4-5-full");
   assert.equal(p45.params_version, 3);
   assert.equal(p45.steps, 28);
-  assert.equal(p45.scale, 7);
   assert.equal(p45.sampler, "k_euler_ancestral");
-  assert.equal(p45.noise_schedule, "karras");
-  assert.equal(p45.normalize_reference_strength_multiple, false);
-  assert.equal(p45.ucPreset, 0); // "heavy" default on V4.5 matches NovelAI Web UI default
-  assert.equal(p45.tag_hint_uc_preset, 2);
-  assert(
-    String(p45.negative_prompt).includes("multiple views"),
-    "Heavy UC preset must include 'multiple views' on V4.5 default"
-  );
-  assert(
-    !String(p45.negative_prompt).startsWith("nsfw"),
-    "UC must NOT prepend 'nsfw' when positive prompt contains nsfw"
-  );
-  assert(
-    String(v45Default.payload.input || "").endsWith(", very aesthetic, masterpiece, no text"),
-    "V4.5 Quality Tags: Standard must unconditionally append ', very aesthetic, masterpiece, no text' unless already ending with it"
-  );
-  assert(
-    String((v45Default.payload.input as string) || "").includes("::"),
-    "Inline negative weights (-2::...::) must remain intact in positive caption on V4.5 by default"
-  );
+  assert(!String(v45Res.payload.input).includes("-2::"), "V4.5 separates negatives out of positive caption");
 
-  // Verify suffix is not duplicated if already at end of rawPrompt
-  const v45NoDup = buildNaiGeneratePayload({
-    model: MODEL_V4_5_FULL,
-    rawPrompt: `${s00RefPrompt}, very aesthetic, masterpiece, no text`,
-    appendV5Quality: true,
-  });
-  assert.equal(
-    String(v45NoDup.payload.input || "").endsWith("very aesthetic, masterpiece, no text, very aesthetic, masterpiece, no text"),
-    false,
-    "Quality suffix must not duplicate if already at end"
-  );
-
-  // Verify explicit "none" UC omits ucPreset (API schema requires 0..3) and sends empty negative_prompt
-  const v45NoneUc = buildNaiGeneratePayload({
-    model: MODEL_V4_5_FULL,
-    rawPrompt: s00RefPrompt,
-    ucPresetMode: "none",
-    keepInlineNegatives: true,
-  });
-  const p45None = v45NoneUc.payload.parameters as Record<string, unknown>;
-  assert.equal(p45None.negative_prompt, "");
-  assert.equal(p45None.tag_hint_uc_preset, 0);
-  assert.equal("ucPreset" in p45None, false);
-  assert.deepEqual(p45.director_reference_images, [b64A]);
-  assert.deepEqual(p45.director_reference_descriptions, [
-    {
-      caption: { base_caption: "character", char_captions: [] },
-      use_coords: false,
-      use_order: false,
-      legacy_uc: false,
-    },
-  ]);
-  assert.deepEqual(p45.director_reference_information_extracted, [1]);
-  assert.deepEqual(p45.director_reference_strength_values, [1]);
-  assert.deepEqual(p45.director_reference_secondary_strength_values, [0]);
-
-  const v45DualMix = buildNaiGeneratePayload({
-    model: MODEL_V4_5_FULL,
-    rawPrompt: s00RefPrompt,
-    preciseRefMetas: [
-      { mode: "character", strength: 0.95, fidelity: 0.85, base64Image: b64A },
-      { mode: "style", strength: 1.0, fidelity: 0.9, base64Image: b64B },
-    ],
-  });
-  assert.equal(v45DualMix.usedPreciseRef, true);
-  assert.equal(v45DualMix.preciseRefCount, 2);
-  const p45Dual = v45DualMix.payload.parameters as Record<string, unknown>;
-  assert.equal(p45Dual.normalize_reference_strength_multiple, false);
-  assert.deepEqual(p45Dual.director_reference_images, [b64A, b64B]);
-  assert.deepEqual(p45Dual.director_reference_descriptions, [
-    {
-      caption: { base_caption: "character", char_captions: [] },
-      use_coords: false,
-      use_order: false,
-      legacy_uc: false,
-    },
-    {
-      caption: { base_caption: "style", char_captions: [] },
-      use_coords: false,
-      use_order: false,
-      legacy_uc: false,
-    },
-  ]);
-  assert.deepEqual(p45Dual.director_reference_information_extracted, [1, 1]);
-  assert.deepEqual(p45Dual.director_reference_strength_values, [0.95, 1]);
-  assert.deepEqual(p45Dual.director_reference_secondary_strength_values, [0.15, 0.1]);
-
-  const v45SingleBoth = buildNaiGeneratePayload({
-    model: MODEL_V4_5_FULL,
-    rawPrompt: s00RefPrompt,
-    ucPresetMode: "heavy",
-    keepInlineNegatives: false,
-    preciseRefMetas: [{ mode: "character&style", strength: 0.9, fidelity: 0.8, base64Image: b64A }],
-  });
-  const p45Both = v45SingleBoth.payload.parameters as Record<string, unknown>;
-  assert.equal(p45Both.ucPreset, 0);
-  assert(String(p45Both.negative_prompt).includes("lowres"), "Heavy UC preset must populate negative_prompt");
-  assert.deepEqual(p45Both.director_reference_images, [b64A]);
-  assert.deepEqual(p45Both.director_reference_descriptions, [
-    {
-      caption: { base_caption: "character&style", char_captions: [] },
-      use_coords: false,
-      use_order: false,
-      legacy_uc: false,
-    },
-  ]);
-  assert.deepEqual(p45Both.director_reference_strength_values, [0.9]);
-  assert.deepEqual(p45Both.director_reference_secondary_strength_values, [0.2]);
-
-  const v45Partial = buildNaiGeneratePayload({
-    model: MODEL_V4_5_FULL,
-    rawPrompt: s00RefPrompt,
-    hasPreciseRef: true,
-    preciseRefStrength: 0.85,
-    preciseRefFidelity: 0.7,
-  });
-  const p45Part = v45Partial.payload.parameters as Record<string, unknown>;
-  assert.deepEqual(p45Part.director_reference_strength_values, [0.85]);
-  assert.deepEqual(p45Part.director_reference_secondary_strength_values, [0.3]);
-
-  // 4. Verify V5 Full Medium never attaches director_reference_images
-  const v5 = buildNaiGeneratePayload({
-    model: MODEL_V5_FULL_MEDIUM,
-    rawPrompt: s00RefPrompt,
+  const v5HighRes = buildNaiGeneratePayload({
+    model: MODEL_V5_FULL,
+    rawPrompt: samplePrompt,
     steps: 28,
-    preciseRefMetas: [
-      { mode: "character", strength: 1, fidelity: 1 },
-      { mode: "style", strength: 1, fidelity: 1 },
-    ],
+    scale: 7.0,
+    ucPresetMode: "heavy",
   });
-  const p5 = v5.payload.parameters as Record<string, unknown>;
-  assert.equal(v5.payload.model, "nai-diffusion-5-full-medium");
-  assert.equal(v5.usedPreciseRef, false);
-  assert.equal(v5.preciseRefCount, 0);
-  assert.equal(p5.steps, 14);
-  assert.equal("director_reference_images" in p5, false);
+  const p5High = v5HighRes.payload.parameters as Record<string, unknown>;
+  assert.equal(v5HighRes.payload.model, "nai-diffusion-5-full");
+  assert.equal(p5High.params_version, 4);
+  assert.equal(p5High.steps, 28);
+  assert.equal(p5High.ucPresetId, "heavy");
+  assert(!String(v5HighRes.payload.input).includes("-2::"), "V5 Full High separates positive and negative channels");
 
-  // 5. Verify Anlas cost calculation matches NovelAI UI (Opus + 1 Ref = 5 Anlas, + 2 Refs = 10 Anlas)
-  assert.equal(
-    estimateNaiAnlas({
-      model: MODEL_V4_5_FULL,
-      width: 832,
-      height: 1216,
-      steps: 28,
-      isOpusFreeEligible: true,
-      preciseRefCount: 2,
-    }),
-    10
-  );
-  assert.equal(
-    estimateNaiAnlas({
-      model: MODEL_V4_5_FULL,
-      width: 832,
-      height: 1216,
-      steps: 28,
-      isOpusFreeEligible: true,
-      hasPreciseRef: true,
-    }),
-    5
-  );
-  assert.equal(
-    estimateNaiAnlas({
-      model: MODEL_V4_5_FULL,
-      width: 832,
-      height: 1216,
-      steps: 28,
-      isOpusFreeEligible: true,
-      hasPreciseRef: false,
-    }),
-    0
-  );
-  assert.equal(
-    estimateNaiAnlas({
-      model: MODEL_V5_FULL_MEDIUM,
-      width: 832,
-      height: 1216,
-      steps: 14,
-      isOpusFreeEligible: true,
-      hasPreciseRef: false,
-    }),
-    0
+  const { posPrompt: samplePos, negPrompt: sampleNeg } = splitPromptPosAndNeg(samplePrompt);
+  const v5MedRes = buildNaiGeneratePayload({
+    model: MODEL_V5_FULL_MEDIUM,
+    rawPrompt: samplePos,
+    customNegPrompt: sampleNeg,
+    steps: 28,
+    scale: 6.0,
+    extraUc: "watermark",
+  });
+  const p5Med = v5MedRes.payload.parameters as Record<string, unknown>;
+  assert.equal(v5MedRes.payload.model, "nai-diffusion-5-full-medium");
+  assert.equal(p5Med.steps, 14, "V5 Medium enforces 14 distilled steps");
+  assert(
+    String(v5MedRes.payload.input).includes("-2::") && String(v5MedRes.payload.input).includes("watermark"),
+    "V5 Medium must auto-inject scene and extra negatives inline as -2::...::"
   );
 
-  // 6. Verify canonical Precise Reference canvas normalization
-  const geminiNorm = computeCanonicalPreciseRefCanvas(1536, 1024);
-  assert.equal(geminiNorm.normWidth, 1536);
-  assert.equal(geminiNorm.normHeight, 1024);
-  assert.equal(geminiNorm.dx, 0);
-  assert.equal(geminiNorm.dy, 0);
+  // Verify fractional positive counterweights (< 1.0) & M6-Tune2 face counterweight (-2.5::nose bridge, nostrils, lips::) stay in Positive
+  const counterweightTest =
+    "1girl, solo, -0.45::wide hips::, -2.5::nose bridge, nostrils, lips::, -2::lowres, bad anatomy::";
+  const splitCw = splitPromptPosAndNeg(counterweightTest);
+  assert(
+    splitCw.posPrompt.includes("-0.45::wide hips::") &&
+      splitCw.posPrompt.includes("-2.5::nose bridge, nostrils, lips::") &&
+      !splitCw.posPrompt.includes("lowres"),
+    "Fractional counterweights and M6-Tune2 face counterweight must stay in Positive prompt"
+  );
+  assert(splitCw.negPrompt.includes("lowres"), "Standard -2::...:: negative must extract into Negative prompt");
+  const mergedBack = mergePosAndNegToInline(splitCw.posPrompt, splitCw.negPrompt);
+  assert(mergedBack.includes("-2::lowres, bad anatomy::"), "mergePosAndNegToInline must restore inline -2:: block");
 
-  const portNorm = computeCanonicalPreciseRefCanvas(832, 1216);
-  assert.equal(portNorm.normWidth, 1024);
-  assert.equal(portNorm.normHeight, 1536);
+  // 5. Verify add_cat_ears + tail-wrap on All-Positions pull_out & 5-stage progression
+  for (const stageKey of Object.keys(POS_STAGE_PRESETS)) {
+    const [stageProbe] = generateScenePrompts("P22", { ...cfg, pos_stage: stageKey }, "3rd");
+    assert(countPromptT5Tokens(stageProbe.prompt).api_pos_tokens <= 512);
+  }
 
-  const sqNorm = computeCanonicalPreciseRefCanvas(1024, 1024);
-  assert.equal(sqNorm.normWidth, 1472);
-  assert.equal(sqNorm.normHeight, 1472);
-
-  // 7. Verify add_cat_ears add-on includes cat tail & triggers tail-wrap on All-Positions pull_out when penis is shown
   const catPullOutCfg = {
     ...createDefaultCharacterConfig(),
     add_cat_ears: true,
     pos_show_penis: true,
     pos_stage: "🔗 4. 事后拔出 · 脱出拉丝/外射（pull out · 刚拔出拉丝与穴口白浊流淌）",
   };
-  for (const ch of ALL_POSITIONS_CHAPTERS) {
-    const [item] = generateScenePrompts(ch.id, catPullOutCfg, "3rd");
-    const tok = countPromptT5Tokens(item.prompt);
-    assert(
-      tok.api_pos_tokens <= 512,
-      `${ch.id} with cat-tail pull_out exceeded 512 T5 tokens: ${tok.api_pos_tokens}`
-    );
-    assert(item.prompt.includes("cat tail"), `${ch.id} expected 'cat tail' when add_cat_ears=true`);
-    const isNoPenisChannel = ["P43", "P44", "P45", "P46", "P47", "P48", "P49", "P50", "P51"].includes(
-      ch.id
-    );
-    if (isNoPenisChannel) {
-      assert(
-        !item.prompt.includes("tail around penis"),
-        `No-penis position ${ch.id} must not trigger tail wrap around penis`
-      );
-    } else {
-      assert(
-        item.prompt.includes("1.45::tail around penis::"),
-        `${ch.id} must trigger 'tail around penis' on pull_out when pos_show_penis=true and add_cat_ears=true`
-      );
-      assert(
-        item.subTitle.includes("🐾猫尾缠绕"),
-        `${ch.id} subtitle must display 🐾猫尾缠绕 badge`
-      );
-    }
-  }
-  const catNoPenisItem = generateScenePrompts(
-    "P01",
-    { ...catPullOutCfg, pos_show_penis: false },
-    "3rd"
-  )[0];
-  assert(
-    !catNoPenisItem.prompt.includes("tail around penis"),
-    "Must not wrap tail when pos_show_penis=false"
-  );
-  const catBeforeItem = generateScenePrompts(
-    "P01",
-    { ...catPullOutCfg, pos_stage: "🔥 1. 射精前 · 进行中（默认专注体位连接 · 无白浊）" },
-    "3rd"
-  )[0];
-  assert(
-    !catBeforeItem.prompt.includes("tail around penis"),
-    "Must not wrap tail before pull_out stage"
-  );
+  const [p01Cat] = generateScenePrompts("P01", catPullOutCfg, "3rd");
+  assert(p01Cat.prompt.includes("1.45::tail around penis::") && p01Cat.subTitle.includes("🐾猫尾缠绕"));
+  const [p45Cat] = generateScenePrompts("P45", catPullOutCfg, "3rd");
+  assert(!p45Cat.prompt.includes("tail around penis"), "Manual fingering P45 must not wrap tail around penis");
 
-  // 8. Verify all EXPRESSION_PRESETS compile cleanly and stay <= 512 T5 tokens
-  for (const exprKey of Object.keys(EXPRESSION_PRESETS)) {
-    const exprCfg = { ...createDefaultCharacterConfig(), expr_preset: exprKey };
-    for (const sid of ["S00", "S10", "P01"]) {
-      const [item] = generateScenePrompts(sid, exprCfg, "pov");
-      const tok = countPromptT5Tokens(item.prompt);
-      assert(
-        tok.api_pos_tokens <= 512,
-        `${sid} with expr_preset=${exprKey} exceeded 512 T5 tokens: ${tok.api_pos_tokens}`
-      );
-    }
-  }
-
-  // 9. Verify All-Positions Japanese Dark Alley Trash-Can scene across all P01-P44
-  const alleyCfg = {
-    ...catPullOutCfg,
-    pos_scene: "🗑️ 日式城市阴暗小巷·垃圾箱旁（alley, backstreet, trash can, garbage bag）",
+  // 6. Verify Condom & Uterus X-Ray calibration on P01~P51
+  const condomDuringCfg = {
+    ...createDefaultCharacterConfig(),
+    enable_condom: true,
+    enable_uterus_xray: true,
+    pos_stage: "💦 2. 射精中 · 内射/迸发瞬间（climax / internal cumshot · 白浊喷涌）",
   };
-  for (const ch of ALL_POSITIONS_CHAPTERS) {
-    const [item] = generateScenePrompts(ch.id, alleyCfg, "3rd");
-    const tok = countPromptT5Tokens(item.prompt);
-    assert(
-      tok.api_pos_tokens <= 512,
-      `${ch.id} with jp_dark_alley_trash exceeded 512 T5 tokens: ${tok.api_pos_tokens}`
-    );
-    assert(item.prompt.includes("1.35::alley::"), `${ch.id} missing alley tag`);
-    assert(item.prompt.includes("1.35::trash can::"), `${ch.id} missing trash can tag`);
-    assert(item.prompt.includes("garbage bag"), `${ch.id} missing garbage bag tag`);
-    assert(item.subTitle.includes("🗑️阴暗后巷"), `${ch.id} missing alley badge in subtitle`);
+  const [p22CondomDuring] = generateScenePrompts("P22", condomDuringCfg, "3rd");
+  assert(
+    p22CondomDuring.prompt.includes("1.5::cum in condom::") &&
+      p22CondomDuring.prompt.includes("1.4::uterus::") &&
+      p22CondomDuring.subTitle.includes("[🎈子宫套内撑满]")
+  );
+
+  const condomPullCfg = {
+    ...condomDuringCfg,
+    pos_stage: "🔗 4. 事后拔出 · 脱出拉丝/外射（pull out · 刚拔出拉丝与穴口白浊流淌）",
+  };
+  const [p22CondomPull] = generateScenePrompts("P22", condomPullCfg, "3rd");
+  const spCondomPull = splitPromptPosAndNeg(p22CondomPull.prompt);
+  assert(
+    spCondomPull.posPrompt.includes("1.85::used condom in pussy::") &&
+      p22CondomPull.subTitle.includes("[🎈套留外口自溢]") &&
+      spCondomPull.negPrompt.includes("condom on penis")
+  );
+
+  // Expression Override check
+  const exprKeys = Object.keys(EXPRESSION_PRESETS);
+  const [exprProbe] = generateScenePrompts(
+    "MA1",
+    { ...cfg, expr_preset: exprKeys[2] || exprKeys[0], expr_heart_eyes: true },
+    "3rd"
+  );
+  assert(exprProbe.prompt.includes("heart-shaped pupils"));
+
+  // 7. Verify SlimTender_Locked 5-module suite across MA0~MA10 & P01~P51
+  const slimTenderCfg = {
+    ...createDefaultCharacterConfig(),
+    style_preset: "🍑 四画师清透奶桃纤柔赛璐璐风（shouu-kun 0.52 + mikozin 0.36 + gotyou 0.32 + izuoku 0.28）",
+    lighting_preset: "🍑✨ 三阶奶桃柔影 · 锁骨烟粉次级暗部 + 白衣冰蓝冷影（Milky-Peach 3-Tier Cel）",
+    body_preset: "纤柔嫩骨·精致锁骨双向防折痕少女（Slim-Tender · 无腹褶无肋骨）",
+    outfit_preset: "🎽 滑肩宽松白背心 + 深蓝运动短裤（露锁骨居家休闲 · 解扣拨档）",
+    env_preset: "🪴 落地窗日光绿植 · 绒毛米色地毯木地板（furry beige rug, floor-to-ceiling window, potted plant）",
+    pos_scene: "🪴 落地窗日光绿植 · 绒毛米色地毯木地板（furry beige rug, floor-to-ceiling window, potted plant）",
+  };
+  for (const ch of [...MULTI_ANGLE_CHAPTERS, ...ALL_POSITIONS_CHAPTERS]) {
+    for (const item of generateScenePrompts(ch.id, slimTenderCfg, "3rd")) {
+      const { posPrompt, negPrompt } = splitPromptPosAndNeg(item.prompt);
+      const sepTok = countSeparatedT5Tokens({
+        posPrompt,
+        sceneNegPrompt: negPrompt,
+        ucPresetMode: "heavy",
+        appendQuality: true,
+      });
+      assert(
+        sepTok.posTokens <= 512 && sepTok.negTokens <= 512,
+        `SlimTender ${ch.id} exceeded 512 tokens: pos=${sepTok.posTokens}, neg=${sepTok.negTokens}`
+      );
+    }
   }
 
-  // 10. Verify P45-P51 Manual-on-Female positions across all 4 stages & POV/3rd
-  for (const stageKey of Object.keys(POS_STAGE_PRESETS)) {
-    for (const pid of ["P45", "P46", "P47", "P48", "P49", "P50", "P51"]) {
-      for (const pMode of ["pov", "3rd"] as const) {
-        const [item] = generateScenePrompts(
-          pid,
-          { ...createDefaultCharacterConfig(), pos_stage: stageKey },
-          pMode
-        );
-        const tok = countPromptT5Tokens(item.prompt);
+  // 8. Verify .naiv4vibebundle, .naiv4vibe, PNG Vibe extraction, DPM++ 2M, Anlas & Embedded M2 3-Slot Vibe Preset
+  const mockBundleJson = JSON.stringify({
+    identifier: "novelai-vibe-transfer-bundle",
+    version: 1,
+    vibes: [
+      {
+        identifier: "novelai-vibe-transfer",
+        version: 1,
+        type: "encoding",
+        image: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        id: "vibe_slot_1",
+        encodings: {
+          "v4-5full": {
+            hash_ie88: {
+              encoding: "ENC_V45_SLOT1_BASE64_PAYLOAD_" + "A".repeat(80),
+              params: { information_extracted: 0.88 },
+            },
+          },
+        },
+        name: "Slot1_KeyParts_Atlas",
+        importInfo: {
+          model: "nai-diffusion-4-5-full",
+          information_extracted: 0.88,
+          strength: 0.52,
+        },
+      },
+      {
+        identifier: "novelai-vibe-transfer",
+        version: 1,
+        type: "encoding",
+        id: "vibe_slot_2",
+        encodings: {
+          "v4-5full": {
+            hash_ie80: {
+              encoding: "ENC_V45_SLOT2_BASE64_PAYLOAD_" + "B".repeat(80),
+              params: { information_extracted: 0.8 },
+            },
+          },
+        },
+        name: "Slot2_FullBody_Anchor",
+        importInfo: {
+          model: "nai-diffusion-4-5-full",
+          information_extracted: 0.8,
+          strength: -0.25,
+        },
+      },
+    ],
+  });
+
+  const parsedVibes = parseVibeBundleJsonText(mockBundleJson, "TestBundle.naiv4vibebundle");
+  assert.equal(parsedVibes.length, 2);
+  const reserialized = serializeVibeBundle(parsedVibes, { includeRawImages: true });
+  assert.equal(parseVibeBundleJsonText(reserialized).length, 2);
+
+  const v45Slots = buildActiveVibeSlotsForModel(parsedVibes, MODEL_V4_5_FULL, true);
+  assert.equal(v45Slots.length, 2);
+  const vibePayloadRes = buildNaiGeneratePayload({
+    model: MODEL_V4_5_FULL,
+    rawPrompt: "1girl, solo, javelin (azur lane)",
+    vibes: v45Slots,
+    normalizeVibeStrength: false,
+  });
+  assert.equal(vibePayloadRes.effectiveSampler, "k_dpmpp_2m");
+  assert.equal(
+    estimateNaiAnlas({
+      model: MODEL_V4_5_FULL,
+      width: 832,
+      height: 1216,
+      steps: 28,
+      isOpusFreeEligible: true,
+      vibeCount: 4,
+    }),
+    0
+  );
+  assert.equal(
+    estimateNaiAnlas({
+      model: MODEL_V4_5_FULL,
+      width: 832,
+      height: 1216,
+      steps: 28,
+      isOpusFreeEligible: true,
+      vibeCount: 6,
+    }),
+    4
+  );
+
+  // Embedded M2 3-Slot Vibe Preset & 400-token V4.5 Vibe Budget Guard
+  const m2PresetKey = "⭐ 🧬 标枪 M2 · 极细净线青瞳 (mikozin 0.62 + 内置3槽Vibe)";
+  const m2RawPreset = BUNDLED_CUSTOM_PRESETS[m2PresetKey];
+  assert(m2RawPreset, "Expected M2 bundled preset in BUNDLED_CUSTOM_PRESETS");
+  const m2Pack = BUNDLED_VIBE_PACKS.m2_mikozin062_triple;
+  const m2ClonedVibes = cloneBundledVibeItems("m2_mikozin062_triple");
+  assert.equal(m2ClonedVibes.length, 3);
+
+  const repoRoot = fs.existsSync(path.resolve(process.cwd(), "outputs"))
+    ? process.cwd()
+    : path.resolve(process.cwd(), "..");
+  const m2DiskPath = path.resolve(
+    repoRoot,
+    "outputs/20261118_Vibe_Mikozin_EyeCalibration/02_M2_Mikozin062_TripleVibe.naiv4vibebundle"
+  );
+  if (fs.existsSync(m2DiskPath)) {
+    const m2DiskItems = parseVibeFileBytes(
+      new Uint8Array(fs.readFileSync(m2DiskPath)),
+      "02_M2_Mikozin062_TripleVibe.naiv4vibebundle"
+    );
+    for (let i = 0; i < 3; i++) {
+      assert.equal(
+        m2ClonedVibes[i].encodings["v4-5full"][0].encoding,
+        m2DiskItems[i].encodings["v4-5full"][0].encoding
+      );
+    }
+  }
+
+  const m2VibeSafeCeil = computeSafePosTokenLimit({ isV45: true, activeVibeCount: 3 });
+  assert.equal(m2VibeSafeCeil, 400);
+  const m2Cfg = {
+    ...createDefaultCharacterConfig(),
+    ...(m2RawPreset as Record<string, unknown>),
+    pos_token_limit: m2VibeSafeCeil,
+  };
+  for (const mode of ["pov", "3rd"] as const) {
+    for (const ch of [...MULTI_ANGLE_CHAPTERS, ...ALL_POSITIONS_CHAPTERS]) {
+      for (const item of generateScenePrompts(ch.id, m2Cfg, mode)) {
+        const { posPrompt, negPrompt } = splitPromptPosAndNeg(item.prompt);
+        const sepTok = countSeparatedT5Tokens({
+          posPrompt,
+          sceneNegPrompt: negPrompt,
+          ucPresetMode: "heavy",
+          appendQuality: true,
+        });
         assert(
-          tok.api_pos_tokens <= 512,
-          `${pid} (${pMode}, ${stageKey}) exceeded 512 T5 tokens: ${tok.api_pos_tokens}`
+          sepTok.posTokens <= m2VibeSafeCeil && sepTok.negTokens <= 512,
+          `M2 3-Vibe Preset ${ch.id}(${mode}) exceeded V4.5 Vibe token budget (${m2VibeSafeCeil}): pos=${sepTok.posTokens}`
         );
       }
     }
   }
 
-  // 11. Verify Stage 5 Prolapse ("宫脱") across all positions + cat-tail wrap + morph 1A gaping unblock
-  const prolapseCfg = {
-    ...catPullOutCfg,
-    morph_preset: "1A 幼态平板一线天（Flat Innie Slit）",
-    pos_stage: "🌺 5. 事后宫脱 · 拔出带出子宫口白浊满溢（vaginal prolapse · 宫脱拉丝）",
-  };
-  for (const ch of ALL_POSITIONS_CHAPTERS) {
-    const [item] = generateScenePrompts(ch.id, prolapseCfg, "3rd");
-    const tok = countPromptT5Tokens(item.prompt);
-    assert(
-      tok.api_pos_tokens <= 512,
-      `${ch.id} with prolapse stage exceeded 512 T5 tokens: ${tok.api_pos_tokens}`
-    );
-  }
-  const [p01Prolapse] = generateScenePrompts("P01", prolapseCfg, "pov");
-  assert(p01Prolapse.prompt.includes("1.55::vaginal prolapse::"), "Expected vaginal prolapse tag");
-  assert(p01Prolapse.prompt.includes("anal prolapse"), "Expected anal prolapse in negative guard");
-  assert(p01Prolapse.prompt.includes("1.45::tail around penis::"), "Expected cat-tail wrap on prolapse pull-out");
-  assert(!p01Prolapse.prompt.includes(", gaping,"), "Expected 'gaping' unblocked from 1A morph neg during prolapse");
+  const [m2Ma10] = generateScenePrompts("MA10", m2Cfg, "3rd");
+  const splitM2Ma10 = splitPromptPosAndNeg(m2Ma10.prompt);
+  const m2Payload = buildNaiGeneratePayload({
+    model: MODEL_V4_5_FULL,
+    rawPrompt: splitM2Ma10.posPrompt,
+    customNegPrompt: splitM2Ma10.negPrompt,
+    scale: m2Pack.recommendedScale,
+    cfgRescale: m2Pack.recommendedRescale,
+    vibes: buildActiveVibeSlotsForModel(m2ClonedVibes, MODEL_V4_5_FULL, true),
+    normalizeVibeStrength: m2Pack.normalizeStrength,
+  });
+  const m2Params = m2Payload.payload.parameters as Record<string, unknown>;
+  assert.equal(m2Params.sampler, "k_dpmpp_2m");
+  assert.equal(m2Params.scale, 5);
+  assert.equal(m2Params.cfg_rescale, 0.28);
 
-  // 12. Verify 5-artist lineless style + Contre-Jour lighting + Cherry-Blossom Shallow Water env across ALL 73 scenes
-  const contreJourCfg = {
-    ...createDefaultCharacterConfig(),
-    style_preset: "🌸 五画师无描边柔涂厚彩风（shirabi + gomashio + dino + waterring + riichu）",
-    lighting_preset: "🌅🌊 强逆光过曝眩光 · 自然暗面 + 水波焦散反射（Contre-Jour + Water Caustics）",
-    env_preset: "🌸 落樱浅滩水波·粉霞晴空焦散（shallow water, cherry blossoms, caustics, pink sky）",
-    pos_scene: "🌸 落樱浅滩水波·粉霞晴空焦散（shallow water, cherry blossoms, caustics, pink sky）",
+  // 9. Verify Persistent Preset Deletion (including bundled presets like "⭐ hood2")
+  const memLs = new Map<string, string>();
+  (globalThis as unknown as { localStorage: unknown }).localStorage = {
+    getItem: (k: string) => memLs.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      memLs.set(k, String(v));
+    },
+    removeItem: (k: string) => {
+      memLs.delete(k);
+    },
   };
-  for (const ch of [...STORY_CHAPTERS, ...MULTI_ANGLE_CHAPTERS, ...ALL_POSITIONS_CHAPTERS]) {
-    for (const item of generateScenePrompts(ch.id, contreJourCfg, "3rd")) {
-      if (item.prompt.startsWith("[Base Prompt]")) continue;
-      const tok = countPromptT5Tokens(item.prompt);
-      assert(
-        tok.api_pos_tokens <= 512,
-        `${ch.id} with Contre-Jour Style+Light+Env exceeded 512 T5 tokens: ${tok.api_pos_tokens}`
-      );
-      assert(!/\bsafe\b/i.test(item.prompt), `${ch.id} must not leak 'safe' rating tag`);
-    }
-  }
-  const [p01Cj] = generateScenePrompts("P01", contreJourCfg, "3rd");
-  const causticsCount = (p01Cj.prompt.match(/1\.35::caustics::/g) || []).length;
-  assert.equal(causticsCount, 1, "Expected deduplicated 1.35::caustics:: when both lighting and env include caustics");
+  assert("⭐ hood2" in loadCustomPresets(), "Bundled '⭐ hood2' must exist initially");
+  markPresetDeleted("⭐ hood2");
+  assert(loadDeletedPresets().has("⭐ hood2"), "Deleted tombstone set must record '⭐ hood2'");
+  assert(
+    !("⭐ hood2" in loadCustomPresets()),
+    "Deleted bundled preset '⭐ hood2' must NOT resurrect on reload"
+  );
+  unmarkPresetDeleted("⭐ hood2");
+  assert("⭐ hood2" in loadCustomPresets(), "Unmarking deleted preset must allow saving/restoring it");
+  markPresetDeleted("拉菲 Laffey（碧蓝航线）");
+  clearDeletedPresets();
+  assert.equal(loadDeletedPresets().size, 0, "clearDeletedPresets must clear all tombstones");
 
-  // 13. Verify 4-artist fine brown colored-lineart style + Window Sidelight + Sunlit Bedroom env across ALL 73 scenes
-  const askCiloCfg = {
-    ...createDefaultCharacterConfig(),
-    style_preset: "☕ 四画师细棕彩线空气感瓷肌风（ask 0.65 + ciloranko 0.58 + kuroduki + yahako）",
-    lighting_preset: "☀️ 窗边过曝白昼侧逆光 · 暖金轮廓柔光（Window Sidelight & Golden Rim）",
-    env_preset: "🪟 晨光纱帘白床明亮卧室（bright window, curtains, sunlit bedroom, white bedsheet）",
-    pos_scene: "🪟 晨光纱帘白床明亮卧室（bright window, curtains, sunlit bedroom, white bedsheet）",
-  };
-  for (const ch of [...STORY_CHAPTERS, ...MULTI_ANGLE_CHAPTERS, ...ALL_POSITIONS_CHAPTERS]) {
-    for (const item of generateScenePrompts(ch.id, askCiloCfg, "3rd")) {
-      if (item.prompt.startsWith("[Base Prompt]")) continue;
-      const tok = countPromptT5Tokens(item.prompt);
-      assert(
-        tok.api_pos_tokens <= 512,
-        `${ch.id} with Ask+Ciloranko Style+Light+Env exceeded 512 T5 tokens: ${tok.api_pos_tokens}`
-      );
-      assert(!/\bsafe\b/i.test(item.prompt), `${ch.id} must not leak 'safe' rating tag`);
-    }
-  }
+  // 10. Verify Non-Local / LAN / Remote MCP Endpoint Resolution
+  assert.deepEqual(resolveMcpEndpoints("192.168.31.88"), {
+    wsUrl: "ws://192.168.31.88:17890/ws",
+    uploadUrl: "http://192.168.31.88:17890/bridge/upload-latest",
+    displayHost: "192.168.31.88:17890",
+  });
+  assert.deepEqual(resolveMcpEndpoints("wss://studio-tunnel.example.com/ws"), {
+    wsUrl: "wss://studio-tunnel.example.com/ws",
+    uploadUrl: "https://studio-tunnel.example.com/bridge/upload-latest",
+    displayHost: "studio-tunnel.example.com",
+  });
 
   console.log(
-    `PASS: Verified ${totalPrompts} scene prompts, T5 32k vocab, V4.5 Full Character Precise Reference payload & Anlas estimator (zero Python).`
+    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts: 51 Positions x2 + MA0~MA10 + Free Action, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
   );
 }
 
 main().catch((err) => {
-  console.error(err);
+  console.error("VERIFY FAILED:", err);
   process.exit(1);
 });

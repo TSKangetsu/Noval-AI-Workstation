@@ -1,23 +1,24 @@
 import {
   CANVAS_PRESETS,
   MODEL_V4_5_FULL,
+  MODEL_V5_FULL,
   MODEL_V5_FULL_MEDIUM,
   NAI_IMAGE_ENDPOINT,
   V4_5_HUMAN_FOCUS_UC_BASE,
   V4_5_LIGHT_UC_BASE,
   V5_HEAVY_UC_BASE,
-  V5_QUALITY_SUFFIX,
 } from "../data/engineConstants";
 import {
+  applySmartQualitySuffix,
+  deduplicateCommaTags,
   parseStructuredPrompt,
   splitInlineNegativesFromCaption,
 } from "../engine/t5Tokenizer";
 import type {
   NaiModelId,
   NaiUcPresetMode,
-  PreciseRefMode,
-  PreciseRefSlotInput,
   SubscriptionInfo,
+  VibeTransferSlotInput,
 } from "../engine/types";
 
 export class NaiApiError extends Error {
@@ -57,11 +58,14 @@ export function estimateNaiAnlas(options: {
   height: number;
   steps?: number;
   isOpusFreeEligible?: boolean;
-  hasPreciseRef?: boolean;
-  preciseRefCount?: number;
+  vibeCount?: number;
 }): number {
   const isV45 = options.model === MODEL_V4_5_FULL;
-  const effectiveSteps = isV45 ? Math.max(1, Math.min(50, Math.round(options.steps ?? 28))) : 14;
+  const isV5High = options.model === MODEL_V5_FULL;
+  const supportsCustomSteps = isV45 || isV5High;
+  const effectiveSteps = supportsCustomSteps
+    ? Math.max(1, Math.min(50, Math.round(options.steps ?? 28)))
+    : 14;
   const pixels = options.width * options.height;
   const isOpusFreeBase = Boolean(
     options.isOpusFreeEligible && pixels <= 1048576 && effectiveSteps <= 28
@@ -76,37 +80,11 @@ export function estimateNaiAnlas(options: {
     genCost = isV45 ? Math.max(baseCost, 2) : Math.max(Math.ceil(baseCost * 1.5), 2);
   }
 
-  const refCount =
-    typeof options.preciseRefCount === "number"
-      ? Math.max(0, Math.round(options.preciseRefCount))
-      : options.hasPreciseRef
-        ? 1
-        : 0;
-  const refSurcharge = isV45 ? refCount * 5 : 0;
-  return genCost + refSurcharge;
-}
-
-export function estimateV5MediumAnlas(
-  width: number,
-  height: number,
-  steps = 14,
-  isOpusFreeEligible = false
-): number {
-  return estimateNaiAnlas({
-    model: MODEL_V5_FULL_MEDIUM,
-    width,
-    height,
-    steps,
-    isOpusFreeEligible,
-    hasPreciseRef: false,
-  });
-}
-
-export interface BuildPreciseRefMeta {
-  mode: PreciseRefMode;
-  strength: number;
-  fidelity: number;
-  base64Image?: string;
+  const activeVibeCount =
+    typeof options.vibeCount === "number" ? Math.max(0, Math.round(options.vibeCount)) : 0;
+  // Pre-encoded .naiv4vibebundle / .naiv4vibe vectors cost 0 encoding Anlas; >4 active vibes add 2 Anlas per extra slot
+  const vibeSurcharge = isV45 && activeVibeCount > 4 ? (activeVibeCount - 4) * 2 : 0;
+  return genCost + vibeSurcharge;
 }
 
 export function uint8ArrayToBase64(bytes: Uint8Array): string {
@@ -119,62 +97,79 @@ export function uint8ArrayToBase64(bytes: Uint8Array): string {
   return btoa(chunks.join(""));
 }
 
+export type NaiSamplerId =
+  | "auto"
+  | "k_euler_ancestral"
+  | "k_dpmpp_2m"
+  | "k_dpmpp_2s_ancestral"
+  | "k_euler";
+
 export function buildNaiGeneratePayload(options: {
   model?: NaiModelId;
   rawPrompt: string;
+  customNegPrompt?: string;
   width?: number;
   height?: number;
   steps?: number;
   scale?: number;
   cfgRescale?: number;
   seed?: number;
+  sampler?: NaiSamplerId;
   ucPresetMode?: NaiUcPresetMode;
   keepInlineNegatives?: boolean;
   extraUc?: string;
   appendV5Quality?: boolean;
-  hasPreciseRef?: boolean;
-  preciseRefMode?: PreciseRefMode;
-  preciseRefStrength?: number;
-  preciseRefFidelity?: number;
-  preciseRefMetas?: BuildPreciseRefMeta[];
+  vibes?: VibeTransferSlotInput[];
+  normalizeVibeStrength?: boolean;
 }): {
   payload: Record<string, unknown>;
   actualSeed: number;
   effectiveSteps: number;
-  usedPreciseRef: boolean;
-  preciseRefCount: number;
+  usedVibeTransfer: boolean;
+  vibeCount: number;
+  effectiveSampler: string;
 } {
   const model: NaiModelId =
-    options.model === MODEL_V4_5_FULL ? MODEL_V4_5_FULL : MODEL_V5_FULL_MEDIUM;
+    options.model === MODEL_V4_5_FULL
+      ? MODEL_V4_5_FULL
+      : options.model === MODEL_V5_FULL
+        ? MODEL_V5_FULL
+        : MODEL_V5_FULL_MEDIUM;
   const isV45 = model === MODEL_V4_5_FULL;
-  const effectiveSteps = isV45 ? Math.max(1, Math.min(50, Math.round(options.steps ?? 28))) : 14;
+  const isV5High = model === MODEL_V5_FULL;
+  const isV5Medium = model === MODEL_V5_FULL_MEDIUM;
+  const supportsCustomStepsAndUc = isV45 || isV5High;
+  const effectiveSteps = supportsCustomStepsAndUc
+    ? Math.max(1, Math.min(50, Math.round(options.steps ?? 28)))
+    : 14;
   const width = options.width ?? 832;
   const height = options.height ?? 1216;
-  const scale = options.scale ?? (isV45 ? 7.0 : 6.0);
-  const cfgRescale = options.cfgRescale ?? 0.0;
+  const scale = options.scale ?? (supportsCustomStepsAndUc ? 7.0 : 6.0);
+  const cfgRescale = supportsCustomStepsAndUc ? (options.cfgRescale ?? 0.0) : 0.0;
   const seed = options.seed ?? -1;
   const extraUc = options.extraUc ?? "";
+  const customNegPrompt = (options.customNegPrompt ?? "").trim();
   const appendV5Quality = options.appendV5Quality ?? true;
-  // V5 Full Medium enforces heavy UC preset; V4.5 respects user choice (default "heavy" to match NovelAI Web UI default)
-  const effectiveUcPreset: NaiUcPresetMode = isV45
+  // V5 Full Medium enforces heavy UC preset; V4.5 Full and V5 Full High respect user choice
+  const effectiveUcPreset: NaiUcPresetMode = supportsCustomStepsAndUc
     ? options.ucPresetMode ?? "heavy"
     : "heavy";
-  // Keep inline `-2::...::` weights intact in positive caption by default on V4.5 (matching web single-box behavior)
-  const keepInlineNegs = options.keepInlineNegatives ?? isV45;
+  // V4.5 Full & V5 Full High separate positive and negative prompts by default;
+  // V5 Full Medium ignores custom negative_prompt server-side, so inline -2::...:: is enforced on Medium
+  const keepInlineNegs = supportsCustomStepsAndUc
+    ? Boolean(options.keepInlineNegatives ?? false)
+    : true;
 
-  const resolvedMetas: BuildPreciseRefMeta[] = [];
-  if (isV45) {
-    if (options.preciseRefMetas && options.preciseRefMetas.length > 0) {
-      resolvedMetas.push(...options.preciseRefMetas);
-    } else if (options.hasPreciseRef) {
-      resolvedMetas.push({
-        mode: options.preciseRefMode ?? "character",
-        strength: options.preciseRefStrength ?? 1.0,
-        fidelity: options.preciseRefFidelity ?? 1.0,
-      });
+  const activeVibes: VibeTransferSlotInput[] = [];
+  if (options.vibes && options.vibes.length > 0) {
+    for (const v of options.vibes) {
+      if (v && typeof v.encoding === "string" && v.encoding.trim().length > 0) {
+        activeVibes.push(v);
+        if (activeVibes.length >= 16) break;
+      }
     }
   }
-  const usedPreciseRef = resolvedMetas.length > 0;
+  const usedVibeTransfer = activeVibes.length > 0;
 
   if (width % 64 !== 0 || height % 64 !== 0) {
     throw new NaiApiError(`分辨率必须为 64 的整数倍，当前为 ${width}x${height}`);
@@ -190,6 +185,15 @@ export function buildNaiGeneratePayload(options: {
 
   if (keepInlineNegs) {
     baseCaption = baseCaption.trim();
+    const inlineAdditions: string[] = [];
+    if (customNegPrompt) inlineAdditions.push(customNegPrompt);
+    if (isV5Medium && extraUc.trim()) inlineAdditions.push(extraUc.trim());
+    if (inlineAdditions.length > 0) {
+      const dedupInline = deduplicateCommaTags(inlineAdditions.join(", "));
+      if (dedupInline && !baseCaption.includes(`-2::${dedupInline}::`)) {
+        baseCaption = `${baseCaption.replace(/[, ]+$/g, "")}, -2::${dedupInline}::`;
+      }
+    }
     charCaptions = charCaptions.map((c) => {
       charInlineNegsList.push([]);
       return { char_caption: c.char_caption.trim(), centers: c.centers };
@@ -228,10 +232,7 @@ export function buildNaiGeneratePayload(options: {
     "no lineart",
   ].some((kw) => lowerCheck.includes(kw));
   const useStdQualityPreset = Boolean(appendV5Quality && !suppressAnimeQuality);
-  const alreadyHasStdSuffix = lowerCheck.endsWith(V5_QUALITY_SUFFIX.toLowerCase());
-  if (useStdQualityPreset && !alreadyHasStdSuffix) {
-    baseCaption = `${baseCaption.replace(/[, ]+$/g, "")}, ${V5_QUALITY_SUFFIX}`;
-  }
+  baseCaption = applySmartQualitySuffix(baseCaption, useStdQualityPreset);
 
   const fullPosLower = (
     baseCaption +
@@ -253,13 +254,16 @@ export function buildNaiGeneratePayload(options: {
     if (!wantsNsfw) ucParts.push("nsfw");
     ucParts.push(V4_5_HUMAN_FOCUS_UC_BASE);
   }
+  if (!keepInlineNegs && customNegPrompt) {
+    ucParts.push(customNegPrompt);
+  }
   if (baseInlineNegs.length > 0) {
     ucParts.push(...baseInlineNegs);
   }
-  if (extraUc.trim()) {
+  if (extraUc.trim() && !(keepInlineNegs && isV5Medium)) {
     ucParts.push(extraUc.trim());
   }
-  const negativePrompt = ucParts.join(", ");
+  const negativePrompt = deduplicateCommaTags(ucParts.join(", "));
 
   const actualSeed =
     Number.isInteger(seed) && seed > 0 && seed <= 4294967288
@@ -291,6 +295,14 @@ export function buildNaiGeneratePayload(options: {
     human_focus: 4,
   };
   const ucPresetInt = ucPresetIntMap[effectiveUcPreset];
+  const requestedSampler = options.sampler ?? "auto";
+  const effectiveSampler = isV5Medium
+    ? "k_euler_ancestral"
+    : requestedSampler !== "auto"
+      ? requestedSampler
+      : usedVibeTransfer
+        ? "k_dpmpp_2m"
+        : "k_euler_ancestral";
 
   const parameters: Record<string, unknown> = isV45
     ? {
@@ -298,7 +310,7 @@ export function buildNaiGeneratePayload(options: {
         width,
         height,
         scale: cleanScale,
-        sampler: "k_euler_ancestral",
+        sampler: effectiveSampler,
         steps: effectiveSteps,
         n_samples: 1,
         ...(ucPresetInt !== undefined ? { ucPreset: ucPresetInt } : {}),
@@ -314,7 +326,7 @@ export function buildNaiGeneratePayload(options: {
         skip_cfg_above_sigma: null,
         use_coords: useCoords,
         legacy_uc: false,
-        normalize_reference_strength_multiple: !usedPreciseRef,
+        normalize_reference_strength_multiple: true,
         inpaintImg2ImgStrength: 1.0,
         seed: actualSeed,
         characterPrompts: characterPromptsApi,
@@ -347,10 +359,10 @@ export function buildNaiGeneratePayload(options: {
         width,
         height,
         scale: cleanScale,
-        sampler: "k_euler_ancestral",
+        sampler: effectiveSampler,
         steps: effectiveSteps,
         n_samples: 1,
-        ucPresetId: "heavy",
+        ucPresetId: effectiveUcPreset,
         qualityPresetId: useStdQualityPreset ? "standard" : "none",
         autoSmea: false,
         dynamic_thresholding: false,
@@ -372,7 +384,7 @@ export function buildNaiGeneratePayload(options: {
         tag_hint_transparent_background: baseCaption.toLowerCase().includes("transparent background")
           ? true
           : null,
-        tag_hint_uc_preset: 2,
+        tag_hint_uc_preset: tagHintUcMap[effectiveUcPreset],
         v4_prompt: {
           caption: {
             base_caption: baseCaption,
@@ -394,29 +406,17 @@ export function buildNaiGeneratePayload(options: {
         image_format: "png",
       };
 
-  if (usedPreciseRef) {
-    // Official NovelAI V4.5 Precise Reference expects raw Base64 PNG strings in director_reference_images
-    parameters.director_reference_images = resolvedMetas.map(
-      (m, idx) => m.base64Image ?? `director_ref_${idx}`
+  if (usedVibeTransfer) {
+    parameters.reference_image_multiple = activeVibes.map((v) => v.encoding.trim());
+    parameters.reference_information_extracted_multiple = activeVibes.map((v) =>
+      Number(Math.max(0.01, Math.min(1.0, v.informationExtracted)).toFixed(2))
     );
-    parameters.director_reference_descriptions = resolvedMetas.map((m) => ({
-      caption: {
-        base_caption: m.mode,
-        char_captions: [],
-      },
-      use_coords: false,
-      use_order: false,
-      legacy_uc: false,
-    }));
-    parameters.director_reference_information_extracted = resolvedMetas.map(() => 1.0);
-    parameters.director_reference_strength_values = resolvedMetas.map((m) =>
-      Number(Math.max(0.0, Math.min(1.0, m.strength)).toFixed(2))
+    parameters.reference_strength_multiple = activeVibes.map((v) =>
+      Number(Math.max(-1.0, Math.min(1.0, v.strength)).toFixed(2))
     );
-    // NovelAI Director Reference API stores (1.0 - Fidelity) in secondary_strength_values
-    parameters.director_reference_secondary_strength_values = resolvedMetas.map((m) => {
-      const cleanFid = Number(Math.max(0.0, Math.min(1.0, m.fidelity)).toFixed(2));
-      return Number((1.0 - cleanFid).toFixed(2));
-    });
+    parameters.normalize_reference_strength_multiple = Boolean(
+      options.normalizeVibeStrength ?? true
+    );
   }
 
   return {
@@ -429,26 +429,10 @@ export function buildNaiGeneratePayload(options: {
     },
     actualSeed,
     effectiveSteps,
-    usedPreciseRef,
-    preciseRefCount: resolvedMetas.length,
+    usedVibeTransfer,
+    vibeCount: activeVibes.length,
+    effectiveSampler,
   };
-}
-
-export function buildV5MediumPayload(options: {
-  rawPrompt: string;
-  width?: number;
-  height?: number;
-  scale?: number;
-  cfgRescale?: number;
-  seed?: number;
-  extraUc?: string;
-  appendV5Quality?: boolean;
-}): { payload: Record<string, unknown>; actualSeed: number } {
-  const { payload, actualSeed } = buildNaiGeneratePayload({
-    ...options,
-    model: MODEL_V5_FULL_MEDIUM,
-  });
-  return { payload, actualSeed };
 }
 
 function isPngBytes(b: Uint8Array): boolean {
@@ -494,7 +478,6 @@ export async function unpackNaiResponseBytes(bytes: Uint8Array): Promise<Uint8Ar
     return bytes;
   }
 
-  // Standard ZIP archive unpacking (supports Store=0 and Deflate=8, including Data Descriptor flag)
   if (bytes.length >= 30 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04) {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     let compMethod = view.getUint16(8, true);
@@ -503,7 +486,6 @@ export async function unpackNaiResponseBytes(bytes: Uint8Array): Promise<Uint8Ar
     const extraLen = view.getUint16(28, true);
     let dataStart = 30 + nameLen + extraLen;
 
-    // If bit 3 (Data Descriptor) is set, compSize in local header may be 0; locate Central Directory
     const flags = view.getUint16(6, true);
     if ((flags & 0x0008) !== 0 || compSize === 0) {
       let eocdPos = -1;
@@ -636,7 +618,6 @@ export async function fetchSubscriptionInfo(rawToken: string): Promise<Subscript
 
   let resp: Response;
   try {
-    // CRITICAL CORS RULE: Only pass Authorization header, no custom x-correlation-id headers
     resp = await fetch(`${NAI_IMAGE_ENDPOINT}/user/subscription`, {
       method: "GET",
       headers: {
@@ -690,7 +671,7 @@ export async function fetchSubscriptionInfo(rawToken: string): Promise<Subscript
   };
 }
 
-export function computeCanonicalPreciseRefCanvas(
+function computeCanonicalVibeSourceCanvas(
   srcWidth: number,
   srcHeight: number
 ): {
@@ -728,23 +709,15 @@ export function computeCanonicalPreciseRefCanvas(
   return { normWidth, normHeight, drawWidth, drawHeight, dx, dy };
 }
 
-export async function preparePreciseReferencePng(rawBytes: Uint8Array): Promise<{
-  preparedPngBytes: Uint8Array;
-  origWidth: number;
-  origHeight: number;
-  normWidth: number;
-  normHeight: number;
-}> {
+async function prepareVibeSourcePng(rawBytes: Uint8Array): Promise<Uint8Array> {
   const copy = new Uint8Array(rawBytes.byteLength);
   copy.set(rawBytes);
   const bmp = await createImageBitmap(new Blob([copy]));
   const origWidth = bmp.width;
   const origHeight = bmp.height;
   const { normWidth, normHeight, drawWidth, drawHeight, dx, dy } =
-    computeCanonicalPreciseRefCanvas(origWidth, origHeight);
+    computeCanonicalVibeSourceCanvas(origWidth, origHeight);
 
-  // Progressive multi-step 2x halving downsample for 4K / ultra-high-res reference sheets:
-  // Single-step >2x downscaling in browser Canvas 2D causes lineart aliasing & moiré artifacts.
   let curSource: CanvasImageSource = bmp;
   let curW = origWidth;
   let curH = origHeight;
@@ -771,10 +744,9 @@ export async function preparePreciseReferencePng(rawBytes: Uint8Array): Promise<
     canvas.height = normHeight;
     const ctx = canvas.getContext("2d", { alpha: false }) || canvas.getContext("2d");
     if (!ctx) {
-      throw new NaiApiError("浏览器 Canvas 2D 上下文不可用，无法预处理精密参照图像。");
+      throw new NaiApiError("浏览器 Canvas 2D 上下文不可用，无法预处理图像。");
     }
 
-    // Standard black letterbox padding matching NovelAI Web UI / SDK preprocessing
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, normWidth, normHeight);
     ctx.imageSmoothingEnabled = true;
@@ -787,13 +759,7 @@ export async function preparePreciseReferencePng(rawBytes: Uint8Array): Promise<
         "image/png"
       );
     });
-    return {
-      preparedPngBytes: new Uint8Array(await blob.arrayBuffer()),
-      origWidth,
-      origHeight,
-      normWidth,
-      normHeight,
-    };
+    return new Uint8Array(await blob.arrayBuffer());
   } finally {
     bmp.close();
   }
@@ -803,21 +769,20 @@ export async function generateSingleImageNai(options: {
   apiToken: string;
   model?: NaiModelId;
   promptText: string;
+  customNegPrompt?: string;
   width?: number;
   height?: number;
   steps?: number;
   scale?: number;
   cfgRescale?: number;
   seed?: number;
+  sampler?: NaiSamplerId;
   ucPresetMode?: NaiUcPresetMode;
   keepInlineNegatives?: boolean;
   extraUc?: string;
   appendV5Quality?: boolean;
-  preciseRefs?: PreciseRefSlotInput[];
-  preciseRefPngBytes?: Uint8Array | null;
-  preciseRefMode?: PreciseRefMode;
-  preciseRefStrength?: number;
-  preciseRefFidelity?: number;
+  vibes?: VibeTransferSlotInput[];
+  normalizeVibeStrength?: boolean;
   isOpusFreeEligible?: boolean;
   pixel3xNearest?: boolean;
   signal?: AbortSignal;
@@ -829,8 +794,8 @@ export async function generateSingleImageNai(options: {
   elapsedSec: number;
   estimatedAnlas: number;
   model: NaiModelId;
-  usedPreciseRef: boolean;
-  preciseRefCount: number;
+  usedVibeTransfer: boolean;
+  vibeCount: number;
 }> {
   const token = normalizeToken(options.apiToken);
   if (!token) {
@@ -838,56 +803,43 @@ export async function generateSingleImageNai(options: {
   }
 
   const model: NaiModelId =
-    options.model === MODEL_V4_5_FULL ? MODEL_V4_5_FULL : MODEL_V5_FULL_MEDIUM;
+    options.model === MODEL_V4_5_FULL
+      ? MODEL_V4_5_FULL
+      : options.model === MODEL_V5_FULL
+        ? MODEL_V5_FULL
+        : MODEL_V5_FULL_MEDIUM;
   const width = options.width ?? 832;
   const height = options.height ?? 1216;
 
-  const activeRefs: PreciseRefSlotInput[] = [];
-  if (model === MODEL_V4_5_FULL) {
-    if (options.preciseRefs && options.preciseRefs.length > 0) {
-      for (const r of options.preciseRefs) {
-        if (r.pngBytes && r.pngBytes.length > 0) {
-          activeRefs.push(r);
-        }
-      }
-    } else if (options.preciseRefPngBytes && options.preciseRefPngBytes.length > 0) {
-      activeRefs.push({
-        mode: options.preciseRefMode ?? "character",
-        pngBytes: options.preciseRefPngBytes,
-        strength: options.preciseRefStrength ?? 1.0,
-        fidelity: options.preciseRefFidelity ?? 1.0,
-      });
-    }
-  }
-
-  const { payload, actualSeed, effectiveSteps, usedPreciseRef, preciseRefCount } =
-    buildNaiGeneratePayload({
-      model,
-      rawPrompt: options.promptText,
-      width,
-      height,
-      steps: options.steps,
-      scale: options.scale,
-      cfgRescale: options.cfgRescale,
-      seed: options.seed,
-      ucPresetMode: options.ucPresetMode,
-      keepInlineNegatives: options.keepInlineNegatives,
-      extraUc: options.extraUc,
-      appendV5Quality: options.appendV5Quality,
-      preciseRefMetas: activeRefs.map((r) => ({
-        mode: r.mode,
-        strength: r.strength,
-        fidelity: r.fidelity,
-        base64Image: uint8ArrayToBase64(r.pngBytes),
-      })),
-    });
+  const {
+    payload,
+    actualSeed,
+    effectiveSteps,
+    usedVibeTransfer,
+    vibeCount,
+  } = buildNaiGeneratePayload({
+    model,
+    rawPrompt: options.promptText,
+    customNegPrompt: options.customNegPrompt,
+    width,
+    height,
+    steps: options.steps,
+    scale: options.scale,
+    cfgRescale: options.cfgRescale,
+    seed: options.seed,
+    sampler: options.sampler,
+    ucPresetMode: options.ucPresetMode,
+    keepInlineNegatives: options.keepInlineNegatives,
+    extraUc: options.extraUc,
+    appendV5Quality: options.appendV5Quality,
+    vibes: options.vibes,
+    normalizeVibeStrength: options.normalizeVibeStrength,
+  });
 
   const t0 = performance.now();
   let resp: Response;
   try {
     if (model === MODEL_V4_5_FULL) {
-      // Official NovelAI V4.5 REST JSON transport: passes Base64 PNGs in parameters.director_reference_images
-      // (CORS preflight verified: Access-Control-Allow-Headers: Authorization, Content-Type; Origin: *)
       resp = await fetch(`${NAI_IMAGE_ENDPOINT}/ai/generate-image`, {
         method: "POST",
         headers: {
@@ -898,7 +850,6 @@ export async function generateSingleImageNai(options: {
         signal: options.signal,
       });
     } else {
-      // V5 Full Medium multipart request part
       const form = new FormData();
       form.append(
         "request",
@@ -941,7 +892,7 @@ export async function generateSingleImageNai(options: {
     height,
     steps: effectiveSteps,
     isOpusFreeEligible: Boolean(options.isOpusFreeEligible),
-    preciseRefCount,
+    vibeCount,
   });
 
   return {
@@ -952,35 +903,66 @@ export async function generateSingleImageNai(options: {
     elapsedSec,
     estimatedAnlas: estCost,
     model,
-    usedPreciseRef,
-    preciseRefCount,
+    usedVibeTransfer,
+    vibeCount,
   };
 }
 
-export async function generateSingleImageV5Medium(options: {
+export async function encodeVibeImageNai(options: {
   apiToken: string;
-  promptText: string;
-  width?: number;
-  height?: number;
-  scale?: number;
-  cfgRescale?: number;
-  seed?: number;
-  extraUc?: string;
-  appendV5Quality?: boolean;
-  pixel3xNearest?: boolean;
+  imageBytes: Uint8Array;
+  informationExtracted?: number;
+  model?: NaiModelId;
   signal?: AbortSignal;
 }): Promise<{
-  imageBytes: Uint8Array;
-  seed: number;
-  width: number;
-  height: number;
-  elapsedSec: number;
-  estimatedAnlas: number;
+  encodingBase64: string;
+  informationExtracted: number;
+  modelKey: string;
+  preparedPngBytes: Uint8Array;
 }> {
-  return generateSingleImageNai({
-    ...options,
-    model: MODEL_V5_FULL_MEDIUM,
-  });
+  const token = normalizeToken(options.apiToken);
+  if (!token) {
+    throw new NaiApiError("未填写 API Token！请先填入 NovelAI Persistent API Token (pst-...)");
+  }
+  const cleanIe = Number(
+    Math.max(0.01, Math.min(1.0, options.informationExtracted ?? 1.0)).toFixed(2)
+  );
+  const preparedPngBytes = await prepareVibeSourcePng(options.imageBytes);
+  const base64Img = uint8ArrayToBase64(preparedPngBytes);
+
+  let resp: Response;
+  try {
+    resp = await fetch(`${NAI_IMAGE_ENDPOINT}/ai/encode-vibe`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        image: base64Img,
+        information_extracted: cleanIe,
+        model: MODEL_V4_5_FULL,
+      }),
+      signal: options.signal,
+    });
+  } catch (err) {
+    throw new NaiApiError(`Vibe 在线编码请求网络异常：${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (!resp.ok) {
+    throw await parseApiErrorResponse(resp);
+  }
+
+  const rawBuf = new Uint8Array(await resp.arrayBuffer());
+  if (rawBuf.byteLength === 0) {
+    throw new NaiApiError("Vibe 在线编码返回数据为空。");
+  }
+  return {
+    encodingBase64: uint8ArrayToBase64(rawBuf),
+    informationExtracted: cleanIe,
+    modelKey: "v4-5full",
+    preparedPngBytes,
+  };
 }
 
 export async function upscaleSingleImageNai(options: {

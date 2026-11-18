@@ -327,7 +327,10 @@ export function applyCameraOverrideToPrompt(
   const extraNegBlocks: string[] = [];
 
   const posOnly = promptStr
-    .replace(/(?:,\s*)?(-\d+(?:\.\d+)?)::([\s\S]*?)::/g, (_m, lvl: string, rawBody: string) => {
+    .replace(/(?:,\s*)?(-\d+(?:\.\d+)?)::([\s\S]*?)::/g, (fullMatch, lvl: string, rawBody: string) => {
+      if (Math.abs(parseFloat(lvl)) < 1.0) {
+        return fullMatch;
+      }
       const body = rawBody.replace(/^[ ,]+|[ ,]+$/g, "");
       if (body.includes("nose bridge, nostrils, lips")) {
         extraNegBlocks.push(`${lvl}::${body}::`);
@@ -361,17 +364,12 @@ export function applyCameraOverrideToPrompt(
   }
 
   let proseStartIdx: number | null = null;
-  for (let i = rawParts.length - 1; i >= 0; i--) {
+  for (let i = 0; i < rawParts.length; i++) {
     const seg = rawParts[i];
-    if (seg.includes("::") && !seg.endsWith(".")) {
-      break;
-    }
+    if (!seg || seg.includes("::")) continue;
     const wordCount = seg.trim().split(/\s+/).length;
-    if (seg.endsWith(".") || wordCount >= 6) {
+    if (/^[A-Z]|^the girl\b/.test(seg.trim()) || wordCount >= 8) {
       proseStartIdx = i;
-    } else if (proseStartIdx !== null && wordCount >= 4) {
-      proseStartIdx = i;
-    } else {
       break;
     }
   }

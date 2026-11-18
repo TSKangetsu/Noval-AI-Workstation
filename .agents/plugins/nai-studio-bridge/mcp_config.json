@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "studio": {
+      "command": "node",
+      "args": [
+        "C:/Users/x4030/OneDrive/Documents/ProjectCodeTSKangetsu/novalAI/web/node_modules/tsx/dist/cli.mjs",
+        "C:/Users/x4030/OneDrive/Documents/ProjectCodeTSKangetsu/novalAI/web/src/mcp/naiStudioMcpServer.ts"
+      ]
+    }
+  }
+}

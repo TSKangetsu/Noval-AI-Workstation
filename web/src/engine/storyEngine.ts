@@ -31,7 +31,6 @@ import {
   PUBIC_PRESETS,
   QUALITY_TAGS,
   SKIN_PRESETS,
-  STORY_CHAPTERS,
   STYLE_PRESETS,
 } from "../data/engineConstants";
 import { applyCameraOverrideToPrompt, describeCameraShort } from "./cameraRig";
@@ -77,7 +76,10 @@ export function joinTags(...parts: Array<string | undefined | null>): string {
 
 export function wrapNeg(level: string, tagsStr: string, enabled: boolean): string {
   if (!enabled) return "";
-  const cleaned = tagsStr.trim().replace(/^,+|,+$/g, "");
+  const cleaned = tagsStr
+    .replace(/-?\d+(?:\.\d+)?::([\s\S]*?)::/g, "$1")
+    .trim()
+    .replace(/^,+|,+$/g, "");
   return cleaned ? `${level}::${cleaned}::` : "";
 }
 
@@ -143,6 +145,28 @@ export function isC5LowresPixelStyleActive(cfg: CharacterConfig): boolean {
 export function isM6SoftMorningSkinActive(cfg: CharacterConfig): boolean {
   if (!cfg.enable_style) return false;
   return cfg.style_preset.includes("M6") || cfg.style_preset.includes("无描边暖杏真肤");
+}
+
+export function isGalDakimakuraCgStyleActive(cfg: CharacterConfig): boolean {
+  if (!cfg.enable_style) return false;
+  return cfg.style_preset.includes("Gal抱枕CG风") || cfg.style_preset.includes("sakura yuki 0.60");
+}
+
+export function isPocketMiniLadyBodyActive(cfg: CharacterConfig): boolean {
+  if (!cfg.enable_body) return false;
+  return (
+    cfg.body_preset.includes("袖珍娇小窄肩细腰笔直长腿") ||
+    cfg.body_preset.includes("short slender mini-lady")
+  );
+}
+
+export function isMilkyPeachCelStyleActive(cfg: CharacterConfig): boolean {
+  if (!cfg.enable_style) return false;
+  return cfg.style_preset.includes("izuoku 0.28") || cfg.style_preset.includes("清透奶桃纤柔赛璐璐");
+}
+
+function is25dCelLightingCode(code: string | undefined): boolean {
+  return code === "cool_warm_25d_cel" || code === "milky_peach_3tier_cel";
 }
 
 const EXPR_EYE_CONFLICT_SET = new Set(EXPR_EYE_CONFLICT_TAGS);
@@ -229,9 +253,6 @@ export function compileExpressionOverride(
     short_label: "🔄 随本幕默认",
   };
   if (sceneId === "MA0") return inactive;
-  if ((sceneId === "S06" || sceneId === "S07") && !cfg.expr_override_sleeping) {
-    return inactive;
-  }
   if (!isExpressionOverrideActive(cfg)) return inactive;
 
   const presetInfo = EXPRESSION_PRESETS[cfg.expr_preset];
@@ -373,6 +394,7 @@ export function compileExpressionOverride(
     extraProse.push("tongue sticking out");
   } else if (mouthCode === "bite_lip") extraProse.push("biting her lower lip");
   else if (mouthCode === "pout") extraProse.push("a cute pout");
+  else if (mouthCode === "cat_mouth_w") extraProse.push("a cute cat-like :3 smile");
 
   if (cfg.expr_heart_eyes) extraProse.push("heart-shaped pupils");
   if (cfg.expr_empty_eyes) extraProse.push("dull empty eyes");
@@ -414,7 +436,10 @@ export function applyExpressionToPrompt(
   const extraNegBlocks: string[] = [];
 
   let posOnly = promptStr
-    .replace(/(?:,\s*)?(-\d+(?:\.\d+)?)::([\s\S]*?)::/g, (_m, lvl: string, rawBody: string) => {
+    .replace(/(?:,\s*)?(-\d+(?:\.\d+)?)::([\s\S]*?)::/g, (fullMatch, lvl: string, rawBody: string) => {
+      if (Math.abs(parseFloat(lvl)) < 1.0) {
+        return fullMatch;
+      }
       const body = rawBody.replace(/^[ ,]+|[ ,]+$/g, "");
       if (body.includes("nose bridge, nostrils, lips")) {
         extraNegBlocks.push(`${lvl}::${body}::`);
@@ -534,8 +559,16 @@ export function exprIf(cfg: CharacterConfig, tags: string, essential = "", scene
 
 export function proseIf(cfg: CharacterConfig, text: string, transparentBg = false): string {
   if (!cfg.enable_t5_prose) return "";
-  const body = text.trim();
+  let body = text.trim();
   if (!body) return "";
+  const hasCustomLight =
+    (LIGHTING_PRESETS[cfg.lighting_preset]?.code ?? "auto") !== "auto";
+  const is25dCelLight = is25dCelLightingCode(LIGHTING_PRESETS[cfg.lighting_preset]?.code);
+  if (isPocketMiniLadyBodyActive(cfg) && !is25dCelLight) {
+    body =
+      "Pocket-sized slender mini-lady proportions with a cute large head, slim petite body, narrow shoulders, tiny waist, trim narrow hips, and straight slender legs with a thigh gap; " +
+      body;
+  }
   if (isC5LowresPixelStyleActive(cfg)) {
     return (
       "Low-resolution retro pixel art game CG upscaled with nearest-neighbor scaling, " +
@@ -550,24 +583,30 @@ export function proseIf(cfg: CharacterConfig, text: string, transparentBg = fals
   }
   if (isM6SoftMorningSkinActive(cfg)) {
     const m6Body = body.replaceAll("her lips", "her mouth");
-    const lightClause = transparentBg
-      ? "Warm morning frontal light, "
-      : "Warm morning frontal light by cream sheer curtains, ";
-    return (
+    const lightClause = hasCustomLight
+      ? ""
+      : transparentBg
+        ? "Warm morning frontal light, "
+        : "Warm morning frontal light by cream sheer curtains, ";
+    const prefix =
       `${lightClause}` +
       "lineless rosy-apricot skin with smooth 3D shading, " +
-      `flat 2D moe anime face with big eyes and dot nose: ${m6Body}`
-    );
+      `flat 2D moe anime face with big eyes and dot nose: ${m6Body}`;
+    return prefix.charAt(0).toUpperCase() + prefix.slice(1);
   }
   if (isGlossyFigureStyleActive(cfg)) {
+    const spotClause = hasCustomLight ? "" : " under studio spotlights";
     return (
-      "DSLR macro photo of a glossy clear-coated painted PVC scale figurine under studio spotlights, " +
+      `DSLR macro photo of a glossy clear-coated painted PVC scale figurine${spotClause}, ` +
       `with sharp white plastic reflections on molded hair, lacquered skin, rigid PVC clothes, and glossy resin fluids: ${body}`
     );
   }
   if (isFigureStyleActive(cfg)) {
     const bgClause = transparentBg ? "" : " with shallow depth of field and bokeh";
     return `Macro product photo of a painted PVC scale figurine${bgClause}: ${body}`;
+  }
+  if (isGalDakimakuraCgStyleActive(cfg)) {
+    return `Polished galgame CG, porcelain skin: ${body}`;
   }
   return body;
 }
@@ -579,11 +618,19 @@ export function buildCommonModules(
 ): Record<string, string> {
   const pixelMode = isPixelStyleActive(cfg);
   const m6Mode = isM6SoftMorningSkinActive(cfg);
+  const lightInfo =
+    LIGHTING_PRESETS[cfg.lighting_preset] ??
+    LIGHTING_PRESETS["🔄 随画风与本幕默认光影（不额外覆盖）"];
+  const envInfo =
+    ENV_PRESETS[cfg.env_preset] ?? ENV_PRESETS["🔄 随本幕/体位工具栏默认环境"];
+  const is25dCelLight = is25dCelLightingCode(lightInfo.code);
   let qualPos: string;
   if (!cfg.enable_quality || pixelMode) {
     qualPos = "";
   } else if (m6Mode) {
     qualPos = "masterpiece, best quality, absurdres, year 2025";
+  } else if (is25dCelLight || isMilkyPeachCelStyleActive(cfg)) {
+    qualPos = "masterpiece, best quality, very aesthetic, absurdres, year 2025";
   } else {
     qualPos = QUALITY_TAGS;
   }
@@ -601,28 +648,43 @@ export function buildCommonModules(
       styleOnlyPos = st[0];
       styleNeg = st[1];
     }
+    if (!eyesOpen && styleOnlyPos.includes("gradient eyes")) {
+      styleOnlyPos = styleOnlyPos
+        .replace(/(?:,\s*)?\bgradient eyes\b/gi, "")
+        .replace(/^[ ,]+|[ ,]+$/g, "");
+    }
   }
 
-  const lightInfo =
-    LIGHTING_PRESETS[cfg.lighting_preset] ??
-    LIGHTING_PRESETS["🔄 随画风与本幕默认光影（不额外覆盖）"];
-  const envInfo =
-    ENV_PRESETS[cfg.env_preset] ?? ENV_PRESETS["🔄 随本幕/体位工具栏默认环境"];
-
   if (lightInfo.code !== "auto") {
-    if (lightInfo.strip_head_lighting && styleOnlyPos) {
-      const stripLightSet = new Set([
-        "front lighting",
-        "warm lighting",
-        "warm indoor lighting",
-        "soft lighting",
-        "diffused lighting",
-        "gentle chiaroscuro",
-        "low contrast",
-        "muted colors",
-        "backlighting",
-        "rim lighting",
-      ]);
+    if ((lightInfo.strip_head_lighting || lightInfo.strip_style_tags?.length) && styleOnlyPos) {
+      const stripLightSet = new Set<string>(
+        lightInfo.strip_head_lighting
+          ? [
+              "front lighting",
+              "warm lighting",
+              "warm indoor lighting",
+              "soft lighting",
+              "diffused lighting",
+              "gentle chiaroscuro",
+              "low contrast",
+              "muted color",
+              "muted colors",
+              "dim lighting",
+              "shade",
+              "dark",
+              "partially shaded face",
+              "backlighting",
+              "rim lighting",
+            ]
+          : []
+      );
+      for (const extraStrip of lightInfo.strip_style_tags ?? []) {
+        stripLightSet.add(extraStrip.toLowerCase());
+      }
+      for (const lt of lightInfo.tags.split(",")) {
+        const bareLt = lt.trim().replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+        if (bareLt) stripLightSet.add(bareLt);
+      }
       styleOnlyPos = styleOnlyPos
         .split(",")
         .map((t) => t.trim())
@@ -641,6 +703,9 @@ export function buildCommonModules(
         .filter((t) => t && !unblockSet.has(t.toLowerCase()))
         .join(", ");
     }
+    if (lightInfo.extra_neg) {
+      styleNeg = joinTags(styleNeg, lightInfo.extra_neg);
+    }
   }
   if (cfg.enable_background && envInfo.code !== "auto" && envInfo.unblock_dark && styleNeg) {
     styleNeg = styleNeg
@@ -650,7 +715,13 @@ export function buildCommonModules(
       .join(", ");
   }
 
-  const headPos = joinTags(qualPos, styleOnlyPos, lightInfo.code !== "auto" ? lightInfo.tags : "");
+  let lightTagsUsed = lightInfo.code !== "auto" ? lightInfo.tags : "";
+  if (!eyesOpen && lightTagsUsed) {
+    lightTagsUsed = lightTagsUsed
+      .replace(/(?:,\s*)?(?:\d+(?:\.\d+)?::)?(?:gradient eyes|small white eye highlights)(?:::)?/gi, "")
+      .replace(/^[ ,]+|[ ,]+$/g, "");
+  }
+  const headPos = joinTags(qualPos, styleOnlyPos, lightTagsUsed);
 
   const outfitInfo =
     OUTFIT_PRESETS[cfg.outfit_preset] ??
@@ -669,8 +740,6 @@ export function buildCommonModules(
   );
 
   let charId = "";
-  let eyeTag = "";
-  let hairTag = "";
   let engName = "the girl";
   let rawCanonNeg = "";
 
@@ -684,36 +753,6 @@ export function buildCommonModules(
       }
     } else {
       charId = rawCid || "original";
-    }
-
-    eyeTag = eyesOpen ? cfg.eye_color.trim() : "";
-    if (m6Mode && eyesOpen) {
-      if (eyeTag === "purple eyes") {
-        eyeTag = "tareme, blue-purple eyes";
-      } else if (!eyeTag.includes("tareme")) {
-        eyeTag = joinTags("tareme", eyeTag);
-      }
-    }
-
-    hairTag = cfg.hair_tags.trim();
-    if (m6Mode && hairTag) {
-      if (hairTag.includes("short purple hair")) {
-        hairTag = hairTag.replace(
-          "short purple hair",
-          "1.3::light purple hair::, grey-tinted hair, short hair"
-        );
-      } else if (hairTag.includes("purple hair")) {
-        hairTag = hairTag.replace("purple hair", "1.3::light purple hair::, grey-tinted hair");
-      } else if (
-        !["grey-tinted hair", "grey hair", "white hair", "silver hair"].some((c) =>
-          hairTag.includes(c)
-        )
-      ) {
-        hairTag = joinTags(hairTag, "grey-tinted hair");
-      }
-    }
-    if (isSleepDisheveled && !hairTag.includes("disheveled hair")) {
-      hairTag = joinTags(hairTag, "disheveled hair");
     }
     engName = cfg.eng_name.trim() || "the girl";
     rawCanonNeg = cfg.canon_neg_tags.trim();
@@ -746,7 +785,36 @@ export function buildCommonModules(
         bodyNeg = "plump, obese";
       }
     }
+    if (is25dCelLight) {
+      bodyPos = bodyPos
+        .replace(/(?:,\s*)?-0\.\d+::[\s\S]*?::/g, "")
+        .replace(/0\.2[5-9]::chibi::/g, "0.12::chibi::")
+        .replace(/^[ ,]+|[ ,]+$/g, "");
+    }
+    if (bodyPos.includes("::chibi::") && styleNeg) {
+      // Unblock 'chibi' / 'big head' from conflicting style negatives while preserving 'super deformed' anti-SD cap
+      const chibiAllowSet = new Set(["chibi", "big head", "wide face"]);
+      styleNeg = styleNeg
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => Boolean(t) && !chibiAllowSet.has(t.toLowerCase()))
+        .join(", ");
+    }
     const [bustPos, bustNeg] = BUST_PRESETS[cfg.bust_preset] ?? ["", ""];
+    if (bodyPos.includes("small breasts")) {
+      if (bustPos) {
+        bodyPos = bodyPos
+          .replace(/(?:,\s*)?\bsmall breasts\b/g, "")
+          .replace(/^[ ,]+|[ ,]+$/g, "");
+      } else {
+        bodyNeg = joinTags(
+          bodyNeg,
+          cfg.body_preset.includes("Slim-Tender")
+            ? "large breasts, medium breasts, huge breasts"
+            : "large breasts, huge breasts"
+        );
+      }
+    }
     const skinPos = SKIN_PRESETS[cfg.skin_preset] ?? "";
     const extras: string[] = [];
     if (cfg.add_cat_ears) extras.push("cat ears, animal ears, animal ear fluff, cat tail");
@@ -760,7 +828,7 @@ export function buildCommonModules(
     bodyFullNeg = joinTags(bodyNeg, bustNeg);
   }
 
-  const charRest = joinTags(eyeTag, hairTag, bodyFullPos);
+  const charRest = bodyFullPos;
   const charCore = joinTags(charId, charRest);
 
   const customOutfit = cfg.custom_outfit_tags.trim();
@@ -840,14 +908,16 @@ export function buildCommonModules(
 
   const reqState = OUTFIT_STATE_PRESETS[cfg.outfit_state_mode] ?? "auto";
   let effState: string;
-  if (!cfg.enable_clothing_state || reqState === "intact") {
+  if (!cfg.enable_outfit || !cfg.enable_clothing_state || reqState === "intact") {
     effState = "intact";
   } else if (outfitKind === "nude") {
     effState = "nude";
   } else if (outfitKind === "custom" && reqState === "auto") {
     effState = "intact";
   } else if (reqState === "auto") {
-    effState = ["skirt", "shorts", "leotard", "swimsuit", "skirt_or_canon"].includes(bottomType)
+    effState = ["skirt", "shorts", "leotard", "swimsuit", "panties", "skirt_or_canon"].includes(
+      bottomType
+    )
       ? "keep_bottom_aside"
       : "bottomless";
   } else {
@@ -866,12 +936,16 @@ export function buildCommonModules(
       statePos = "bikini aside, swimsuit aside";
     } else if (bottomType === "shorts") {
       statePos = "unbuttoned, open shorts, panties aside";
+    } else if (bottomType === "panties") {
+      statePos = "clothes lift, panties aside";
     } else {
       statePos = "clothes lift, skirt lift, panties aside";
     }
   } else if (effState === "half_off") {
     if (bottomType === "shorts") {
       statePos = "disheveled clothes, open clothes, open shorts, panties around one leg";
+    } else if (bottomType === "panties") {
+      statePos = "disheveled clothes, open clothes, clothes lift, panties around one leg";
     } else if (["skirt", "leotard", "swimsuit", "skirt_or_canon"].includes(bottomType)) {
       statePos = "disheveled clothes, open clothes, skirt lift, panties around one leg";
     } else {
@@ -896,7 +970,7 @@ export function buildCommonModules(
   const outfitIntact = designIntact;
   const outfitUpperOral =
     (effState === "intact" || effState === "keep_bottom_aside") &&
-    ["skirt", "shorts", "leotard", "swimsuit", "skirt_or_canon"].includes(bottomType)
+    ["skirt", "shorts", "leotard", "swimsuit", "panties", "skirt_or_canon"].includes(bottomType)
       ? outfitIntact
       : outfitPos;
 
@@ -985,13 +1059,24 @@ export function buildCommonModules(
       const lightTagSet = new Set(
         (lightInfo.code !== "auto" ? lightInfo.tags : "")
           .split(",")
-          .map((t) => t.trim().toLowerCase())
+          .map((t) => t.trim().replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase())
           .filter(Boolean)
       );
-      const dedupEnv = envInfo.tags
+      let rawEnvTags = envInfo.tags;
+      if (is25dCelLight && envInfo.code === "sunlit_rug_floor_window") {
+        rawEnvTags = rawEnvTags.replace(
+          "large floor-to-ceiling window,",
+          "large floor-to-ceiling window, clear blue sky,"
+        );
+      }
+      const dedupEnv = rawEnvTags
         .split(",")
         .map((t) => t.trim())
-        .filter((t) => t && !lightTagSet.has(t.toLowerCase()))
+        .filter((t) => {
+          if (!t) return false;
+          const bare = t.replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+          return !lightTagSet.has(bare);
+        })
         .join(", ");
       bgCouch = dedupEnv;
       bgSleepCouch = dedupEnv;
@@ -1092,23 +1177,40 @@ export function generateScenePrompts(
   const isPov = mode === "pov";
   const f = cfg.fluid_scale;
   const af = cfg.enable_action_fluids;
-  const rem = cfg.enable_remnants;
   const negOn = cfg.enable_negatives;
   const exprCtrl = compileExpressionOverride(cfg, sceneId);
   const defEyesOpen = exprCtrl.active ? exprCtrl.eyes_open : true;
-  const sleepEyesOpen = exprCtrl.active ? exprCtrl.eyes_open : false;
   let results: ScenePromptItem[] = [];
 
   if (sceneId in MULTI_ANGLE_TEMPLATES) {
     const tpl = MULTI_ANGLE_TEMPLATES[sceneId];
     const m = buildCommonModules(cfg, defEyesOpen);
-    const maOutfit = m.front_outfit_tags;
-    const maShirtProse = m.front_shirt_prose;
-    const maLeg = m.front_leg_tags;
     const nsfwOn = cfg.enable_multi_angle_nsfw;
+    const isMa7Nsfw = sceneId === "MA7" && nsfwOn;
+    const maOutfit = isMa7Nsfw ? m.outfit_pos : m.front_outfit_tags;
+    const maShirtProse = isMa7Nsfw ? m.outfit_prose_clause : m.front_shirt_prose;
+    const maLeg = m.front_leg_tags;
     const nsfwPrefix = nsfwOn ? "rating:explicit, nsfw, uncensored" : "";
-    const anatMa = nsfwOn && cfg.enable_anatomy ? m.anat_pos : "";
+    let anatMa = nsfwOn && cfg.enable_anatomy ? m.anat_pos : "";
+    if (isMa7Nsfw) {
+      if (anatMa) {
+        if (/spread pussy/i.test(anatMa)) {
+          anatMa = anatMa.replace(/(?:\d+(?:\.\d+)?::)?spread pussy(?:::)?/gi, "1.25::spread pussy::");
+        } else {
+          anatMa = joinTags(anatMa, "labia, 1.25::spread pussy::");
+        }
+        anatMa = joinTags(anatMa, "1.25::spreading own pussy::, fingers");
+      } else {
+        anatMa = "groin, pussy, labia, 1.25::spread pussy::, 1.25::spreading own pussy::, fingers";
+      }
+    }
     let maTailNeg = m.common_tail_neg;
+    if (isMa7Nsfw) {
+      maTailNeg = joinTags(
+        "covering crotch, covering pussy, covering breasts, censor, mosaic censoring, bar censor, gaping",
+        maTailNeg
+      );
+    }
     if (maTailNeg) {
       let negTokens = maTailNeg
         .split(",")
@@ -1126,7 +1228,20 @@ export function generateScenePrompts(
     } else if (!nsfwOn && !maOutfit.includes("nude")) {
       maTailNeg = "nsfw";
     }
-    let maScene = String(tpl.scene);
+    let maScene = isMa7Nsfw
+      ? "cowboy shot, 1.35::upper body::, legs apart, head tilt, peace sign near cheek, playful cheerful expression, one eye slightly narrowed, looking at viewer, blurred warm indoor background"
+      : String(tpl.scene);
+    if (is25dCelLightingCode(LIGHTING_PRESETS[cfg.lighting_preset]?.code)) {
+      if ((sceneId === "MA9" || sceneId === "MA10") && !/\bclear blue sky\b/i.test(maScene)) {
+        maScene = maScene.replace("large floor-to-ceiling window,", "large floor-to-ceiling window, clear blue sky,");
+      }
+      maScene = maScene
+        .replace(/(?:,\s*)?backlighting\b/gi, "")
+        .replace(/(?:,\s*)?sunlight\b/gi, "");
+    }
+    const maBaseProse = isMa7Nsfw
+      ? "in a thighs-up shot tilting her head and making a playful peace sign near her cheek with one hand while her other hand reaches down to spread her pussy open toward the camera with a cheerful expression."
+      : tpl.prose;
     if (exprCtrl.active) {
       for (const baked of [
         "playful cheerful expression",
@@ -1135,7 +1250,12 @@ export function generateScenePrompts(
         "one eye slightly narrowed",
         "gentle relaxed gaze",
         "curious bright gaze",
+        "gentle smile",
         "slight smile",
+        "half-closed eyes",
+        "tareme",
+        "nose blush",
+        "blush",
       ]) {
         const escaped = baked.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         maScene = maScene.replace(new RegExp(`(?:,\\s*)?\\b${escaped}\\b`, "gi"), "");
@@ -1143,6 +1263,9 @@ export function generateScenePrompts(
       maScene = maScene.replace(/^[ ,]+|[ ,]+$/g, "");
       maScene = joinTags(maScene, exprCtrl.pos_tags_str);
     }
+    const maSubTitle = isMa7Nsfw
+      ? "【MA7 · 近景歪头比耶 + 单手掰穴 (1.25 Spread)】"
+      : `【${tpl.title}】`;
     const pMa = joinTags(
       m.head_pos,
       "1girl, solo",
@@ -1152,10 +1275,10 @@ export function generateScenePrompts(
       nsfwPrefix,
       anatMa,
       maScene,
-      proseIf(cfg, `${m.name}${maShirtProse} ${tpl.prose}`),
+      proseIf(cfg, `${m.name}${maShirtProse} ${maBaseProse}`),
       wrapTailNeg(m, maTailNeg, negOn)
     );
-    results.push({ subTitle: `【${tpl.title}】`, canvas: tpl.canvas, prompt: pMa });
+    results.push({ subTitle: maSubTitle, canvas: tpl.canvas, prompt: pMa });
   } else if (sceneId in ALL_POSITIONS_TEMPLATES) {
     const tpl = ALL_POSITIONS_TEMPLATES[sceneId];
     const channel = tpl.channel;
@@ -1163,11 +1286,20 @@ export function generateScenePrompts(
     const transBg = Boolean(cfg.pos_transparent_bg);
     const maleCode = POS_MALE_MODE_PRESETS[cfg.pos_male_mode] ?? "normal";
     const showP = Boolean(cfg.pos_show_penis);
+    const condomOn = Boolean(cfg.enable_condom);
     const stageCode = POS_STAGE_PRESETS[cfg.pos_stage] ?? "before";
     const isManualFemale = ["fingering", "grope_fingering", "clit_tease", "breast_grope"].includes(
       channel
     );
     const isPullOutLike = stageCode === "pull_out" || stageCode === "prolapse";
+    const condomBadge =
+      condomOn && (channel === "vaginal" || (!isManualFemale && channel !== "solo" && showP))
+        ? channel === "vaginal" && isPullOutLike
+          ? " · [🎈套留外口自溢]"
+          : channel === "vaginal" && (stageCode === "during" || stageCode === "after_inside")
+            ? " · [🎈子宫套内撑满]"
+            : " · [🎈戴套]"
+        : "";
     const catTailWrapActive =
       Boolean(cfg.add_cat_ears) &&
       channel !== "solo" &&
@@ -1250,13 +1382,27 @@ export function generateScenePrompts(
       const headSet = new Set(
         headUsed
           .split(",")
-          .map((t) => t.trim().toLowerCase())
+          .map((t) => t.trim().replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase())
           .filter(Boolean)
       );
-      bgUsed = scenePreset.tags
+      let rawSceneTags = scenePreset.tags;
+      if (
+        is25dCelLightingCode(LIGHTING_PRESETS[cfg.lighting_preset]?.code) &&
+        scenePreset.code === "sunlit_rug_floor_window"
+      ) {
+        rawSceneTags = rawSceneTags.replace(
+          "large floor-to-ceiling window,",
+          "large floor-to-ceiling window, clear blue sky,"
+        );
+      }
+      bgUsed = rawSceneTags
         .split(",")
         .map((t) => t.trim())
-        .filter((t) => t && !headSet.has(t.toLowerCase()))
+        .filter((t) => {
+          if (!t) return false;
+          const bare = t.replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+          return !headSet.has(bare);
+        })
         .join(", ");
       bgProse = scenePreset.prose;
       poseUsed = scenePreset.strip_indoor_pose
@@ -1568,9 +1714,10 @@ export function generateScenePrompts(
             organTags = joinTags(
               m.anat_pos,
               "vaginal, insertion, penis",
+              condomOn ? "1.35::condom::, 1.3::condom on penis::" : "",
               af ? wtag("pussy juice", 1.2, f) : ""
             );
-            organProse = "";
+            organProse = condomOn ? ", wearing a snug translucent condom" : "";
           } else {
             organTags = joinTags(
               m.anat_pos,
@@ -1580,38 +1727,82 @@ export function generateScenePrompts(
             organProse = ", keeping her lower anatomy actively parted";
           }
         } else if (stageCode === "during") {
-          const baseOrg = showP
-            ? joinTags(m.anat_pos, "vaginal, insertion, penis")
-            : joinTags(m.anat_pos, "1.3::spread pussy::, 0.55::gaping::, twitching");
-          organTags = joinTags(
-            baseOrg,
-            "internal cumshot, ejaculation, climax, trembling, twitching",
-            wtag("cum", 1.35, f),
-            wtag("cum in pussy", 1.4, f),
-            wtag("cum overflow", 1.35, f),
-            "pussy juice, sweat"
-          );
-          organProse =
-            (showP ? "" : ", keeping her lower anatomy actively parted") +
-            ", climaxing during internal ejaculation as thick white cum begins overflowing from their tightly joined base";
+          if (condomOn) {
+            const baseOrg = showP
+              ? joinTags(m.anat_pos, "vaginal, insertion, penis, 1.4::condom on penis::")
+              : joinTags(m.anat_pos, "1.3::spread pussy::, 1.4::condom::");
+            organTags = joinTags(
+              baseOrg,
+              "1.5::x-ray::, 1.45::cross-section::, 1.4::uterus::, cervix, 1.35::cervical penetration::, ejaculation, climax, 1.5::cum in condom::, cum inflation, stomach bulge, trembling, twitching",
+              wtag("cum", 1.35, f),
+              "pussy juice, sweat"
+            );
+            organProse =
+              (showP ? "" : ", keeping her lower anatomy actively parted") +
+              "; in a cutaway x-ray cross-section of her womb, the condom tip on his penis pushes through her cervix and inflates like a large taut white balloon stretching and filling the entire interior of her uterus with thick white cum";
+          } else {
+            const baseOrg = showP
+              ? joinTags(m.anat_pos, "vaginal, insertion, penis")
+              : joinTags(m.anat_pos, "1.3::spread pussy::, 0.55::gaping::, twitching");
+            organTags = joinTags(
+              baseOrg,
+              "internal cumshot, ejaculation, climax, trembling, twitching",
+              wtag("cum", 1.35, f),
+              wtag("cum in pussy", 1.4, f),
+              wtag("cum overflow", 1.35, f),
+              "pussy juice, sweat"
+            );
+            organProse =
+              (showP ? "" : ", keeping her lower anatomy actively parted") +
+              ", climaxing during internal ejaculation as thick white cum begins overflowing from their tightly joined base";
+          }
         } else if (stageCode === "after_inside") {
-          const baseOrg = showP
-            ? joinTags(m.anat_pos, "vaginal, insertion, penis")
-            : joinTags(m.anat_pos, "1.3::spread pussy::, 0.55::gaping::, twitching");
-          organTags = joinTags(
-            baseOrg,
-            "after vaginal, after ejaculation, heavy breathing, trembling",
-            wtag("cum", 1.35, f),
-            wtag("cum in pussy", 1.45, f),
-            wtag("cum overflow", 1.45, f),
-            wtag("cumdrip", 1.35, f),
-            "cum on thighs, pussy juice, sweat"
-          );
-          organProse =
-            (showP ? "" : ", keeping her lower anatomy actively parted") +
-            ", resting right after internal ejaculation while still deeply joined together as thick white cum pools and overflows";
+          if (condomOn) {
+            const baseOrg = showP
+              ? joinTags(m.anat_pos, "vaginal, insertion, penis, 1.4::condom on penis::")
+              : joinTags(m.anat_pos, "1.3::spread pussy::, 1.4::condom::");
+            organTags = joinTags(
+              baseOrg,
+              "1.5::x-ray::, 1.45::cross-section::, 1.4::uterus::, cervix, 1.35::cervical penetration::, after vaginal, after ejaculation, 1.5::cum in condom::, cum inflation, stomach bulge, heavy breathing, trembling",
+              wtag("cum", 1.35, f),
+              "pussy juice, sweat"
+            );
+            organProse =
+              (showP ? "" : ", keeping her lower anatomy actively parted") +
+              "; in a cutaway x-ray cross-section of her womb, the condom on his penis stays ballooned wide open like a taut white pouch molding and filling the entire interior of her uterus";
+          } else {
+            const baseOrg = showP
+              ? joinTags(m.anat_pos, "vaginal, insertion, penis")
+              : joinTags(m.anat_pos, "1.3::spread pussy::, 0.55::gaping::, twitching");
+            organTags = joinTags(
+              baseOrg,
+              "after vaginal, after ejaculation, heavy breathing, trembling",
+              wtag("cum", 1.35, f),
+              wtag("cum in pussy", 1.45, f),
+              wtag("cum overflow", 1.45, f),
+              wtag("cumdrip", 1.35, f),
+              "cum on thighs, pussy juice, sweat"
+            );
+            organProse =
+              (showP ? "" : ", keeping her lower anatomy actively parted") +
+              ", resting right after internal ejaculation while still deeply joined together as thick white cum pools and overflows";
+          }
         } else if (stageCode === "prolapse") {
-          if (showP) {
+          if (condomOn) {
+            const shaftPart = showP ? ", 1.4::penis::, erection, glans, twitching penis" : "";
+            organTags = joinTags(
+              m.anat_pos,
+              `1.35::after vaginal::, 1.4::pull out::, after sex, 1.15::vaginal prolapse::, twitching${shaftPart}`,
+              "1.85::used condom in pussy::, 1.2::used condom::, 1.5::condom::, 1.4::cum in condom::",
+              wtag("cum", 1.4, f),
+              wtag("cum overflow", 1.4, f),
+              wtag("cumdrip", 1.45, f),
+              "puddle, cum on thighs, pussy juice, sweat"
+            );
+            organProse = showP
+              ? ", right after her partner pulls his bare uncovered pink glans and shaft out; a single translucent white latex condom stays caught inside her swollen prolapsed vaginal entrance with its rolled circular rubber ring hanging clearly outside her labia, spilling thick white cum down into a puddle"
+              : ", right after withdrawal with a single translucent white latex condom caught inside her swollen prolapsed vaginal entrance with its rolled circular rubber ring hanging clearly outside her labia, spilling thick white cum down into a puddle";
+          } else if (showP) {
             organTags = joinTags(
               m.anat_pos,
               "1.35::after vaginal::, 1.4::pull out::, after sex, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, twitching, penis, erection, twitching penis, cum on penis",
@@ -1639,7 +1830,21 @@ export function generateScenePrompts(
               ", right after withdrawal, leaving a glistening pink prolapsed cervix protruding and dripping with thick white cum and sticky strings";
           }
         } else {
-          if (showP) {
+          if (condomOn) {
+            const shaftPart = showP ? ", 1.4::penis::, erection, glans, twitching penis" : "";
+            organTags = joinTags(
+              m.anat_pos,
+              `1.35::after vaginal::, 1.4::pull out::, after sex${shaftPart}, spread pussy, 0.55::gaping::`,
+              "1.85::used condom in pussy::, 1.2::used condom::, 1.5::condom::, 1.4::cum in condom::",
+              wtag("cum", 1.4, f),
+              wtag("cum overflow", 1.4, f),
+              wtag("cumdrip", 1.45, f),
+              "puddle, cum on thighs, pussy juice, sweat"
+            );
+            organProse = showP
+              ? ", right after her partner pulls his bare uncovered pink glans and shaft out; a single translucent white latex condom hangs halfway out of her vaginal entrance with its rolled circular rubber ring clearly visible outside her labia, spilling thick white cum down into a puddle"
+              : ", right after withdrawal with a single translucent white latex condom hanging halfway out of her parted vaginal entrance with its rolled circular rubber ring clearly visible outside her labia, spilling thick white cum down into a puddle";
+          } else if (showP) {
             organTags = joinTags(
               m.anat_pos,
               "1.35::after vaginal::, 1.4::pull out::, after sex, penis, erection, twitching penis, cum on penis, spread pussy, 0.55::gaping::",
@@ -1668,13 +1873,16 @@ export function generateScenePrompts(
           }
         }
       } else if (channel === "oral") {
+        const oralCondom = showP && condomOn ? ", 1.3::condom::, 1.25::condom on penis::" : "";
+        const oralUsedCondom =
+          showP && condomOn ? ", 1.35::condom::, 1.3::condom on penis::, 1.35::cum in condom::, used condom" : "";
         if (stageCode === "before") {
           if (showP) {
             organTags = joinTags(
-              "oral, fellatio, penis, open mouth, tongue, saliva",
+              `oral, fellatio, penis${oralCondom}, open mouth, tongue, saliva`,
               af ? wtag("saliva trail", 1.2, f) : ""
             );
-            organProse = "";
+            organProse = condomOn ? ", wearing a condom" : "";
           } else {
             organTags = joinTags(
               "1.3::open mouth::, 1.35::o-shaped mouth::, tongue out, saliva",
@@ -1684,52 +1892,66 @@ export function generateScenePrompts(
           }
         } else if (stageCode === "during") {
           const baseOrg = showP
-            ? "oral, fellatio, penis, open mouth, tongue, saliva"
+            ? `oral, fellatio, penis${oralUsedCondom}, open mouth, tongue, saliva`
             : "1.3::open mouth::, 1.35::o-shaped mouth::, tongue out, saliva";
-          organTags = joinTags(
-            baseOrg,
-            "ejaculation, climax, swallowing",
-            wtag("cum", 1.35, f),
-            wtag("cum in mouth", 1.4, f),
-            wtag("cum overflow", 1.35, f),
-            "cum on tongue, saliva"
-          );
+          organTags = showP && condomOn
+            ? joinTags(baseOrg, "ejaculation, climax, bulging condom", wtag("cum", 1.3, f), "saliva")
+            : joinTags(
+                baseOrg,
+                "ejaculation, climax, swallowing",
+                wtag("cum", 1.35, f),
+                wtag("cum in mouth", 1.4, f),
+                wtag("cum overflow", 1.35, f),
+                "cum on tongue, saliva"
+              );
           organProse =
-            (showP ? "" : ", keeping her mouth hollowed open with tongue extended") +
-            ", during oral ejaculation as thick white cum fills her mouth and overflows past her lips";
+            showP && condomOn
+              ? ", during oral ejaculation as thick white fluid fills and swells the condom tip"
+              : (showP ? "" : ", keeping her mouth hollowed open with tongue extended") +
+                ", during oral ejaculation as thick white cum fills her mouth and overflows past her lips";
         } else if (stageCode === "after_inside") {
           const baseOrg = showP
-            ? "oral, fellatio, penis, open mouth, tongue, saliva"
+            ? `oral, fellatio, penis${oralUsedCondom}, open mouth, tongue, saliva`
             : "1.3::open mouth::, 1.35::o-shaped mouth::, tongue out, saliva";
-          organTags = joinTags(
-            baseOrg,
-            "after fellatio, after ejaculation, heavy breathing",
-            wtag("cum", 1.35, f),
-            wtag("cum in mouth", 1.4, f),
-            wtag("cum on tongue", 1.35, f),
-            "cum on lips",
-            wtag("cum string", 1.3, f),
-            "saliva trail"
-          );
+          organTags = showP && condomOn
+            ? joinTags(baseOrg, "after fellatio, after ejaculation, bulging condom", wtag("cum", 1.3, f), "saliva trail")
+            : joinTags(
+                baseOrg,
+                "after fellatio, after ejaculation, heavy breathing",
+                wtag("cum", 1.35, f),
+                wtag("cum in mouth", 1.4, f),
+                wtag("cum on tongue", 1.35, f),
+                "cum on lips",
+                wtag("cum string", 1.3, f),
+                "saliva trail"
+              );
           organProse =
-            (showP ? "" : ", keeping her mouth hollowed open with tongue extended") +
-            ", right after oral ejaculation with thick white cum pooling on her tongue and along her lips";
+            showP && condomOn
+              ? ", right after oral ejaculation with the worn condom tip filled with white fluid"
+              : (showP ? "" : ", keeping her mouth hollowed open with tongue extended") +
+                ", right after oral ejaculation with thick white cum pooling on her tongue and along her lips";
         } else {
           const baseOrg = showP
-            ? "1.4::after fellatio::, 0.55::oral::, pull out, penis, cum on penis, open mouth, tongue out, saliva"
+            ? condomOn
+              ? "1.4::after fellatio::, 0.55::oral::, pull out, penis, 1.35::used condom::, 1.3::condom on penis::, 1.35::cum in condom::, open mouth, tongue out, saliva"
+              : "1.4::after fellatio::, 0.55::oral::, pull out, penis, cum on penis, open mouth, tongue out, saliva"
             : "1.4::after fellatio::, pull out, 1.3::open mouth::, 1.35::o-shaped mouth::, tongue out, saliva";
-          organTags = joinTags(
-            baseOrg,
-            wtag("cum", 1.4, f),
-            wtag("cum in mouth", 1.3, f),
-            wtag("cum on face", 1.35, f),
-            wtag("cum on tongue", 1.35, f),
-            wtag("cum string", 1.45, f),
-            "saliva trail"
-          );
+          organTags = showP && condomOn
+            ? joinTags(baseOrg, wtag("cum", 1.35, f), "saliva trail")
+            : joinTags(
+                baseOrg,
+                wtag("cum", 1.4, f),
+                wtag("cum in mouth", 1.3, f),
+                wtag("cum on face", 1.35, f),
+                wtag("cum on tongue", 1.35, f),
+                wtag("cum string", 1.45, f),
+                "saliva trail"
+              );
           organProse =
-            (showP ? "" : ", keeping her mouth hollowed open with tongue extended") +
-            ", pulling her mouth slightly back right after fellatio with sticky white cum strings stretching from her lips and tongue";
+            showP && condomOn
+              ? ", pulling her mouth back right after fellatio from the filled used condom with glossy saliva trails"
+              : (showP ? "" : ", keeping her mouth hollowed open with tongue extended") +
+                ", pulling her mouth slightly back right after fellatio with sticky white cum strings stretching from her lips and tongue";
         }
       } else {
         let baseBeforeP: string;
@@ -1775,67 +1997,112 @@ export function generateScenePrompts(
           surfaceEn = "cupped hands and fingers";
         }
 
-        const baseOrg = showP ? baseBeforeP : baseBeforeNp;
-        organProse = showP ? "" : npProse;
+        const extCondomBefore = showP && condomOn ? ", 1.3::condom::, 1.25::condom on penis::" : "";
+        const extCondomFilled =
+          showP && condomOn
+            ? ", 1.35::condom::, 1.3::condom on penis::, 1.4::cum in condom::, 1.35::used condom::, bulging condom"
+            : "";
+        const baseOrg = showP ? `${baseBeforeP}${stageCode === "before" ? extCondomBefore : extCondomFilled}` : baseBeforeNp;
+        organProse = showP ? (condomOn && stageCode === "before" ? ", wearing a condom" : "") : npProse;
         if (stageCode === "before") {
           organTags = joinTags(baseOrg, mildFluid);
         } else if (stageCode === "during") {
-          organTags = joinTags(
-            baseOrg,
-            "ejaculation, climax, flying cum",
-            wtag("cum", 1.35, f),
-            ...surfaceTags,
-            wtag("cum string", 1.25, f),
-            "sweat"
-          );
-          organProse += `, at the moment of ejaculation as thick white cum spurts across her ${surfaceEn}`;
+          organTags = showP && condomOn
+            ? joinTags(baseOrg, "ejaculation, climax", wtag("cum", 1.35, f), "sweat")
+            : joinTags(
+                baseOrg,
+                "ejaculation, climax, flying cum",
+                wtag("cum", 1.35, f),
+                ...surfaceTags,
+                wtag("cum string", 1.25, f),
+                "sweat"
+              );
+          organProse +=
+            showP && condomOn
+              ? `, at the moment of ejaculation as thick white fluid fills and swells the condom tip against her ${surfaceEn}`
+              : `, at the moment of ejaculation as thick white cum spurts across her ${surfaceEn}`;
         } else if (stageCode === "after_inside") {
-          organTags = joinTags(
-            baseOrg,
-            "after ejaculation, heavy breathing",
-            wtag("cum", 1.4, f),
-            ...surfaceTags,
-            wtag("cumdrip", 1.35, f),
-            wtag("cum string", 1.3, f),
-            "sweat"
-          );
-          organProse += `, resting right after ejaculation while still holding close as thick white cum pools and drips over her ${surfaceEn}`;
+          organTags = showP && condomOn
+            ? joinTags(baseOrg, "after ejaculation, heavy breathing", wtag("cum", 1.35, f), "sweat")
+            : joinTags(
+                baseOrg,
+                "after ejaculation, heavy breathing",
+                wtag("cum", 1.4, f),
+                ...surfaceTags,
+                wtag("cumdrip", 1.35, f),
+                wtag("cum string", 1.3, f),
+                "sweat"
+              );
+          organProse +=
+            showP && condomOn
+              ? `, resting right after ejaculation with the swollen cum-filled condom pressed against her ${surfaceEn}`
+              : `, resting right after ejaculation while still holding close as thick white cum pools and drips over her ${surfaceEn}`;
         } else if (stageCode === "prolapse") {
           const lowerProlapse =
             channel === "thigh" || channel === "glute" || channel === "foot"
               ? "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, after vaginal"
               : "";
-          organTags = joinTags(
-            baseOrg,
-            "after ejaculation, pull out, excessive cum",
-            lowerProlapse,
-            wtag("cum", 1.45, f),
-            ...surfaceTags,
-            wtag("cum string", 1.45, f),
-            wtag("cumdrip", 1.4, f),
-            "sweat"
-          );
-          organProse += lowerProlapse
-            ? `, pulling back right after ejaculation with a glistening prolapsed cervix exposed and sticky white cum strings stretching across her ${surfaceEn}`
-            : `, pulling slightly back right after ejaculation with sticky white cum strings stretching across her ${surfaceEn}`;
+          organTags = showP && condomOn
+            ? joinTags(
+                baseOrg,
+                "after ejaculation, pull out",
+                lowerProlapse,
+                wtag("cum", 1.4, f),
+                wtag("cum overflow", 1.3, f),
+                "sweat"
+              )
+            : joinTags(
+                baseOrg,
+                "after ejaculation, pull out, excessive cum",
+                lowerProlapse,
+                wtag("cum", 1.45, f),
+                ...surfaceTags,
+                wtag("cum string", 1.45, f),
+                wtag("cumdrip", 1.4, f),
+                "sweat"
+              );
+          organProse += showP && condomOn
+            ? `, pulling back right after ejaculation with white fluid brimming and leaking from the used condom`
+            : lowerProlapse
+              ? `, pulling back right after ejaculation with a glistening prolapsed cervix exposed and sticky white cum strings stretching across her ${surfaceEn}`
+              : `, pulling slightly back right after ejaculation with sticky white cum strings stretching across her ${surfaceEn}`;
         } else {
-          organTags = joinTags(
-            baseOrg,
-            "after ejaculation, pull out, excessive cum",
-            wtag("cum", 1.45, f),
-            ...surfaceTags,
-            wtag("cum string", 1.45, f),
-            wtag("cumdrip", 1.4, f),
-            "sweat"
-          );
-          organProse += `, pulling slightly back right after ejaculation with sticky white cum strings stretching across her ${surfaceEn}`;
+          organTags = showP && condomOn
+            ? joinTags(
+                baseOrg,
+                "after ejaculation, pull out",
+                wtag("cum", 1.4, f),
+                wtag("cum overflow", 1.3, f),
+                "sweat"
+              )
+            : joinTags(
+                baseOrg,
+                "after ejaculation, pull out, excessive cum",
+                wtag("cum", 1.45, f),
+                ...surfaceTags,
+                wtag("cum string", 1.45, f),
+                wtag("cumdrip", 1.4, f),
+                "sweat"
+              );
+          organProse += showP && condomOn
+            ? `, pulling slightly back right after ejaculation with thick white fluid filling and spilling from the used condom`
+            : `, pulling slightly back right after ejaculation with sticky white cum strings stretching across her ${surfaceEn}`;
         }
       }
 
       const penisNeg = showP ? "" : "penis, phallus, testicles, dildo, sex toy";
+      const condomExtraNeg =
+        condomOn && channel === "vaginal"
+          ? stageCode === "during" || stageCode === "after_inside"
+            ? "used condom, condom on ground, multiple condoms, skeleton, bones, skull, ribcage, gore"
+            : isPullOutLike
+              ? "condom on penis, tied condom, knotted condom, multiple condoms, condom wrapper, condom packet, foil packet, cum on penis, cum string"
+              : ""
+          : "";
       extraNeg = joinTags(
         partnerNeg,
         penisNeg,
+        condomExtraNeg,
         stageCode === "prolapse" ? "anal prolapse" : ""
       );
 
@@ -1860,7 +2127,7 @@ export function generateScenePrompts(
     }
 
     const expPos = exprIf(cfg, "furrowed brow, half-closed eyes, watery eyes, blush");
-    const remPos = rem ? "sweat" : "";
+    const remPos = "sweat";
     const fullNeg = joinTags(extraNeg, transNeg, tailNegUsed);
     const povLbl = isPov ? "第一人称 (POV)" : "第三人称 (客观镜头)";
     const proseSentence = `${m.name} ${tpl.prose_core}${partnerProse}${organProse}${bgProse}.`;
@@ -1881,1452 +2148,134 @@ export function generateScenePrompts(
       wrapTailNeg(m, fullNeg, negOn)
     );
     results.push({
-      subTitle: `【${tpl.title} · ${povLbl}${sceneBadge}${stageBadge}】`,
+      subTitle: `【${tpl.title} · ${povLbl}${sceneBadge}${stageBadge}${condomBadge}】`,
       canvas: tpl.canvas,
       prompt: pPos,
     });
-  } else if (sceneId === "F00") {
+  } else if (sceneId === "FREE") {
     const m = buildCommonModules(cfg, defEyesOpen);
-    const bgBed = cfg.enable_background
-      ? "indoors, bedroom, bed, white bedsheet, wooden headboard, window, cream sheer curtains"
-      : "";
-    const bedProse = cfg.enable_background ? " on a white bedsheet in front of a wooden headboard" : "";
-    const frontOutfit = m.front_outfit_tags;
-    const shirtProse = m.front_shirt_prose;
-    const legFront = m.front_leg_tags;
-    const foLow = frontOutfit.toLowerCase();
+    const transBg = Boolean(cfg.pos_transparent_bg);
+    const nsfwOn = Boolean(cfg.free_action_nsfw);
+    const rawFreeTags = (cfg.free_action_tags || "").trim();
+    const rawFreeProse = (cfg.free_action_prose || "").trim();
+    const hasActorInCustom = /\b(1girl|2girls|multiple girls|1boy|2boys|no humans)\b/i.test(rawFreeTags);
+    const actorPrefix = hasActorInCustom ? "" : "1girl, solo";
 
-    let hasExplicitOutfit: boolean;
-    let anatFront: string;
-    if (m.outfit_kind === "custom") {
-      hasExplicitOutfit = Boolean(m.f00_active_undress);
-      anatFront = m.f00_active_undress ? m.anat_pos : "";
-    } else {
-      hasExplicitOutfit =
-        foLow.includes("nude") || foLow.includes("breasts out") || Boolean(m.f00_active_undress);
-      anatFront = foLow.includes("nude") || m.f00_active_undress ? m.anat_pos : "";
-    }
-    const nsfwPrefix = hasExplicitOutfit ? "rating:explicit, nsfw, uncensored" : "";
-    const expTags = exprIf(cfg, "furrowed brow, shy, soft blush");
-    const kneelTag = cfg.enable_background ? "kneeling on bed" : "kneeling";
+    const freeOutfit = nsfwOn ? m.outfit_pos : m.front_outfit_tags;
+    const freeLeg = m.front_leg_tags;
+    const freeShirtProse = nsfwOn ? m.outfit_prose_clause : m.front_shirt_prose;
+    const nsfwPrefix = nsfwOn ? "rating:explicit, nsfw, uncensored" : "";
+    const anatFree = nsfwOn && cfg.enable_anatomy ? m.anat_pos : "";
 
-    if (isPov) {
-      const pPov = joinTags(
-        m.head_pos,
-        "1girl, solo",
-        m.char_core,
-        frontOutfit,
-        legFront,
-        nsfwPrefix,
-        anatFront,
-        bgBed,
-        kneelTag,
-        "leaning forward, arms in front, looking at viewer",
-        expTags,
-        proseIf(
-          cfg,
-          `${m.name} kneeling${bedProse}, leaning forward with her arms in front${shirtProse} while gazing shyly at the viewer.`
-        ),
-        wrapTailNeg(m, m.common_tail_neg, negOn)
-      );
-      results.push({
-        subTitle: "【F00 · 第一人称视角 (POV) · 晨光白床正面跪坐前倾（正脸状态校验）】",
-        canvas: "竖图 832x1216",
-        prompt: pPov,
-      });
-    } else {
-      const p3rd = joinTags(
-        m.head_pos,
-        "1girl, solo",
-        m.char_core,
-        frontOutfit,
-        legFront,
-        nsfwPrefix,
-        anatFront,
-        bgBed,
-        "front view, cowboy shot",
-        kneelTag,
-        "knees apart, leaning forward, arms in front, looking at viewer",
-        expTags,
-        proseIf(
-          cfg,
-          `Frontal cowboy shot of ${m.name} kneeling with knees apart${bedProse}, leaning forward with her arms in front${shirtProse} while gazing shyly at the viewer.`
-        ),
-        wrapTailNeg(m, joinTags("from behind, back, profile", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【F00 · 第三人称视角 (客观镜头) · 正面七分身跪床前倾（正脸与比例校验）】",
-        canvas: "竖图 832x1216",
-        prompt: p3rd,
-      });
-    }
-  } else if (sceneId === "S00") {
-    const m = buildCommonModules(cfg, defEyesOpen);
-    const remTags = rem
-      ? joinTags("after vaginal, cum", wtag("cum in pussy", 1.0, f), wtag("cumdrip", 1.0, f), "cum on thighs, sweat")
-      : "";
-    const expTags = exprIf(cfg, ":p, tongue out, smug, furrowed brow, half-closed eyes, watery eyes, blush, floating heart");
-    if (isPov) {
-      const p = joinTags(
-        m.head_pos,
-        "1girl, solo",
-        m.char_core,
-        m.bg_couch,
-        "1.45::pov::, 1.4::from behind::, close-up, foreshortening, low angle",
-        "all fours, arched back, knees apart",
-        m.leg_normal,
-        m.soles_rear,
-        "looking back, looking at viewer",
-        m.outfit_pos,
-        expTags,
-        "rating:explicit, nsfw, uncensored, ass",
-        m.anat_pos,
-        remTags,
-        proseIf(
-          cfg,
-          `Close-up first-person POV standing right behind ${m.name} kneeling on all fours${m.loc_prose} as she arches her back and looks back over her shoulder right at the viewer.`
-        ),
-        wrapTailNeg(m, joinTags("sitting, wide shot, distant", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S00 · 第一人称视角 (POV) · 贴近臀后俯看跪爬回眸】",
-        canvas: "竖图 832x1216 或 横图 1216x832",
-        prompt: p,
-      });
-    } else {
-      const p = joinTags(
-        m.head_pos,
-        "1girl, solo",
-        m.char_core,
-        m.bg_couch,
-        "full body, 1.3::from behind::, from side, low angle, perspective",
-        "all fours, arched back, knees apart",
-        m.leg_normal,
-        m.soles_rear,
-        "looking back, looking at viewer",
-        m.outfit_pos,
-        expTags,
-        "rating:explicit, nsfw, uncensored, ass",
-        m.anat_pos,
-        remTags,
-        proseIf(
-          cfg,
-          `Full-body angled rear-side view of ${m.name} kneeling on all fours${m.loc_prose} as she arches her back and looks back over her shoulder at the viewer.`
-        ),
-        wrapTailNeg(m, joinTags("pov, close-up, sitting", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S00 · 第三人称视角 (客观镜头) · 侧后 30° 全景跪爬回眸】",
-        canvas: "横图 1216x832",
-        prompt: p,
-      });
-    }
-  } else if (sceneId === "S01") {
-    const m = buildCommonModules(cfg, defEyesOpen);
-    const expTags = exprIf(cfg, "furrowed brow, half-closed eyes, watery eyes, blush, floating heart");
-    const remTags = rem
-      ? joinTags("after vaginal, cum", wtag("cum in pussy", 1.0, f), wtag("cumdrip", 1.0, f), "cum on thighs")
-      : "";
-    const fluidAct = af ? "saliva, sweat" : "";
-    if (isPov) {
-      const p = joinTags(
-        m.head_pos,
-        "1girl, 1boy, hetero",
-        m.char_core,
-        "faceless male",
-        m.bg_couch,
-        "1.5::pov::, 1.4::pov crotch::, 1.35::from above::, foreshortening",
-        "all fours",
-        m.kneel_couch_tag,
-        "leaning forward, arched back, looking up, looking at viewer",
-        m.outfit_upper_oral,
-        expTags,
-        "rating:explicit, nsfw, uncensored, 1.4::oral::, 1.4::fellatio::, penis",
-        fluidAct,
-        proseIf(
-          cfg,
-          `First-person POV looking down${m.loc_prose} as ${m.name} kneels forward on all fours performing fellatio while gazing up at the viewer.`
-        ),
-        wrapTailNeg(m, joinTags("from behind, profile, sitting, male focus", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S01 · 第一人称视角 (POV) · 男方俯视口部互动进行中】",
-        canvas: "竖图 832x1216",
-        prompt: p,
-      });
-    } else {
-      const p = joinTags(
-        m.head_pos,
-        "1girl, 1boy, hetero",
-        m.char_core,
-        "faceless male, head out of frame",
-        m.bg_couch,
-        "1.6::from behind::, low angle, foreshortening, dynamic perspective",
-        "all fours, arched back, knees apart",
-        m.leg_normal,
-        m.soles_rear,
-        "looking back, sidelong glance, looking at viewer",
-        m.outfit_pos,
-        expTags,
-        "rating:explicit, nsfw, uncensored, oral, fellatio, penis",
-        fluidAct,
-        "ass",
-        m.anat_pos,
-        remTags,
-        proseIf(
-          cfg,
-          `Rear three-quarter low-angle perspective angled 30 degrees along ${m.name}'s spine, looking past her hips in the right foreground toward her head and the faceless man's lower body in the left midground.`
-        ),
-        wrapTailNeg(m, joinTags("pov, from side, profile, sitting, male focus", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S01 · 第三人称视角 (客观镜头) · 侧后 30° 跪爬 + 左侧男方进行中】",
-        canvas: "横图 1216x832",
-        prompt: p,
-      });
-    }
-  } else if (sceneId === "S02") {
-    const m = buildCommonModules(cfg, defEyesOpen);
-    const expTags = exprIf(cfg, "furrowed brow, half-closed eyes, watery eyes, heavy blush, floating heart");
-    const oralFluids = af
-      ? joinTags(
-          wtag("cum in mouth", 1.05, f),
-          wtag("cum on face", 1.25, f),
-          wtag("cum in hair", 0.85, f),
-          wtag("cum string", 1.45, f),
-          "saliva trail, sweat"
-        )
-      : "";
-    const remLower = rem
-      ? joinTags("after vaginal, cum", wtag("cum in pussy", 1.0, f), wtag("cumdrip", 1.0, f), "cum on thighs")
-      : "";
-    const fluidClause = af
-      ? " with sticky white cum strings bridging from her mouth and splatters on her cheek and hair"
-      : "";
-    if (isPov) {
-      const p = joinTags(
-        m.head_pos,
-        "1girl, 1boy, hetero",
-        m.char_core,
-        "faceless male",
-        m.bg_couch,
-        "1.5::pov::, 1.4::pov crotch::, 1.35::from above::, foreshortening",
-        "all fours",
-        m.kneel_couch_tag,
-        "leaning forward, looking up, looking at viewer",
-        m.outfit_upper_oral,
-        expTags,
-        "rating:explicit, nsfw, uncensored, 1.4::after fellatio::, 0.6::oral, fellatio::, penis, erection",
-        oralFluids,
-        proseIf(
-          cfg,
-          `First-person POV looking down as ${m.name} pulls her lips slightly back right after fellatio${m.loc_prose}, gazing up at the viewer${fluidClause}.`
-        ),
-        wrapTailNeg(m, joinTags("from behind, profile, sitting, male focus", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S02 · 第一人称视角 (POV) · 男方俯视刚松口拉丝 + 发丝沾染】",
-        canvas: "竖图 832x1216",
-        prompt: p,
-      });
-    } else {
-      const p = joinTags(
-        m.head_pos,
-        "1girl, 1boy, hetero",
-        m.char_core,
-        "faceless male, head out of frame",
-        m.bg_couch,
-        "1.6::from behind::, low angle, foreshortening, dynamic perspective",
-        "all fours, arched back, knees apart",
-        m.leg_normal,
-        m.soles_rear,
-        "looking back, sidelong glance, looking at viewer",
-        m.outfit_pos,
-        expTags,
-        "rating:explicit, nsfw, uncensored, after fellatio, 0.6::oral, fellatio::, penis",
-        oralFluids,
-        "ass",
-        m.anat_pos,
-        remLower,
-        proseIf(
-          cfg,
-          `Rear three-quarter low-angle perspective angled 30 degrees along ${m.name}'s spine, looking past her hips in the right foreground toward her head pulling back${fluidClause} from the faceless man's lower body in the left midground.`
-        ),
-        wrapTailNeg(m, joinTags("pov, from side, profile, sitting, male focus", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S02 · 第三人称视角 (客观镜头) · 侧后 30° 松口拉丝 + 发丝沾染】",
-        canvas: "横图 1216x832",
-        prompt: p,
-      });
-    }
-  } else if (sceneId === "S03") {
-    const m = buildCommonModules(cfg, defEyesOpen);
-    const expTags = exprIf(cfg, "furrowed brow, half-closed eyes, watery eyes, heavy blush");
-    const actFluids = af
-      ? joinTags(
-          wtag("cum on face", 1.25, f),
-          wtag("cum in hair", 0.85, f),
-          wtag("cum string", 1.4, f),
-          "sweat"
-        )
-      : "";
-    const beforeFluids = af ? "saliva, sweat" : "";
-    const remLower = rem ? joinTags("after vaginal, cum", wtag("cumdrip", 1.1, f)) : "";
-    const afterClause = af
-      ? " with sticky white cum strings bridging from her lips and splatters on her cheek and hair"
-      : "";
-    const mpMode = cfg.multi_panel_mode;
+    let headUsed = m.head_pos;
+    let bgUsed = "";
+    let bgProse = "";
+    let transNeg = "";
+    let tailNegUsed = m.common_tail_neg;
+    const scenePreset =
+      POS_SCENE_PRESETS[cfg.pos_scene] ??
+      POS_SCENE_PRESETS["🛋️ 默认暖光室内沙发（indoors, couch, lamp）"];
+    let sceneBadge = "";
 
-    if (mpMode === "2koma") {
-      if (isPov) {
-        const pPov = joinTags(
-          "2.5::2koma::, 2.5::vertical split screen::, comic, two panels, vertical border, dividing line, gutter, 2girls, 2boys, same character, hetero",
-          m.head_pos,
-          m.char_core,
-          "faceless male",
-          m.bg_couch,
-          "1.5::pov::, 1.4::pov crotch::, 1.35::from above::, foreshortening",
-          m.kneel_couch_tag,
-          "leaning forward, looking up, looking at viewer",
-          m.outfit_upper_oral,
-          expTags,
-          "rating:explicit, nsfw, uncensored, oral, fellatio, after fellatio, penis",
-          actFluids,
-          proseIf(
-            cfg,
-            `Two side-by-side first-person POV panels looking down at ${m.name}${m.loc_prose}: in the left panel she performs fellatio; in the right panel she pulls back right after${afterClause}.`
-          ),
-          wrapTailNeg(
-            m,
-            joinTags(
-              "1girl, solo, single panel, from behind, profile, male focus, 4koma, speech bubble",
-              m.common_tail_neg
-            ),
-            negOn
-          )
+    if (transBg) {
+      headUsed = sanitizeStyleForTransparentBg(m.head_pos);
+      bgUsed = "2.0::transparent background::, has alpha, alpha transparency, no background";
+      bgProse = " isolated on a transparent background";
+      transNeg =
+        "background, simple background, white background, black background, gradient background, " +
+        "indoors, outdoors, scenery, furniture, bed, couch, sofa, pillow, window, curtains, wall, floor, drop shadow";
+      sceneBadge = " · [🏁透明底]";
+    } else if (cfg.enable_background) {
+      sceneBadge = scenePreset.badge || " · [🛋️室内沙发]";
+      if (scenePreset.code !== "default_couch") {
+        headUsed = scenePreset.unblock_dark
+          ? m.head_pos.replace(/,\s*warm lighting\b/gi, "")
+          : m.head_pos;
+        const headSet = new Set(
+          headUsed
+            .split(",")
+            .map((t) => t.trim().replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase())
+            .filter(Boolean)
         );
-        results.push({
-          subTitle: "【S03 · 第一人称视角 (POV) · 左右双格俯视口部事前 vs 事后】",
-          canvas: "横图 1216x832",
-          prompt: pPov,
-        });
-      } else {
-        const p3rd = joinTags(
-          "2.5::2koma::, 2.5::horizontal split screen::, comic, two panels, horizontal border, dividing line, gutter, 2girls, 2boys, same character, hetero",
-          m.head_pos,
-          m.char_core,
-          "faceless male, head out of frame",
-          m.bg_couch,
-          "1.5::from behind::, low angle, foreshortening",
-          "all fours, arched back, knees apart",
-          m.leg_normal,
-          m.soles_rear,
-          "looking back, sidelong glance, looking at viewer",
-          m.outfit_pos,
-          expTags,
-          "rating:explicit, nsfw, uncensored, oral, fellatio, after fellatio, penis",
-          actFluids,
-          "ass",
-          m.anat_pos,
-          remLower,
-          proseIf(
-            cfg,
-            `Two stacked horizontal panels from the same 30-degree rear low-angle view of ${m.name}${m.loc_prose}: in the top panel she performs fellatio; in the bottom panel she pulls back right after${afterClause}.`
-          ),
-          wrapTailNeg(
-            m,
-            joinTags(
-              "pov, 1girl, solo, single panel, profile, sitting, male focus, 4koma, speech bubble",
-              m.common_tail_neg
-            ),
-            negOn
-          )
-        );
-        results.push({
-          subTitle: "【S03 · 第三人称视角 (客观镜头) · 上下横构图双格 30° 侧后事前 vs 事后】",
-          canvas: "竖图 832x1216",
-          prompt: p3rd,
-        });
-      }
-    } else {
-      const noSplitNeg = "2koma, 4koma, split screen, multiple views, comic, border, speech bubble";
-      if (isPov) {
-        const pA = joinTags(
-          m.head_pos,
-          "1girl, 1boy, hetero",
-          m.char_core,
-          "faceless male",
-          m.bg_couch,
-          "1.5::pov::, 1.4::pov crotch::, 1.35::from above::, foreshortening",
-          "all fours",
-          m.kneel_couch_tag,
-          "leaning forward, arched back, looking up, looking at viewer",
-          m.outfit_upper_oral,
-          expTags,
-          "rating:explicit, nsfw, uncensored, 1.45::oral::, 1.45::fellatio::, deepthroat, penis",
-          beforeFluids,
-          proseIf(
-            cfg,
-            `Single full-frame first-person POV looking down at ${m.name}${m.loc_prose} kneeling forward performing deep fellatio while gazing up at the viewer.`
-          ),
-          wrapTailNeg(
-            m,
-            joinTags(noSplitNeg, "from behind, profile, sitting, male focus", m.common_tail_neg),
-            negOn
-          )
-        );
-        const pB = joinTags(
-          m.head_pos,
-          "1girl, 1boy, hetero",
-          m.char_core,
-          "faceless male",
-          m.bg_couch,
-          "1.5::pov::, 1.4::pov crotch::, 1.35::from above::, foreshortening",
-          "all fours",
-          m.kneel_couch_tag,
-          "leaning forward, looking up, looking at viewer",
-          m.outfit_upper_oral,
-          expTags,
-          "rating:explicit, nsfw, uncensored, 1.45::after fellatio::, 0.55::oral::, penis, erection",
-          actFluids,
-          proseIf(
-            cfg,
-            `Single full-frame first-person POV looking down at ${m.name}${m.loc_prose} pulling her lips slightly back right after fellatio${afterClause}.`
-          ),
-          wrapTailNeg(
-            m,
-            joinTags(noSplitNeg, "from behind, profile, sitting, male focus", m.common_tail_neg),
-            negOn
-          )
-        );
-        if (mpMode === "single_a" || mpMode === "single_pair") {
-          results.push({
-            subTitle: "【S03 单图A · 第一人称 (POV) · 口部深入进行中单幅】",
-            canvas: "竖图 832x1216",
-            prompt: pA,
-          });
-        }
-        if (mpMode === "single_b" || mpMode === "single_pair") {
-          results.push({
-            subTitle: "【S03 单图B · 第一人称 (POV) · 事后松口拉丝单幅】",
-            canvas: "竖图 832x1216",
-            prompt: pB,
-          });
-        }
-      } else {
-        const pA = joinTags(
-          m.head_pos,
-          "1girl, 1boy, hetero",
-          m.char_core,
-          "faceless male, head out of frame",
-          m.bg_couch,
-          "1.6::from behind::, low angle, foreshortening, dynamic perspective",
-          "all fours, arched back, knees apart",
-          m.leg_normal,
-          m.soles_rear,
-          "looking back, sidelong glance, looking at viewer",
-          m.outfit_pos,
-          expTags,
-          "rating:explicit, nsfw, uncensored, 1.4::oral::, 1.4::fellatio::, penis",
-          beforeFluids,
-          "ass",
-          m.anat_pos,
-          remLower,
-          proseIf(
-            cfg,
-            `Single full-frame 30-degree rear low-angle view of ${m.name}${m.loc_prose} kneeling on all fours performing fellatio on the faceless man in the left midground.`
-          ),
-          wrapTailNeg(
-            m,
-            joinTags(noSplitNeg, "pov, from side, profile, sitting, male focus", m.common_tail_neg),
-            negOn
-          )
-        );
-        const pB = joinTags(
-          m.head_pos,
-          "1girl, 1boy, hetero",
-          m.char_core,
-          "faceless male, head out of frame",
-          m.bg_couch,
-          "1.6::from behind::, low angle, foreshortening, dynamic perspective",
-          "all fours, arched back, knees apart",
-          m.leg_normal,
-          m.soles_rear,
-          "looking back, sidelong glance, looking at viewer",
-          m.outfit_pos,
-          expTags,
-          "rating:explicit, nsfw, uncensored, 1.45::after fellatio::, 0.55::oral::, penis",
-          actFluids,
-          "ass",
-          m.anat_pos,
-          remLower,
-          proseIf(
-            cfg,
-            `Single full-frame 30-degree rear low-angle view of ${m.name}${m.loc_prose} pulling her head slightly back right after fellatio${afterClause}.`
-          ),
-          wrapTailNeg(
-            m,
-            joinTags(noSplitNeg, "pov, from side, profile, sitting, male focus", m.common_tail_neg),
-            negOn
-          )
-        );
-        if (mpMode === "single_a" || mpMode === "single_pair") {
-          results.push({
-            subTitle: "【S03 单图A · 第三人称 (客观镜头) · 30°侧后口部进行中单幅】",
-            canvas: "横图 1216x832",
-            prompt: pA,
-          });
-        }
-        if (mpMode === "single_b" || mpMode === "single_pair") {
-          results.push({
-            subTitle: "【S03 单图B · 第三人称 (客观镜头) · 30°侧后松口拉丝单幅】",
-            canvas: "横图 1216x832",
-            prompt: pB,
-          });
-        }
-      }
-    }
-  } else if (sceneId === "S04") {
-    const m = buildCommonModules(cfg, defEyesOpen);
-    const expTags = exprIf(
-      cfg,
-      "slight smile, smug, furrowed brow, half-closed eyes, watery eyes, heavy blush, floating heart",
-      "1.4::closed mouth::"
-    );
-    const remFace = rem ? joinTags(wtag("cum on face", 1.4, f), wtag("cum in hair", 1.0, f)) : "";
-    const actFluids = af
-      ? joinTags(
-          "internal cumshot",
-          wtag("cum overflow", 1.4, f),
-          "cum on penis",
-          wtag("cum in pussy", 1.4, f),
-          wtag("cumdrip", 1.5, f),
-          wtag("cum string", 1.4, f),
-          wtag("excessive cum", 1.2, f),
-          "sweat"
-        )
-      : "";
-    const c1F = af
-      ? joinTags(
-          "cum on penis, internal cumshot",
-          wtag("cum overflow", 1.4, f),
-          wtag("cum in pussy", 1.3, f),
-          wtag("cumdrip", 1.3, f),
-          "sweat"
-        )
-      : "";
-    const c2F = af
-      ? joinTags(
-          "after ejaculation, cum on penis",
-          wtag("cum in pussy", 1.4, f),
-          wtag("cumdrip", 1.5, f),
-          wtag("cum string", 1.4, f),
-          wtag("excessive cum", 1.2, f),
-          "cum on thighs, sweat"
-        )
-      : "";
-    const leftFClause = af ? " as thick white cum overflows at the joined base" : "";
-    const rightFClause = af
-      ? " with cum stringing onto his flaccid penis below"
-      : " above his flaccid penis below";
-    const mpMode = cfg.multi_panel_mode;
-
-    if (mpMode === "2koma") {
-      if (isPov) {
-        const pSingle = joinTags(
-          "2.5::2koma::, 2.5::vertical split screen::, comic, two panels, vertical border, dividing line, gutter, 2girls, 2boys, same character, hetero",
-          m.head_pos,
-          m.char_core,
-          "faceless male",
-          m.bg_couch,
-          "1.5::pov::, 1.4::pov crotch::, 1.3::from below::, low angle",
-          "girl on top, kneeling, straddling, looking down, looking at viewer",
-          m.outfit_pos,
-          expTags,
-          "rating:explicit, nsfw, uncensored",
-          remFace,
-          "cowgirl position, vaginal, insertion, after vaginal, penis, flaccid",
-          m.anat_pos,
-          actFluids,
-          proseIf(
-            cfg,
-            `Two side-by-side POV panels of ${m.name} kneeling astraddle: left panel, seated in deep cowgirl insertion${leftFClause}; right panel, lifting her hips slightly upward after pulling out${rightFClause}.`
-          ),
-          wrapNeg("-2.5", "open mouth, cum in mouth, drooling, standing", negOn),
-          wrapTailNeg(
-            m,
-            joinTags(
-              "1girl, solo, single panel, from behind, reverse cowgirl, all fours, profile, male focus, 4koma, speech bubble",
-              m.common_tail_neg
-            ),
-            negOn
-          )
-        );
-        results.push({
-          subTitle: "【S04 · 第一人称视角 (POV) · 仰视骑乘左右双格（左深坐溢流 ➔ 右微抬疲软）】",
-          canvas: "横图 1216x832",
-          prompt: pSingle,
-        });
-
-        if (cfg.include_sub_variants) {
-          const baseMulti = joinTags(
-            "2.5::2koma::, 2.5::vertical split screen::, comic, two panels, vertical border, dividing line, gutter, 2girls, 2boys, same character, hetero",
-            m.head_pos,
-            m.bg_couch,
-            "1.5::pov::, 1.4::pov crotch::, 1.3::from below::, low angle, rating:explicit, nsfw, uncensored",
-            wrapNeg("-2.5", "open mouth, cum in mouth, drooling", negOn),
-            wrapTailNeg(
-              m,
-              joinTags(
-                "from behind, reverse cowgirl, all fours, profile, male focus, 4koma, speech bubble",
-                m.common_tail_neg
-              ),
-              negOn
-            )
+        let rawSceneTags = scenePreset.tags;
+        if (
+          is25dCelLightingCode(LIGHTING_PRESETS[cfg.lighting_preset]?.code) &&
+          scenePreset.code === "sunlit_rug_floor_window"
+        ) {
+          rawSceneTags = rawSceneTags.replace(
+            "large floor-to-ceiling window,",
+            "large floor-to-ceiling window, clear blue sky,"
           );
-          const c1 = joinTags(
-            "girl, 1boy, faceless male",
-            m.char_core,
-            "pov crotch, penis, erection, 1.4::girl on top::, 1.4::cowgirl position::, kneeling, straddling, sitting on lap, hips down, hands on chest, knees apart, looking down, looking at viewer",
-            m.outfit_pos,
-            expTags,
-            remFace,
-            "vaginal, sex, 1.4::insertion::, deep penetration",
-            c1F,
-            m.anat_pos,
-            proseIf(cfg, `Seated down in deep cowgirl insertion${leftFClause}.`),
-            wrapNeg("-2.5", joinTags("open mouth, cum in mouth, standing, flaccid, after vaginal", m.canon_neg), negOn)
-          );
-          const c2 = joinTags(
-            "girl, 1boy, faceless male",
-            m.char_core,
-            "pov crotch, penis, 1.4::flaccid::, girl on top, kneeling, straddling, 0.8::squatting::, hands on thighs, knees apart, looking down, looking at viewer",
-            m.outfit_pos,
-            expTags,
-            remFace,
-            "1.4::after vaginal::",
-            m.anat_pos,
-            c2F,
-            proseIf(
-              cfg,
-              `Still kneeling astraddle him, she lifts her hips just slightly off by a few inches right after pulling out${rightFClause}.`
-            ),
-            wrapNeg("-2.5", joinTags("open mouth, cum in mouth, insertion, penetration, standing, erection", m.canon_neg), negOn)
-          );
-          results.push({
-            subTitle: "【S04 · 第一人称多角色精准分区版 (Base + 左A3 + 右E3)】",
-            canvas: "横图 1216x832",
-            prompt: `[Base Prompt]:\n${baseMulti}\n\n[Character 1 (A3)]:\n${c1}\n\n[Character 2 (E3)]:\n${c2}`,
-          });
+        }
+        bgUsed = rawSceneTags
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => {
+            if (!t) return false;
+            const bare = t.replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+            return !headSet.has(bare);
+          })
+          .join(", ");
+        bgProse = scenePreset.prose;
+        if (scenePreset.unblock_dark && tailNegUsed) {
+          tailNegUsed = tailNegUsed
+            .split(",")
+            .map((t) => t.trim())
+            .filter((t) => t && !["dark", "harsh shadows", "high contrast"].includes(t.toLowerCase()))
+            .join(", ");
+        }
+        if (scenePreset.extra_neg) {
+          tailNegUsed = joinTags(tailNegUsed, scenePreset.extra_neg);
         }
       } else {
-        const p3rd = joinTags(
-          "2.5::2koma::, 2.5::vertical split screen::, comic, two panels, vertical border, dividing line, gutter, 2girls, 2boys, same character, hetero",
-          m.head_pos,
-          m.char_core,
-          "faceless male, head out of frame",
-          m.on_couch_tag,
-          m.bg_couch,
-          "three-quarter view, from side, low angle",
-          "1.4::girl on top::, 1.4::cowgirl position::, kneeling, straddling",
-          m.leg_normal,
-          m.outfit_pos,
-          expTags,
-          "rating:explicit, nsfw, uncensored",
-          remFace,
-          "vaginal, insertion, after vaginal, penis, flaccid",
-          m.anat_pos,
-          actFluids,
-          proseIf(
-            cfg,
-            `Two side-by-side angled panels of ${m.name} straddling a faceless man${m.loc_prose}: left panel, seated deeply joined${leftFClause}; right panel, lifting her hips slightly after pulling out${rightFClause}.`
-          ),
-          wrapNeg("-2.5", "pov, pov crotch, open mouth, cum in mouth, drooling, standing", negOn),
-          wrapTailNeg(
-            m,
-            joinTags("1girl, solo, single panel, all fours, male focus, 4koma, speech bubble", m.common_tail_neg),
-            negOn
-          )
-        );
-        results.push({
-          subTitle: "【S04 · 第三人称视角 (客观镜头) · 侧斜旁观骑乘左右双格】",
-          canvas: "横图 1216x832",
-          prompt: p3rd,
-        });
-      }
-    } else {
-      const noSplitNeg = "2koma, 4koma, split screen, multiple views, comic, border, speech bubble";
-      if (isPov) {
-        const pA = joinTags(
-          m.head_pos,
-          "1girl, 1boy, hetero",
-          m.char_core,
-          "faceless male",
-          m.bg_couch,
-          "1.5::pov::, 1.4::pov crotch::, 1.3::from below::, low angle",
-          "1.45::girl on top::, 1.45::cowgirl position::, kneeling, straddling, sitting on lap, hips down, hands on chest, knees apart, looking down, looking at viewer",
-          m.outfit_pos,
-          expTags,
-          "rating:explicit, nsfw, uncensored",
-          remFace,
-          "vaginal, sex, 1.45::insertion::, deep penetration, penis, erection",
-          m.anat_pos,
-          c1F,
-          proseIf(
-            cfg,
-            `Single full-frame first-person POV looking up at ${m.name} kneeling astraddle on top${m.loc_prose} seated deeply in cowgirl insertion${leftFClause}.`
-          ),
-          wrapNeg("-2.5", "open mouth, cum in mouth, drooling, standing, flaccid, after vaginal", negOn),
-          wrapTailNeg(
-            m,
-            joinTags(noSplitNeg, "from behind, reverse cowgirl, all fours, profile, male focus", m.common_tail_neg),
-            negOn
-          )
-        );
-        const pB = joinTags(
-          m.head_pos,
-          "1girl, 1boy, hetero",
-          m.char_core,
-          "faceless male",
-          m.bg_couch,
-          "1.5::pov::, 1.4::pov crotch::, 1.3::from below::, low angle",
-          "1.4::girl on top::, kneeling, straddling, 0.8::squatting::, hands on thighs, knees apart, looking down, looking at viewer",
-          m.outfit_pos,
-          expTags,
-          "rating:explicit, nsfw, uncensored",
-          remFace,
-          "1.45::after vaginal::, pull out, penis, 1.4::flaccid::",
-          m.anat_pos,
-          c2F,
-          proseIf(
-            cfg,
-            `Single full-frame first-person POV looking up at ${m.name} kneeling astraddle${m.loc_prose} lifting her hips slightly upward by a few inches right after pulling out${rightFClause}.`
-          ),
-          wrapNeg("-2.5", "open mouth, cum in mouth, drooling, standing, insertion, penetration, erection", negOn),
-          wrapTailNeg(
-            m,
-            joinTags(noSplitNeg, "from behind, reverse cowgirl, all fours, profile, male focus", m.common_tail_neg),
-            negOn
-          )
-        );
-        if (mpMode === "single_a" || mpMode === "single_pair") {
-          results.push({
-            subTitle: "【S04 单图A · 第一人称 (POV) · 骑乘深坐结合溢流单幅】",
-            canvas: "竖图 832x1216",
-            prompt: pA,
-          });
-        }
-        if (mpMode === "single_b" || mpMode === "single_pair") {
-          results.push({
-            subTitle: "【S04 单图B · 第一人称 (POV) · 骑乘微抬脱出疲软拉丝单幅】",
-            canvas: "竖图 832x1216",
-            prompt: pB,
-          });
-        }
-      } else {
-        const pA = joinTags(
-          m.head_pos,
-          "1girl, 1boy, hetero",
-          m.char_core,
-          "faceless male, head out of frame",
-          m.on_couch_tag,
-          m.bg_couch,
-          "three-quarter view, from side, low angle",
-          "1.45::girl on top::, 1.45::cowgirl position::, kneeling, straddling, sitting on lap, hips down",
-          m.leg_normal,
-          m.outfit_pos,
-          expTags,
-          "rating:explicit, nsfw, uncensored",
-          remFace,
-          "vaginal, sex, 1.45::insertion::, deep penetration, penis, erection",
-          m.anat_pos,
-          c1F,
-          proseIf(
-            cfg,
-            `Single full-frame angled third-person view of ${m.name} straddling a faceless man${m.loc_prose} seated deeply in cowgirl insertion${leftFClause}.`
-          ),
-          wrapNeg("-2.5", "pov, pov crotch, open mouth, cum in mouth, drooling, standing, flaccid, after vaginal", negOn),
-          wrapTailNeg(m, joinTags(noSplitNeg, "all fours, male focus", m.common_tail_neg), negOn)
-        );
-        const pB = joinTags(
-          m.head_pos,
-          "1girl, 1boy, hetero",
-          m.char_core,
-          "faceless male, head out of frame",
-          m.on_couch_tag,
-          m.bg_couch,
-          "three-quarter view, from side, low angle",
-          "1.4::girl on top::, 1.35::cowgirl position::, kneeling, straddling, 0.8::squatting::",
-          m.leg_normal,
-          m.outfit_pos,
-          expTags,
-          "rating:explicit, nsfw, uncensored",
-          remFace,
-          "1.45::after vaginal::, pull out, penis, 1.4::flaccid::",
-          m.anat_pos,
-          c2F,
-          proseIf(
-            cfg,
-            `Single full-frame angled third-person view of ${m.name} straddling a faceless man${m.loc_prose} lifting her hips slightly off right after pulling out${rightFClause}.`
-          ),
-          wrapNeg("-2.5", "pov, pov crotch, open mouth, cum in mouth, drooling, standing, insertion, penetration, erection", negOn),
-          wrapTailNeg(m, joinTags(noSplitNeg, "all fours, male focus", m.common_tail_neg), negOn)
-        );
-        if (mpMode === "single_a" || mpMode === "single_pair") {
-          results.push({
-            subTitle: "【S04 单图A · 第三人称 (客观镜头) · 侧斜旁观骑乘深坐溢流单幅】",
-            canvas: "横图 1216x832",
-            prompt: pA,
-          });
-        }
-        if (mpMode === "single_b" || mpMode === "single_pair") {
-          results.push({
-            subTitle: "【S04 单图B · 第三人称 (客观镜头) · 侧斜旁观骑乘微抬拉丝单幅】",
-            canvas: "横图 1216x832",
-            prompt: pB,
-          });
-        }
+        bgUsed = m.bg_couch;
+        bgProse = m.loc_prose;
       }
     }
-  } else if (sceneId === "S05") {
-    const m = buildCommonModules(cfg, defEyesOpen);
-    const expTags = exprIf(cfg, ":p, tongue out, smug, furrowed brow, half-closed eyes, watery eyes, heavy blush, floating heart");
-    const remFace = rem ? joinTags(wtag("cum on face", 1.3, f), wtag("cum in hair", 0.9, f)) : "";
-    const actPee = af
-      ? joinTags(
-          "1.4::peeing::, urine, after vaginal, cum",
-          wtag("excessive cum", 1.4, f),
-          wtag("cum in pussy", 1.4, f),
-          wtag("cumdrip", 1.4, f),
-          "cum string",
-          wtag("puddle", 1.35, f),
-          "sweat"
-        )
-      : "";
-    const peeClause = af
-      ? " as she pees a stream and thick white cum drips heavily into a messy puddle below"
-      : "";
 
-    if (isPov) {
-      const pPov = joinTags(
-        m.head_pos,
-        "1girl, solo",
-        m.char_id,
-        "2.2::leg up::, 2.0::knee up::, 1.5::on one knee::, leaning forward",
-        m.hands_couch_tag,
-        "arched back, spread legs",
-        m.char_rest,
-        m.bg_couch,
-        "1.45::pov::, 1.4::from behind::, close-up, foreshortening, low angle",
-        m.leg_normal,
-        "looking back, looking at viewer",
-        m.outfit_pos,
-        expTags,
-        "rating:explicit, nsfw, uncensored",
-        remFace,
-        "ass",
-        m.anat_pos,
-        actPee,
-        proseIf(
-          cfg,
-          `Close-up first-person POV right behind ${m.name}${m.loc_prose} leaning on her hands and left knee while raising her bent right knee high out to the side like a dog peeing, looking back at the viewer${peeClause}.`
-        ),
-        wrapTailNeg(
-          m,
-          joinTags("knees up, all fours, knees together, standing, sitting, seiza, 1boy, penis, profile", m.common_tail_neg),
-          negOn
-        )
-      );
-      results.push({
-        subTitle: "【S05 · 第一人称视角 (POV) · 近距俯看犬式单腿屈膝高抬】",
-        canvas: "横图 1216x832 或 竖图 832x1216",
-        prompt: pPov,
-      });
-    } else {
-      const pCouch = joinTags(
-        m.head_pos,
-        "1girl, solo",
-        m.char_id,
-        "2.2::leg up::, 2.0::knee up::, 1.5::on one knee::, leaning forward",
-        m.hands_couch_tag,
-        "arched back, spread legs",
-        m.char_rest,
-        m.bg_couch,
-        "full body, 1.5::from behind::, 0.6::from side::, low angle, perspective, foreshortening",
-        m.leg_normal,
-        "looking back, looking at viewer",
-        m.outfit_pos,
-        expTags,
-        "rating:explicit, nsfw, uncensored",
-        remFace,
-        "ass",
-        m.anat_pos,
-        actPee,
-        proseIf(
-          cfg,
-          `Rear three-quarter low-angle perspective angled 30 degrees along ${m.name}'s spine, leaning forward on her hands and left knee${m.loc_prose} while raising her bent right knee high out to the side like a dog peeing, looking back over her shoulder${peeClause}.`
-        ),
-        wrapTailNeg(
-          m,
-          joinTags("pov, knees up, all fours, knees together, standing, sitting, seiza, 1boy, penis, profile", m.common_tail_neg),
-          negOn
-        )
-      );
-      results.push({
-        subTitle: "【S05 · 第三人称视角 (客观镜头) · 侧后 30° 全景犬式屈膝高抬】",
-        canvas: "横图 1216x832",
-        prompt: pCouch,
-      });
-    }
-  } else if (sceneId === "S06") {
-    const m = buildCommonModules(cfg, sleepEyesOpen, true);
-    const expTags = exprIf(cfg, "exhausted, parted lips, heavy blush", "1.5::sleeping::, 1.4::closed eyes::, relaxed", sceneId);
-    const stomachFluid = af
-      ? joinTags(
-          wtag("cum on stomach", 1.55, f),
-          m.covers_midriff ? wtag("cum on clothes", 1.45, f) : "",
-          "after vaginal, cum",
-          wtag("cum in pussy", 1.3, f),
-          wtag("cumdrip", 1.3, f),
-          "cum on thighs, sweat"
-        )
-      : "";
-    const remFace = rem ? joinTags(wtag("cum on face", 1.3, f), wtag("cum in hair", 0.9, f)) : "";
-    const poolClause = af ? `${m.stomach_pool_prose} while cum oozes between her relaxed parted thighs` : "";
-
-    if (isPov) {
-      const pPov = joinTags(
-        m.head_pos,
-        "1girl, solo",
-        m.char_core,
-        m.bg_sleep_couch,
-        "1.45::pov::, 1.4::from above::, foreshortening",
-        "1.4::lying::, 1.3::on back::",
-        m.on_couch_tag,
-        expTags,
-        "spread legs, knees slightly bent",
-        m.leg_normal,
-        m.outfit_pos,
-        m.belly_tags_s06_11,
-        "rating:explicit, nsfw, uncensored",
-        remFace,
-        stomachFluid,
-        m.anat_pos,
-        proseIf(
-          cfg,
-          `First-person POV looking directly down over ${m.name} fast asleep lying on her back${m.loc_prose} with closed eyes${poolClause}.`
-        ),
-        wrapNeg("-2.5", "open eyes, half-closed eyes, looking at viewer, sitting, standing, all fours, kneeling, peeing", negOn),
-        wrapTailNeg(m, joinTags("1boy, penis", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S06 · 第一人称视角 (POV) · 近距俯视仰躺熟睡与小腹积液】",
-        canvas: "竖图 832x1216",
-        prompt: pPov,
-      });
-    } else {
-      const pBack = joinTags(
-        m.head_pos,
-        "1girl, solo",
-        m.char_core,
-        m.bg_sleep_couch,
-        "full body, angled view, 1.4::lying::, 1.3::on back::",
-        m.on_couch_tag,
-        expTags,
-        "spread legs, knees slightly bent",
-        m.leg_normal,
-        m.outfit_pos,
-        m.belly_tags_s06_11,
-        "rating:explicit, nsfw, uncensored",
-        remFace,
-        stomachFluid,
-        m.anat_pos,
-        proseIf(
-          cfg,
-          `Full-body angled third-person view of ${m.name} fast asleep lying on her back${m.loc_prose} with closed eyes${poolClause}.`
-        ),
-        wrapNeg("-2.5", "pov, open eyes, half-closed eyes, looking at viewer, sitting, standing, all fours, kneeling, peeing", negOn),
-        wrapTailNeg(m, joinTags("1boy, penis", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S06 · 第三人称视角 (客观镜头) · 全景仰卧熟睡 + 小腹积液】",
-        canvas: "横图 1216x832",
-        prompt: pBack,
-      });
-    }
-  } else if (sceneId === "S07") {
-    const m = buildCommonModules(cfg, sleepEyesOpen, true);
-    const expTags = exprIf(cfg, "exhausted, parted lips, heavy blush", "1.5::sleeping::, 1.4::closed eyes::, sleep, relaxed", sceneId);
-    const isBarefootHold = m.leg_foot.includes("barefoot");
-    const footFluids = af
-      ? joinTags(
-          wtag("cum on feet", 1.6, f),
-          isBarefootHold ? wtag("cum on toes, cum string", 1.4, f) : wtag("cum string", 1.4, f),
-          "cum on penis",
-          wtag("excessive cum", 1.3, f),
-          "sweat"
-        )
-      : "";
-    const remAll = rem
-      ? joinTags(
-          wtag("cum on face, cum in pussy, cumdrip", 1.3, f),
-          wtag("cum in hair", 0.9, f),
-          wtag(m.stomach_rem_tag, 1.4, f),
-          "after vaginal, cum"
-        )
-      : "";
-    const footFClause = af ? ", coated in cum strings" : "";
-    const remClause = rem ? `, with cum${m.stomach_rem_prose}` : "";
-
-    if (isPov) {
-      const pFpv = joinTags(
-        m.head_pos,
-        "1girl, 1boy, hetero",
-        m.char_core,
-        "faceless male",
-        m.bg_sleep_couch,
-        "1.45::pov::, pov crotch, pov hands, foreshortening",
-        "1.4::lying::, 1.3::on back::",
-        m.on_couch_tag,
-        expTags,
-        "1.3::indian style::, knees apart, bent knees",
-        m.leg_foot,
-        "1.5::footjob::, 1.4::holding feet::, grabbing another's foot, penis, erection",
-        m.outfit_pos,
-        m.belly_tags,
-        "rating:explicit, nsfw, uncensored",
-        footFluids,
-        remAll,
-        m.anat_pos,
-        proseIf(
-          cfg,
-          `First-person POV grabbing sleeping ${m.name}'s ${m.leg_prose} soles-together in a cross-legged pose for a footjob${footFClause}${remClause}.`
-        ),
-        wrapNeg("-2.5", "open eyes, half-closed eyes, looking at viewer, sitting, standing, all fours", negOn),
-        wrapTailNeg(m, joinTags("male focus", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S07 · 第一人称视角 (POV) · 男方脚端双手抓握双脚足交】",
-        canvas: "竖图 832x1216",
-        prompt: pFpv,
-      });
-    } else {
-      const p3rd = joinTags(
-        m.head_pos,
-        "1girl, 1boy, hetero",
-        m.char_core,
-        "faceless male, head out of frame",
-        m.bg_sleep_couch,
-        "full body, angled view, from side, 1.4::lying::, 1.3::on back::",
-        m.on_couch_tag,
-        expTags,
-        "1.3::indian style::, knees apart, bent knees",
-        m.leg_foot,
-        "1.5::footjob::, 1.4::holding feet::, grabbing another's foot, penis, erection",
-        m.outfit_pos,
-        m.belly_tags,
-        "rating:explicit, nsfw, uncensored",
-        footFluids,
-        remAll,
-        m.anat_pos,
-        proseIf(
-          cfg,
-          `Angled view${m.loc_prose}: sleeping ${m.name} lies cross-legged on her back while a faceless man grabs her ${m.leg_prose} soles-together for a footjob${footFClause}${remClause}.`
-        ),
-        wrapNeg("-2.5", "pov, pov hands, open eyes, half-closed eyes, looking at viewer, sitting, standing, all fours", negOn),
-        wrapTailNeg(m, joinTags("male focus", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S07 · 第三人称视角 (客观镜头) · 侧斜全景熟睡盘腿抓脚足交】",
-        canvas: "横图 1216x832",
-        prompt: p3rd,
-      });
-    }
-  } else if (sceneId === "S08") {
-    const m = buildCommonModules(cfg, defEyesOpen, true);
-    const expTags = exprIf(
-      cfg,
-      "1.3::bedroom eyes::, 1.2::seductive smile::, parted lips, heavy blush, exhausted",
-      "waking up, 1.35::sleepy::, 1.45::half-closed eyes::"
-    );
-    const isBarefootHold = m.leg_foot.includes("barefoot");
-    const footFluids = af
-      ? joinTags(
-          wtag("cum on feet", 1.6, f),
-          isBarefootHold ? wtag("cum on toes", 1.4, f) : "",
-          wtag("cum string", 1.4, f),
-          "cum on penis",
-          wtag("excessive cum", 1.3, f),
-          "sweat"
-        )
-      : "";
-    const remAll = rem
-      ? joinTags(
-          wtag("cum on face", 1.3, f),
-          wtag("cum in hair", 0.9, f),
-          wtag(m.stomach_rem_tag, 1.4, f),
-          "after vaginal, cum",
-          wtag("cum in pussy", 1.3, f),
-          wtag("cumdrip", 1.3, f)
-        )
-      : "";
-    const footFClause = af ? ", coated in cum strings" : "";
-
-    if (isPov) {
-      const pFpv = joinTags(
-        m.head_pos,
-        "1girl, 1boy, hetero",
-        m.char_core,
-        "faceless male",
-        m.bg_sleep_couch,
-        "1.45::pov::, pov crotch, pov hands, foreshortening",
-        "1.4::lying::, 1.3::on back::",
-        m.on_couch_tag,
-        "relaxed",
-        expTags,
-        "looking at viewer, looking down",
-        "1.3::indian style::, knees apart, bent knees",
-        m.leg_foot,
-        "1.5::footjob::, 1.4::holding feet::, grabbing another's foot, penis, erection",
-        m.outfit_pos,
-        m.belly_tags,
-        "rating:explicit, nsfw, uncensored",
-        footFluids,
-        remAll,
-        m.anat_pos,
-        proseIf(
-          cfg,
-          `First-person POV grabbing ${m.name}'s ${m.leg_prose} soles-together for a footjob${footFClause} as she stirs awake gazing drowsily down.`
-        ),
-        wrapNeg("-2.5", "closed eyes, sleeping, wide-eyed, ahegao, sitting, standing, all fours", negOn),
-        wrapTailNeg(m, joinTags("male focus", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S08 · 第一人称视角 (POV) · 抓脚互动中刚醒迷离睡眼望向你】",
-        canvas: "竖图 832x1216",
-        prompt: pFpv,
-      });
-    } else {
-      const p3rd = joinTags(
-        m.head_pos,
-        "1girl, 1boy, hetero",
-        m.char_core,
-        "faceless male, head out of frame",
-        m.bg_sleep_couch,
-        "full body, angled view, from side, 1.4::lying::, 1.3::on back::",
-        m.on_couch_tag,
-        "relaxed",
-        expTags,
-        "looking at another, looking down, sideways glance",
-        "1.3::indian style::, knees apart, bent knees",
-        m.leg_foot,
-        "1.5::footjob::, 1.4::holding feet::, grabbing another's foot, penis, erection",
-        m.outfit_pos,
-        m.belly_tags,
-        "rating:explicit, nsfw, uncensored",
-        footFluids,
-        remAll,
-        m.anat_pos,
-        proseIf(
-          cfg,
-          `Angled view${m.loc_prose}: stirred awake on her back, ${m.name} gazes drowsily down as a faceless man grabs her ${m.leg_prose} soles-together for a footjob${footFClause}.`
-        ),
-        wrapNeg("-2.5", "pov, pov hands, closed eyes, sleeping, wide-eyed, ahegao, sitting, standing, all fours", negOn),
-        wrapTailNeg(m, joinTags("male focus", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S08 · 第三人称视角 (客观镜头) · 侧斜全景被弄醒睡眼朝脚端瞥去】",
-        canvas: "横图 1216x832",
-        prompt: p3rd,
-      });
-    }
-  } else if (sceneId === "S09") {
-    const m = buildCommonModules(cfg, defEyesOpen, true);
-    const expTags = exprIf(
-      cfg,
-      "1.35::bedroom eyes::, 1.15::seductive smile::, parted lips, heavy blush",
-      "1.3::sleepy::, 1.4::half-closed eyes::"
-    );
-    const remAll = rem
-      ? joinTags(
-          "cum",
-          wtag("excessive cum, cum on face", 1.6, f),
-          wtag("cum in hair", 1.2, f),
-          wtag(m.stomach_rem_tag, 1.7, f),
-          "cum on body",
-          "after vaginal",
-          wtag("cum string, cumdrip, cum in pussy, cum overflow", 1.5, f),
-          "sweat"
-        )
-      : "";
-    const remClause = rem ? `, with cum on her cheek and pooled${m.stomach_rem_prose}` : "";
-
-    if (isPov) {
-      const pPov = joinTags(
-        m.head_pos,
-        "1girl, 1boy, hetero",
-        m.char_core,
-        "faceless male",
-        m.bg_sleep_couch,
-        "1.5::pov::, 1.4::from above::, pov hands, reaching out",
-        "1.4::lying::, 1.3::on back::",
-        m.on_couch_tag,
-        "neck, collarbone, 1.55::hand on another's neck::",
-        expTags,
-        "looking at viewer, looking up, head tilt",
-        m.outfit_pos,
-        m.belly_tags,
-        "rating:explicit, nsfw, uncensored",
-        remAll,
-        m.anat_pos,
-        proseIf(
-          cfg,
-          `First-person POV from above ${m.name} lying on her back${m.loc_prose}: a hand reaches in to gently clasp her neck as she gazes up with drowsy half-closed eyes${remClause}.`
-        ),
-        wrapNeg("-2.5", "closed eyes, sleeping, wide-eyed, ahegao, tongue out, sitting, standing, all fours, footjob", negOn),
-        wrapTailNeg(m, joinTags("male focus", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S09 · 第一人称视角 (POV) · 正上方俯视单手轻拢脖颈】",
-        canvas: "竖图 832x1216",
-        prompt: pPov,
-      });
-    } else {
-      const p3rd = joinTags(
-        m.head_pos,
-        "1girl, 1boy, hetero",
-        m.char_core,
-        "faceless male, head out of frame, leaning over",
-        m.bg_sleep_couch,
-        "three-quarter view, from side, 1.4::lying::, 1.3::on back::",
-        m.on_couch_tag,
-        "neck, collarbone, 1.55::hand on another's neck::",
-        expTags,
-        "looking at another, looking up, head tilt",
-        m.outfit_pos,
-        m.belly_tags,
-        "rating:explicit, nsfw, uncensored",
-        remAll,
-        m.anat_pos,
-        proseIf(
-          cfg,
-          `Angled side view${m.loc_prose}: a faceless man leans over ${m.name} and gently clasps one hand around her neck as she gazes up drowsily${remClause}.`
-        ),
-        wrapNeg("-2.5", "pov, pov hands, closed eyes, sleeping, wide-eyed, ahegao, tongue out, sitting, standing, all fours, footjob", negOn),
-        wrapTailNeg(m, joinTags("male focus", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S09 · 第三人称视角 (客观镜头) · 侧斜近景男方欺身单手轻拢脖颈】",
-        canvas: "横图 1216x832",
-        prompt: p3rd,
-      });
-    }
-  } else if (sceneId === "S10") {
-    const m = buildCommonModules(cfg, defEyesOpen, true);
-    const expTags = exprIf(
-      cfg,
-      "1.35::bedroom eyes::, 1.15::seductive smile::, parted lips, heavy blush",
-      "1.3::sleepy::, 1.4::half-closed eyes::"
-    );
-    const actF = af ? joinTags(wtag("cum overflow, cum string, cumdrip", 1.5, f), "sweat") : "";
-    const isBarefootHold = m.leg_foot.includes("barefoot");
-    const remAll = rem
-      ? joinTags(
-          "cum",
-          wtag("excessive cum", 1.65, f),
-          wtag("cum on face", 1.6, f),
-          wtag("cum in hair", 1.2, f),
-          wtag(m.stomach_rem_tag, 1.7, f),
-          "cum on body",
-          wtag("cum on feet", 1.55, f),
-          isBarefootHold ? wtag("cum on toes", 1.35, f) : ""
-        )
-      : "";
-    const remMidWord = m.covers_midriff ? "clothes" : "stomach";
-    const remClause = rem
-      ? `, with cum on her cheek, ${remMidWord}${m.outfit_prose_clause}, and ${m.leg_prose}`
-      : "";
-
-    if (isPov) {
-      const pPov = joinTags(
-        m.head_pos,
-        "1girl, 1boy, hetero",
-        m.char_core,
-        "faceless male",
-        m.bg_sleep_couch,
-        "1.5::pov::, 1.4::from above::, pov hands, pov crotch, foreshortening",
-        "1.4::lying::, 1.3::on back::",
-        m.on_couch_tag,
-        "1.35::missionary::, spread legs, bent knees",
-        m.leg_normal,
-        "neck, collarbone, 1.55::hand on another's neck::",
-        expTags,
-        "looking at viewer, looking up",
-        m.outfit_pos,
-        m.belly_tags,
-        "rating:explicit, nsfw, uncensored, sex, vaginal, penis, insertion",
-        remAll,
-        actF,
-        m.anat_pos,
-        proseIf(
-          cfg,
-          `First-person missionary POV above ${m.name} on her back${m.loc_prose}: pressing between her open legs while one hand gently clasps her neck as she gazes up drowsily${remClause}.`
-        ),
-        wrapNeg("-2.5", "closed eyes, sleeping, wide-eyed, ahegao, tongue out, sitting, standing, all fours, footjob", negOn),
-        wrapTailNeg(m, joinTags("male focus", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S10 · 第一人称视角 (POV) · 传教士俯视压身深入 + 单手轻拢脖颈】",
-        canvas: "竖图 832x1216",
-        prompt: pPov,
-      });
-    } else {
-      const p3rd = joinTags(
-        m.head_pos,
-        "1girl, 1boy, hetero",
-        m.char_core,
-        "faceless male, head out of frame, boy on top",
-        m.bg_sleep_couch,
-        "three-quarter view, from side, 1.4::lying::, 1.3::on back::",
-        m.on_couch_tag,
-        "1.5::missionary::, spread legs, bent knees",
-        m.leg_normal,
-        "neck, collarbone, 1.55::hand on another's neck::",
-        expTags,
-        "looking at another, looking up",
-        m.outfit_pos,
-        m.belly_tags,
-        "rating:explicit, nsfw, uncensored, sex, vaginal, penis, insertion",
-        remAll,
-        actF,
-        m.anat_pos,
-        proseIf(
-          cfg,
-          `Angled side view${m.loc_prose}: a faceless man presses between ${m.name}'s open bent legs in missionary while one hand gently clasps her neck${remClause}.`
-        ),
-        wrapNeg("-2.5", "pov, pov hands, pov crotch, closed eyes, sleeping, wide-eyed, ahegao, tongue out, sitting, standing, all fours, footjob", negOn),
-        wrapTailNeg(m, joinTags("male focus", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S10 · 第三人称视角 (客观镜头) · 侧斜全景传教士深入 + 单手轻拢脖颈】",
-        canvas: "横图 1216x832",
-        prompt: p3rd,
-      });
-    }
-  } else if (sceneId === "S11") {
-    const m = buildCommonModules(cfg, defEyesOpen, true);
-    const expTags = exprIf(
-      cfg,
-      "1.35::bedroom eyes::, 1.15::seductive smile::, parted lips, heavy blush, trembling",
-      "1.25::sleepy::, 1.4::half-closed eyes::"
-    );
-    const actEjac = af
-      ? joinTags(
-          wtag("ejaculation", 1.65, f),
-          wtag("projectile cum", 1.55, f),
-          wtag("excessive cum", 1.75, f),
-          wtag("cum on pussy", 1.6, f),
-          wtag("cum on stomach", 1.85, f),
-          m.covers_midriff ? wtag("cum on clothes", 1.55, f) : "",
-          wtag("cum string", 1.55, f),
-          wtag("cumdrip", 1.5, f),
-          "sweat"
-        )
-      : "";
-    const isBarefootHold = m.leg_foot.includes("barefoot");
-    const remOld = rem
-      ? joinTags(
-          wtag("cum on face", 1.3, f),
-          wtag("cum in hair", 1.1, f),
-          wtag("cum on feet", 1.5, f),
-          isBarefootHold ? wtag("cum on toes", 1.3, f) : "",
-          wtag("cum in pussy", 1.45, f),
-          wtag("cum overflow", 1.45, f)
-        )
-      : "";
-    const ejacClause = af
-      ? m.covers_midriff
-        ? " shooting cum onto her vulva and outfit"
-        : " shooting cum onto her vulva and bare stomach"
-      : "";
-
-    if (isPov) {
-      const pStd = joinTags(
-        m.head_pos,
-        "1girl, 1boy, hetero",
-        m.char_core,
-        "faceless male",
-        m.bg_sleep_couch,
-        "1.6::missionary::, 1.45::pov::, 1.35::from above::, 1.4::pov crotch::, pov hands, foreshortening",
-        "1.4::lying::, 1.3::on back::",
-        m.on_couch_tag,
-        "1.4::spread legs::, bent knees",
-        m.leg_normal,
-        "neck, 1.5::hand on another's neck::",
-        expTags,
-        "looking at viewer, looking up",
-        m.outfit_pos,
-        m.belly_tags_s06_11,
-        "rating:explicit, nsfw, uncensored, after vaginal, pull out, penis, erection, twitching penis",
-        actEjac,
-        remOld,
-        m.anat_pos,
-        proseIf(
-          cfg,
-          `First-person missionary POV between ${m.name}'s open legs${m.loc_prose}: clasping her neck, he pulls out${ejacClause}.`
-        ),
-        wrapNeg("-2.5", "facial, penis on face, oral, fellatio, internal cumshot, insertion, closed eyes, sleeping, wide-eyed, ahegao, tongue out, sitting, standing, all fours, footjob", negOn),
-        wrapTailNeg(m, joinTags("male focus", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S11 · 第一人称视角 (POV) · 传教士双腿间刚拔出外射标准版】",
-        canvas: "竖图 832x1216",
-        prompt: pStd,
-      });
-      if (cfg.include_sub_variants) {
-        const pLegsUp = pStd
-          .replace("1.6::missionary::", "1.65::missionary::")
-          .replace("1.4::spread legs::, bent knees", "1.4::spread legs::, 1.3::legs up::, knees up");
-        results.push({
-          subTitle: "【S11 · 第一人称备选 · 双腿抬高环腰强化版 (`legs up`)】",
-          canvas: "竖图 832x1216",
-          prompt: pLegsUp,
-        });
+    if (!nsfwOn && !freeOutfit.includes("nude") && !/\bnsfw\b/i.test(rawFreeTags)) {
+      const existingNegs = tailNegUsed
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+      if (!existingNegs.some((t) => t.toLowerCase() === "nsfw")) {
+        tailNegUsed = joinTags("nsfw", tailNegUsed);
       }
-    } else {
-      const p3rd = joinTags(
-        m.head_pos,
-        "1girl, 1boy, hetero",
-        m.char_core,
-        "faceless male, head out of frame, boy on top",
-        m.bg_sleep_couch,
-        "three-quarter view, from side, 1.55::missionary::, 1.4::lying::, 1.3::on back::",
-        m.on_couch_tag,
-        "1.4::spread legs::, bent knees",
-        m.leg_normal,
-        "neck, 1.5::hand on another's neck::",
-        expTags,
-        "looking at another, looking up",
-        m.outfit_pos,
-        m.belly_tags_s06_11,
-        "rating:explicit, nsfw, uncensored, after vaginal, pull out, penis, erection, twitching penis",
-        actEjac,
-        remOld,
-        m.anat_pos,
-        proseIf(
-          cfg,
-          `Angled missionary view${m.loc_prose}: clasping ${m.name}'s neck between her open legs, the faceless man pulls out${ejacClause}.`
-        ),
-        wrapNeg("-2.5", "pov, pov hands, pov crotch, facial, penis on face, oral, fellatio, internal cumshot, insertion, closed eyes, sleeping, wide-eyed, ahegao, tongue out, sitting, standing, all fours, footjob", negOn),
-        wrapTailNeg(m, joinTags("male focus", m.common_tail_neg), negOn)
-      );
-      results.push({
-        subTitle: "【S11 · 第三人称视角 (客观镜头) · 侧斜全景传教士双腿间拔出外射】",
-        canvas: "横图 1216x832",
-        prompt: p3rd,
-      });
+    } else if (nsfwOn && tailNegUsed) {
+      tailNegUsed = tailNegUsed
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t && t.toLowerCase() !== "nsfw")
+        .join(", ");
     }
+
+    let resolvedProse = "";
+    if (rawFreeProse) {
+      resolvedProse = /^[A-Z]/.test(rawFreeProse)
+        ? `${rawFreeProse.replace(/\.+\s*$/, "")}${bgProse}.`
+        : `${m.name}${freeShirtProse} ${rawFreeProse.replace(/\.+\s*$/, "")}${bgProse}.`;
+    } else if (rawFreeTags) {
+      resolvedProse = `${m.name}${freeShirtProse}${bgProse}.`;
+    }
+
+    const pFree = joinTags(
+      headUsed,
+      actorPrefix,
+      m.char_core,
+      bgUsed,
+      freeOutfit,
+      freeLeg,
+      nsfwPrefix,
+      anatFree,
+      rawFreeTags,
+      resolvedProse ? proseIf(cfg, resolvedProse, transBg) : "",
+      wrapTailNeg(m, joinTags(transNeg, tailNegUsed), negOn)
+    );
+    results.push({
+      subTitle: `【✍️ 自由手写动作${nsfwOn ? " · [🔞R-18]" : ""}${sceneBadge}】`,
+      canvas: "竖图 832x1216",
+      prompt: pFree,
+    });
   }
 
   // Post-pass 0: Global Character Expression Override
@@ -3350,7 +2299,7 @@ export function generateScenePrompts(
       cfg.cam_wide_lens,
       cfg.cam_dutch_angle
     );
-    const eyesClosed = exprCtrl.active ? !exprCtrl.eyes_open : sceneId === "S06" || sceneId === "S07";
+    const eyesClosed = exprCtrl.active ? !exprCtrl.eyes_open : false;
     results = results.map((item) => ({
       subTitle: `${item.subTitle} · [🎥${shortCam}]`,
       canvas: item.canvas,
@@ -3366,10 +2315,13 @@ export function generateScenePrompts(
     }));
   }
 
-  // Post-pass 2: M6 sweat-stripping pass
+  // Post-pass 2: M6 sweat-stripping pass (skipped if active global lighting explicitly requests sweat)
   if (isM6SoftMorningSkinActive(cfg)) {
+    const activeLightTags = LIGHTING_PRESETS[cfg.lighting_preset]?.tags ?? "";
     const wantsSweat =
-      cfg.add_extra_sweat || (SKIN_PRESETS[cfg.skin_preset] || "").includes("shiny skin");
+      cfg.add_extra_sweat ||
+      (SKIN_PRESETS[cfg.skin_preset] || "").includes("shiny skin") ||
+      /\bsweat\b/.test(activeLightTags);
     if (!wantsSweat) {
       results = results.map((item) => {
         let cleanedP = item.prompt.replace(/(?:,\s*)?(?:\d+(?:\.\d+)?::)?sweat(?:::)?(?=\s*,|$)/g, "");
@@ -3389,30 +2341,135 @@ export function generateScenePrompts(
     }));
   }
 
-  // Post-pass 4: Global Lighting Prose & Badge pass
+  // Post-pass 4: Optional Uterus Cross-Section / X-Ray Pass (runs BEFORE Lighting Prose so lighting tail sentence stays last)
+  if (cfg.enable_uterus_xray) {
+    const xraySpec = resolveUterusXraySpec(sceneId, cfg);
+    if (xraySpec) {
+      results = results.map((item) => {
+        if (item.prompt.startsWith("[Base Prompt]")) return item;
+        return {
+          ...item,
+          subTitle: `${item.subTitle} · [🔬子宫透视]`,
+          prompt: injectAuxFeatureIntoPrompt(
+            item.prompt,
+            xraySpec.tags,
+            cfg.enable_t5_prose ? xraySpec.prose : "",
+            "skeleton, bones, skull, ribcage, gore",
+            negOn
+          ),
+        };
+      });
+    }
+  }
+
+  // Post-pass 4.2: Deduplicate repeated single-tag tokens in positive prefix (recovers 10~25 duplicate tokens cleanly)
+  results = results.map((item) => {
+    if (item.prompt.startsWith("[Base Prompt]")) return item;
+    return {
+      ...item,
+      prompt: deduplicatePositiveTagPrefix(item.prompt),
+    };
+  });
+
+  const maxPosBudget = Math.max(280, Math.min(504, cfg.pos_token_limit ?? 502));
+
+  // Post-pass 4.5: Global Lighting Prose & Badge pass (preserves activeLight.prose 100% intact even when trimming scene prose)
   const activeLight =
     LIGHTING_PRESETS[cfg.lighting_preset] ??
     LIGHTING_PRESETS["🔄 随画风与本幕默认光影（不额外覆盖）"];
   const activeEnv =
     ENV_PRESETS[cfg.env_preset] ?? ENV_PRESETS["🔄 随本幕/体位工具栏默认环境"];
-  const isPosTransBg = sceneId in ALL_POSITIONS_TEMPLATES && Boolean(cfg.pos_transparent_bg);
+  const isPosTransBg = (sceneId in ALL_POSITIONS_TEMPLATES || sceneId === "FREE") && Boolean(cfg.pos_transparent_bg);
   if (activeLight.code !== "auto" && !isPosTransBg && sceneId !== "MA0") {
+    const is25dCel = is25dCelLightingCode(activeLight.code);
     results = results.map((item) => {
       let nextPrompt = item.prompt;
-      if (cfg.enable_t5_prose && activeLight.prose && !nextPrompt.startsWith("[Base Prompt]")) {
-        const negMatch = /,\s*(-\d+(?:\.\d+)?::[\s\S]*)$/.exec(nextPrompt);
-        let candidate: string;
-        if (negMatch) {
-          const prefix = nextPrompt.slice(0, negMatch.index).trim();
-          const sep = prefix.endsWith(".") ? " " : ", ";
-          candidate = `${prefix}${sep}${activeLight.prose}, ${negMatch[1]}`;
-        } else {
-          const trimmed = nextPrompt.trim();
-          const sep = trimmed.endsWith(".") ? " " : ", ";
-          candidate = `${trimmed}${sep}${activeLight.prose}`;
+      let hasActualClothesForLight = false;
+      let hasTankTopForLight = false;
+      if (is25dCel && !nextPrompt.startsWith("[Base Prompt]")) {
+        // Strip unwanted sweat/splash in non-fluid scenes (unless user explicitly enabled extra sweat) and add 'shiny clothes' only when clothed
+        const negBlocks0: string[] = [];
+        let posPart = nextPrompt
+          .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
+            negBlocks0.push(block.trim());
+            return "";
+          })
+          .replace(/^[ ,]+|[ ,]+$/g, "");
+        const negSuffix = negBlocks0.length > 0 ? `, ${negBlocks0.join(", ")}` : "";
+        posPart = posPart
+          .split(", ")
+          .filter((tok) => {
+            const bare = tok.trim().replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+            if (!cfg.add_extra_sweat && (bare === "sweat" || bare === "flying sweatdrops" || bare === "sweatdrop")) {
+              return false;
+            }
+            return Boolean(bare);
+          })
+          .join(", ");
+        hasActualClothesForLight =
+          cfg.enable_outfit &&
+          !/\bcompletely nude\b/i.test(posPart) &&
+          /\b(shirt|t-shirt|tank top|skirt|dress|leotard|bikini|swimsuit|serafuku|camisole|nightgown|cardigan|shorts|briefs|bra|clothed)\b/i.test(
+            posPart
+          );
+        hasTankTopForLight = /\btank top\b/i.test(posPart);
+        if (hasActualClothesForLight && !/\bshiny clothes\b/i.test(posPart)) {
+          posPart = posPart.replace("1.18::shiny skin::", "1.18::shiny skin::, shiny clothes");
         }
-        if (countPromptT5Tokens(candidate).api_pos_tokens <= 504) {
+        if (eyesOpenFor25dBlush(sceneId, exprCtrl) && /\bblush\b/i.test(posPart)) {
+          if (!/\bblush stickers\b/i.test(posPart) && !/\bnose blush\b/i.test(posPart)) {
+            posPart = posPart.replace(/\bblush\b/i, "blush, 1.15::blush stickers::, nose blush");
+          } else if (!/\bblush stickers\b/i.test(posPart)) {
+            posPart = posPart.replace(/\bblush\b/i, "blush, 1.15::blush stickers::");
+          } else if (!/\bnose blush\b/i.test(posPart)) {
+            posPart = posPart.replace(/\bblush\b/i, "blush, nose blush");
+          }
+        }
+        nextPrompt = `${posPart}${negSuffix}`;
+      }
+      if (cfg.enable_t5_prose && activeLight.prose && !nextPrompt.startsWith("[Base Prompt]")) {
+        let resolvedLightProse = activeLight.prose;
+        if (activeLight.code === "milky_peach_3tier_cel") {
+          if (!hasTankTopForLight) {
+            resolvedLightProse = hasActualClothesForLight
+              ? resolvedLightProse.replace(
+                  ", with cool ice-blue shadows on the white tank top.",
+                  ", with cool ice-blue shadows across pale fabric folds."
+                )
+              : resolvedLightProse.replace(", with cool ice-blue shadows on the white tank top.", ".");
+          }
+        }
+        const negBlocks1: string[] = [];
+        const rawPrefix = nextPrompt
+          .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
+            negBlocks1.push(block.trim());
+            return "";
+          })
+          .replace(/^[ ,]+|[ ,]+$/g, "");
+        const negTail = negBlocks1.length > 0 ? `, ${negBlocks1.join(", ")}` : "";
+        const buildWithLightProse = (prefixStr: string): string => {
+          const sep = prefixStr.endsWith(".") ? " " : ", ";
+          return `${prefixStr}${sep}${resolvedLightProse}${negTail}`;
+        };
+        let candidate = buildWithLightProse(rawPrefix);
+        if (countPromptT5Tokens(candidate).api_pos_tokens <= maxPosBudget) {
           nextPrompt = candidate;
+        } else {
+          // Trim scene prose first while keeping 100% of Danbooru tags AND resolvedLightProse intact!
+          const overhead = countPromptT5Tokens(resolvedLightProse).api_pos_tokens + 2;
+          const trimmedSceneOnly = enforcePositiveTokenBudget(
+            `${rawPrefix}${negTail}`,
+            Math.max(240, maxPosBudget - overhead),
+            false
+          );
+          const trimmedPrefix = trimmedSceneOnly
+            .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, "")
+            .replace(/^[ ,]+|[ ,]+$/g, "");
+          candidate = buildWithLightProse(trimmedPrefix);
+          nextPrompt =
+            countPromptT5Tokens(candidate).api_pos_tokens <= maxPosBudget
+              ? candidate
+              : enforcePositiveTokenBudget(candidate, maxPosBudget);
         }
       }
       return {
@@ -3426,6 +2483,7 @@ export function generateScenePrompts(
     cfg.enable_background &&
     activeEnv.code !== "auto" &&
     !(sceneId in ALL_POSITIONS_TEMPLATES) &&
+    sceneId !== "FREE" &&
     sceneId !== "MA0"
   ) {
     results = results.map((item) => ({
@@ -3434,99 +2492,334 @@ export function generateScenePrompts(
     }));
   }
 
+  // Post-pass 5: Smart Positive Budget Guard (accounts for exact comma T5 tokens, Web UI Quality Toggle headroom, and V4.5 Vibe reservation)
+  results = results.map((item) => {
+    if (item.prompt.startsWith("[Base Prompt]")) return item;
+    if (countPromptT5Tokens(item.prompt).api_pos_tokens <= maxPosBudget) return item;
+    return {
+      ...item,
+      prompt: enforcePositiveTokenBudget(item.prompt, maxPosBudget),
+    };
+  });
+
   return results;
 }
 
-export function describeActiveModules(cfg: CharacterConfig): string {
-  const offList: string[] = [];
-  const mapping: Array<[boolean, string]> = [
-    [cfg.enable_quality, "质量"],
-    [cfg.enable_style, "画风"],
-    [cfg.enable_identity, "角色身份"],
-    [cfg.enable_body, "体型肤色"],
-    [cfg.enable_outfit, "服装款式"],
-    [cfg.enable_clothing_state, "掀衣暴露辅助"],
-    [cfg.enable_legwear, "鞋袜"],
-    [cfg.enable_background, "背景"],
-    [cfg.enable_expression, "微表情"],
-    [cfg.enable_anatomy, "局部四维"],
-    [cfg.enable_action_fluids, "本幕流体"],
-    [cfg.enable_remnants, "跨幕残留"],
-    [cfg.enable_t5_prose, "T5描述句"],
-    [cfg.enable_negatives, "负向词"],
-  ];
-  for (const [flag, name] of mapping) {
-    if (!flag) offList.push(name);
-  }
-  const stageCode = POS_STAGE_PRESETS[cfg.pos_stage] ?? "before";
-  const stageNote = stageCode !== "before" ? ` | 💦体位阶段:${stageCode}` : "";
-  if (offList.length === 0) return `全量直出模式（全部模块 ON）${stageNote}`;
-  return `精密参照减负模式（已 OFF：${offList.join(" / ")}）${stageNote}`;
+function eyesOpenFor25dBlush(sceneId: string, exprCtrl: CompiledExpressionOverride): boolean {
+  if (sceneId === "MA0") return false;
+  return exprCtrl.active ? exprCtrl.eyes_open : true;
 }
 
-export function buildSingleTrackBlocks(
-  cfg: CharacterConfig,
-  selectedIds: string[],
-  trackMode: PerspectiveMode,
-  pureBatch: boolean
-): string[] {
-  const trackLabel =
-    trackMode === "pov"
-      ? "👁️ 第一人称视角卷 (First-Person POV)"
-      : "🎥 第三人称视角卷 (Third-Person Objective)";
-  const allChapters = [...STORY_CHAPTERS, ...MULTI_ANGLE_CHAPTERS, ...ALL_POSITIONS_CHAPTERS];
-  const selectedSet = new Set(selectedIds);
+function resolveUterusXraySpec(
+  sceneId: string,
+  cfg: CharacterConfig
+): { tags: string; prose: string } | null {
+  const baseTags = "1.35::x-ray::, 1.35::cross-section::, 1.4::uterus::, cervix";
+  if (sceneId in ALL_POSITIONS_TEMPLATES) {
+    const ch = ALL_POSITIONS_TEMPLATES[sceneId].channel;
+    const wombChannels = new Set([
+      "vaginal",
+      "solo",
+      "fingering",
+      "grope_fingering",
+      "clit_tease",
+      "thigh",
+    ]);
+    if (!wombChannels.has(ch)) return null;
+    const stageCode = POS_STAGE_PRESETS[cfg.pos_stage] ?? "before";
+    const maleCode = POS_MALE_MODE_PRESETS[cfg.pos_male_mode] ?? "normal";
+    const hasPartnerOrgan = Boolean(cfg.pos_show_penis) && maleCode !== "off";
 
-  if (pureBatch) {
-    const lines: string[] = [];
-    for (const ch of allChapters) {
-      if (!selectedSet.has(ch.id)) continue;
-      for (const item of generateScenePrompts(ch.id, cfg, trackMode)) {
-        if (item.prompt.startsWith("[Base Prompt]")) continue;
-        lines.push(item.prompt);
+    if (ch === "vaginal") {
+      if (cfg.enable_condom) {
+        if (stageCode === "during" || stageCode === "after_inside") {
+          // Already injected full womb x-ray + ballooning condom inside uterus in main vaginal condom branch
+          return null;
+        }
+        if (stageCode === "pull_out" || stageCode === "prolapse") {
+          return {
+            tags: `${baseTags}`,
+            prose:
+              "with an anatomical x-ray cross-section showing her empty womb after pull-out while the cum-filled condom hangs out of her entrance.",
+          };
+        }
+        if (hasPartnerOrgan) {
+          return {
+            tags: `${baseTags}, 1.35::condom::, 1.3::cervical penetration::`,
+            prose:
+              "with an anatomical x-ray cross-section showing the condom-sheathed tip pressing through her cervix into her uterus.",
+          };
+        }
+      }
+      if (stageCode === "during") {
+        return {
+          tags: `${baseTags}, 1.4::internal cumshot::, 1.4::cum in uterus::`,
+          prose: "with an anatomical x-ray cross-section showing fluid filling her uterus.",
+        };
+      }
+      if (stageCode === "after_inside" || stageCode === "pull_out" || stageCode === "prolapse") {
+        return {
+          tags: `${baseTags}, 1.4::cum in uterus::`,
+          prose: "with an anatomical x-ray cross-section showing fluid pooled inside her uterus.",
+        };
+      }
+      if (hasPartnerOrgan) {
+        return {
+          tags: `${baseTags}, 1.25::cervical penetration::`,
+          prose: "with an anatomical x-ray cross-section showing deep contact against her cervix and uterus.",
+        };
+      }
+    } else if (ch === "solo" && stageCode !== "before") {
+      return {
+        tags: `${baseTags}, 1.35::cum in uterus::`,
+        prose: "with an anatomical x-ray cross-section showing fluid pooled inside her uterus.",
+      };
+    }
+    return {
+      tags: baseTags,
+      prose: "with a translucent anatomical x-ray cross-section revealing her cervix and uterus.",
+    };
+  }
+
+  if (
+    (sceneId in MULTI_ANGLE_TEMPLATES && sceneId !== "MA0" && cfg.enable_multi_angle_nsfw) ||
+    (sceneId === "FREE" && cfg.free_action_nsfw)
+  ) {
+    return {
+      tags: baseTags,
+      prose: "with a translucent anatomical x-ray cross-section revealing her uterus.",
+    };
+  }
+  return null;
+}
+
+function injectAuxFeatureIntoPrompt(
+  rawPrompt: string,
+  auxTags: string,
+  auxProse: string,
+  extraNegGuard: string,
+  enableNegatives: boolean
+): string {
+  const negBlocks: string[] = [];
+  let posOnly = rawPrompt
+    .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
+      negBlocks.push(block.trim());
+      return "";
+    })
+    .replace(/^[ ,]+|[ ,]+$/g, "");
+
+  const segments = posOnly.split(/,\s+/);
+  let proseIdx = -1;
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i].trim();
+    if (!seg || seg.includes("::")) continue;
+    if (/^[A-Z]|^the girl\b/.test(seg) || seg.split(/\s+/).length >= 8) {
+      proseIdx = i;
+      break;
+    }
+  }
+
+  if (proseIdx > 0) {
+    const before = segments.slice(0, proseIdx).join(", ");
+    let after = segments.slice(proseIdx).join(", ");
+    if (auxProse) {
+      after = `${after.replace(/\.+\s*$/, "")}, ${auxProse}`;
+    }
+    posOnly = `${before}, ${auxTags}, ${after}`;
+  } else {
+    posOnly = auxProse ? `${posOnly}, ${auxTags}, ${auxProse}` : `${posOnly}, ${auxTags}`;
+  }
+
+  if (enableNegatives && extraNegGuard) {
+    const mainIdx = negBlocks.findIndex((b) => b.startsWith("-2::"));
+    if (mainIdx !== -1) {
+      const inner = negBlocks[mainIdx].slice(4, -2).trim();
+      negBlocks[mainIdx] = `-2::${inner ? `${inner}, ${extraNegGuard}` : extraNegGuard}::`;
+    } else {
+      negBlocks.unshift(`-2::${extraNegGuard}::`);
+    }
+  }
+
+  return negBlocks.length > 0 ? `${posOnly}, ${negBlocks.join(", ")}` : posOnly;
+}
+
+function splitTopLevelCommaSegments(input: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let inWeightSpan = false;
+  for (let i = 0; i < input.length; i++) {
+    if (input[i] === ":" && input[i + 1] === ":") {
+      inWeightSpan = !inWeightSpan;
+      cur += "::";
+      i++;
+      continue;
+    }
+    if (!inWeightSpan && input[i] === ",") {
+      const trimmed = cur.trim();
+      if (trimmed) out.push(trimmed);
+      cur = "";
+      continue;
+    }
+    cur += input[i];
+  }
+  const tail = cur.trim();
+  if (tail) out.push(tail);
+  return out;
+}
+
+function deduplicatePositiveTagPrefix(rawPrompt: string): string {
+  const negBlocks: string[] = [];
+  const posOnly = rawPrompt
+    .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
+      negBlocks.push(block.trim());
+      return "";
+    })
+    .replace(/^[ ,]+|[ ,]+$/g, "");
+
+  const segments = splitTopLevelCommaSegments(posOnly);
+  let proseIdx = -1;
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (!seg || seg.includes("::")) continue;
+    if (/^[A-Z]|^the girl\b/.test(seg) || seg.split(/\s+/).length >= 8) {
+      proseIdx = i;
+      break;
+    }
+  }
+
+  const tagSegs = proseIdx >= 0 ? segments.slice(0, proseIdx) : segments;
+  const proseSegs = proseIdx >= 0 ? segments.slice(proseIdx) : [];
+
+  const dedupedTags: string[] = [];
+  const seenKeyToSlot = new Map<string, { idx: number; hasExplicitWeight: boolean }>();
+
+  for (const seg of tagSegs) {
+    const mW = /^(-?\d+(?:\.\d+)?)::([\s\S]+?)::$/.exec(seg);
+    if (mW) {
+      const w = parseFloat(mW[1]);
+      const inner = mW[2].trim();
+      // Leave multi-tag weight spans or negative counterweights untouched
+      if (w <= 0 || inner.includes(",")) {
+        dedupedTags.push(seg);
+        continue;
+      }
+      const key = inner.toLowerCase();
+      const prev = seenKeyToSlot.get(key);
+      if (prev) {
+        if (!prev.hasExplicitWeight) {
+          dedupedTags[prev.idx] = seg;
+          prev.hasExplicitWeight = true;
+        }
+        continue;
+      }
+      seenKeyToSlot.set(key, { idx: dedupedTags.length, hasExplicitWeight: true });
+      dedupedTags.push(seg);
+    } else {
+      const key = seg.toLowerCase();
+      if (seenKeyToSlot.has(key)) {
+        continue;
+      }
+      seenKeyToSlot.set(key, { idx: dedupedTags.length, hasExplicitWeight: false });
+      dedupedTags.push(seg);
+    }
+  }
+
+  const rebuiltPos = [...dedupedTags, ...proseSegs].join(", ");
+  return negBlocks.length > 0 ? `${rebuiltPos}, ${negBlocks.join(", ")}` : rebuiltPos;
+}
+
+function enforcePositiveTokenBudget(
+  rawPrompt: string,
+  maxPosTokens = 510,
+  allowTagTrim = true
+): string {
+  if (countPromptT5Tokens(rawPrompt).api_pos_tokens <= maxPosTokens) {
+    return rawPrompt;
+  }
+
+  const negBlocks: string[] = [];
+  const posOnly = rawPrompt
+    .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
+      negBlocks.push(block.trim());
+      return "";
+    })
+    .replace(/^[ ,]+|[ ,]+$/g, "");
+
+  const rebuild = (candidatePos: string): string => {
+    const cleanP = candidatePos.replace(/^[ ,]+|[ ,]+$/g, "");
+    return negBlocks.length > 0 ? `${cleanP}, ${negBlocks.join(", ")}` : cleanP;
+  };
+
+  // Locate start of trailing T5 prose sentence (first comma-segment that starts with Uppercase or has >=6 plain words)
+  const segments = posOnly.split(/,\s+/);
+  let proseIdx = -1;
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i].trim();
+    if (!seg || seg.includes("::")) continue;
+    const wordCount = seg.split(/\s+/).length;
+    if (/^[A-Z]|^the girl\b/.test(seg) || wordCount >= 8) {
+      proseIdx = i;
+      break;
+    }
+  }
+
+  if (proseIdx > 0) {
+    const tagsPart = segments.slice(0, proseIdx).join(", ");
+    const prosePart = segments.slice(proseIdx).join(", ").replace(/\.+\s*$/, "");
+
+    const colonIdx = prosePart.indexOf(": ");
+    if (colonIdx !== -1) {
+      const stylePrefix = prosePart.slice(0, colonIdx).trim();
+      const bodyClauses = prosePart
+        .slice(colonIdx + 2)
+        .split(/;\s+|,\s+/)
+        .filter(Boolean);
+
+      for (let keep = bodyClauses.length - 1; keep >= 1; keep--) {
+        const cand = rebuild(`${tagsPart}, ${stylePrefix}: ${bodyClauses.slice(0, keep).join(", ")}.`);
+        if (countPromptT5Tokens(cand).api_pos_tokens <= maxPosTokens) {
+          return cand;
+        }
+      }
+
+      const styleOnlyCand = rebuild(`${tagsPart}, ${stylePrefix}.`);
+      if (countPromptT5Tokens(styleOnlyCand).api_pos_tokens <= maxPosTokens) {
+        return styleOnlyCand;
+      }
+
+      const prefixClauses = stylePrefix.split(/,\s+/).filter(Boolean);
+      for (let keep = prefixClauses.length - 1; keep >= 1; keep--) {
+        const cand = rebuild(`${tagsPart}, ${prefixClauses.slice(0, keep).join(", ")}.`);
+        if (countPromptT5Tokens(cand).api_pos_tokens <= maxPosTokens) {
+          return cand;
+        }
+      }
+    } else {
+      const clauses = prosePart.split(/;\s+|,\s+/).filter(Boolean);
+      for (let keep = clauses.length - 1; keep >= 1; keep--) {
+        const cand = rebuild(`${tagsPart}, ${clauses.slice(0, keep).join(", ")}.`);
+        if (countPromptT5Tokens(cand).api_pos_tokens <= maxPosTokens) {
+          return cand;
+        }
       }
     }
-    return lines;
+
+    // Fallback: keep 100% of Danbooru tags and drop trailing T5 prose
+    const tagsOnlyCand = rebuild(tagsPart);
+    if (!allowTagTrim || countPromptT5Tokens(tagsOnlyCand).api_pos_tokens <= maxPosTokens) {
+      return tagsOnlyCand;
+    }
+    // Extreme custom-tag overflow fallback: trim trailing unessential tags until within budget
+    const tagTokens = tagsPart.split(/,\s+/);
+    while (tagTokens.length > 10) {
+      tagTokens.pop();
+      const shrunk = rebuild(tagTokens.join(", "));
+      if (countPromptT5Tokens(shrunk).api_pos_tokens <= maxPosTokens) {
+        return shrunk;
+      }
+    }
+    return tagsOnlyCand;
   }
 
-  const whoStr = cfg.enable_identity
-    ? `${cfg.preset_name} (${cfg.char_tag})`
-    : "精密参照接管角色 (Character Identity OFF)";
-  const blocks: string[] = [
-    "# ==========================================================================",
-    `# 🎬 ${trackLabel} — 角色：${whoStr}`,
-    `# 🎛️ 模块状态：${describeActiveModules(cfg)}`,
-    "# ==========================================================================\n",
-  ];
-  for (const ch of allChapters) {
-    if (!selectedSet.has(ch.id)) continue;
-    const items = generateScenePrompts(ch.id, cfg, trackMode);
-    const firstCanvas = items[0]?.canvas || "";
-    blocks.push("# --------------------------------------------------------------------------");
-    blocks.push(`# 📌 ${ch.title}  |  视角：${trackLabel}  |  推荐画布：${firstCanvas}`);
-    blocks.push("# --------------------------------------------------------------------------");
-    for (const item of items) {
-      blocks.push(`## ${item.subTitle}（画布：{${item.canvas}}）：`.replace(`{${item.canvas}}`, item.canvas));
-      blocks.push(item.prompt);
-      blocks.push("");
-    }
-  }
-  return blocks;
-}
-
-export function generateFullSuite(
-  cfg: CharacterConfig,
-  selectedIds: string[],
-  pureBatchLines = false,
-  exportBothSeparated = false
-): string {
-  if (exportBothSeparated) {
-    const povPart = buildSingleTrackBlocks(cfg, selectedIds, "pov", pureBatchLines);
-    const trdPart = buildSingleTrackBlocks(cfg, selectedIds, "3rd", pureBatchLines);
-    if (pureBatchLines) {
-      return [...povPart, ...trdPart].join("\n");
-    }
-    return [...povPart, "\n\n", ...trdPart].join("\n");
-  }
-  return buildSingleTrackBlocks(cfg, selectedIds, cfg.perspective_mode, pureBatchLines).join("\n");
+  return rawPrompt;
 }

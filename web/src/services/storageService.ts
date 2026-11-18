@@ -4,11 +4,15 @@ import {
   createDefaultNaiApiSettings,
   type CharacterConfig,
   type NaiApiSettings,
+  type StoredVibeItem,
 } from "../engine/types";
 
 const LS_CFG_KEY = "nai_wb_active_config_v1";
 const LS_PRESETS_KEY = "nai_wb_custom_presets_v1";
+const LS_DELETED_PRESETS_KEY = "nai_wb_deleted_presets_v1";
 const LS_API_KEY = "nai_wb_api_settings_v1";
+const LS_MCP_ENABLED_KEY = "nai_wb_mcp_enabled_v1";
+const LS_MCP_ENDPOINT_KEY = "nai_wb_mcp_endpoint_v1";
 
 // File System Access API types (optional on Window in TS DOM)
 interface FSFileWritable {
@@ -87,7 +91,11 @@ export async function saveBytesToMountedDir(
     }
     const fh = await dir.getFileHandle(fileName, { create: true });
     const writable = await fh.createWritable();
-    await writable.write(data instanceof Uint8Array ? (data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as unknown as Uint8Array) : data);
+    await writable.write(
+      data instanceof Uint8Array
+        ? (data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as unknown as Uint8Array)
+        : data
+    );
     await writable.close();
     return [mountedRootDir.name, ...subPathParts, fileName].join("/");
   } catch {
@@ -165,10 +173,10 @@ export function buildStoreZipBlob(
 
     const lfh = new Uint8Array(30 + nameBytes.length);
     const lv = new DataView(lfh.buffer);
-    lv.setUint32(0, 0x04034b50, true); // Local file header signature
-    lv.setUint16(4, 20, true); // Version needed
-    lv.setUint16(6, 0x0800, true); // UTF-8 filename flag
-    lv.setUint16(8, 0, true); // Compression method 0 (Store)
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0x0800, true);
+    lv.setUint16(8, 0, true);
     lv.setUint16(10, dosTime, true);
     lv.setUint16(12, dosDate, true);
     lv.setUint32(14, sum, true);
@@ -184,7 +192,7 @@ export function buildStoreZipBlob(
 
     const cdh = new Uint8Array(46 + nameBytes.length);
     const cv = new DataView(cdh.buffer);
-    cv.setUint32(0, 0x02014b50, true); // Central directory header signature
+    cv.setUint32(0, 0x02014b50, true);
     cv.setUint16(4, 20, true);
     cv.setUint16(6, 20, true);
     cv.setUint16(8, 0x0800, true);
@@ -233,7 +241,39 @@ export function loadActiveConfig(): CharacterConfig {
     const raw = localStorage.getItem(LS_CFG_KEY);
     if (!raw) return def;
     const parsed = JSON.parse(raw) as Partial<CharacterConfig>;
-    return { ...def, ...parsed };
+    const merged: CharacterConfig = { ...def, ...parsed };
+    if (
+      merged.style_preset?.includes("mikozin 0.65 + neit ni sei") ||
+      merged.style_preset?.includes("mikozin 0.66 + neit")
+    ) {
+      merged.style_preset =
+        "🎀 四画师稳态清透逆光萌系风（mikozin 0.68 + kani 0.44 + kasumi 0.42 + neit 0.22）";
+    }
+    if (merged.style_preset?.includes("shouu-kun 0.56 + mikozin 0.40 + gotyou 0.36")) {
+      merged.style_preset = "🌿 安定中度萌化淡画风（shouu-kun 0.56 + mikozin 0.40 + gotyou 0.38）";
+    }
+    if (merged.body_preset?.includes("0.26 chibi + slender mini-lady")) {
+      merged.body_preset = "袖珍娇小窄肩细腰笔直长腿·微Q萌圆脸（0.25 chibi + short slender mini-lady）";
+    }
+    if (merged.preset_name === "原创白发猫娘 OC（无需作品Tag）") {
+      merged.preset_name = "原创角色 OC（无需作品Tag · 用额外常驻Tag定义外貌）";
+    }
+    delete (merged as unknown as Record<string, unknown>).eye_color;
+    delete (merged as unknown as Record<string, unknown>).hair_tags;
+    if (!parsed.wb_v2_migrated) {
+      merged.enable_quality = true;
+      merged.enable_identity = true;
+      merged.enable_body = true;
+      merged.enable_clothing_state = true;
+      merged.enable_legwear = true;
+      merged.enable_expression = true;
+      merged.enable_action_fluids = true;
+      merged.enable_t5_prose = true;
+      merged.enable_negatives = true;
+      merged.wb_v2_migrated = true;
+      saveActiveConfig(merged);
+    }
+    return merged;
   } catch {
     return def;
   }
@@ -247,27 +287,111 @@ export function saveActiveConfig(cfg: CharacterConfig): void {
   }
 }
 
+export function loadDeletedPresets(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LS_DELETED_PRESETS_KEY);
+    if (!raw) return new Set<string>();
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return new Set<string>();
+    return new Set(arr.filter((x): x is string => typeof x === "string" && x.length > 0));
+  } catch {
+    return new Set<string>();
+  }
+}
+
+export function saveDeletedPresets(set: Set<string>): void {
+  try {
+    localStorage.setItem(LS_DELETED_PRESETS_KEY, JSON.stringify(Array.from(set)));
+  } catch {
+    // ignore
+  }
+}
+
+export function markPresetDeleted(name: string): void {
+  if (!name) return;
+  const set = loadDeletedPresets();
+  set.add(name);
+  saveDeletedPresets(set);
+}
+
+export function unmarkPresetDeleted(name: string): void {
+  if (!name) return;
+  const set = loadDeletedPresets();
+  if (set.delete(name)) {
+    saveDeletedPresets(set);
+  }
+}
+
+export function clearDeletedPresets(): void {
+  try {
+    localStorage.removeItem(LS_DELETED_PRESETS_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 export function loadCustomPresets(): Record<string, Partial<CharacterConfig>> {
   const bundled = BUNDLED_CUSTOM_PRESETS as Record<string, Partial<CharacterConfig>>;
+  const deleted = loadDeletedPresets();
+  let merged: Record<string, Partial<CharacterConfig>> = { ...bundled };
   try {
     const raw = localStorage.getItem(LS_PRESETS_KEY);
-    if (!raw) {
-      return { ...bundled };
+    if (raw) {
+      const parsed = JSON.parse(raw) as Record<string, Partial<CharacterConfig>>;
+      if (parsed && typeof parsed === "object") {
+        merged = { ...bundled, ...parsed };
+      }
     }
-    const parsed = JSON.parse(raw) as Record<string, Partial<CharacterConfig>>;
-    if (!parsed || typeof parsed !== "object") {
-      return { ...bundled };
-    }
-    // Seed any newly bundled presets without overwriting user's saved versions
-    return { ...bundled, ...parsed };
   } catch {
-    return { ...bundled };
+    // ignore
   }
+  for (const delKey of deleted) {
+    delete merged[delKey];
+  }
+  return merged;
 }
 
 export function saveCustomPresets(presets: Record<string, Partial<CharacterConfig>>): void {
   try {
     localStorage.setItem(LS_PRESETS_KEY, JSON.stringify(presets));
+  } catch {
+    // ignore
+  }
+}
+
+export function loadMcpBridgeEnabled(): boolean {
+  try {
+    const raw = localStorage.getItem(LS_MCP_ENABLED_KEY);
+    return raw === null ? true : raw === "1" || raw === "true";
+  } catch {
+    return true;
+  }
+}
+
+export function saveMcpBridgeEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(LS_MCP_ENABLED_KEY, enabled ? "1" : "0");
+  } catch {
+    // ignore
+  }
+}
+
+export function loadMcpBridgeEndpoint(): string {
+  try {
+    return (localStorage.getItem(LS_MCP_ENDPOINT_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+export function saveMcpBridgeEndpoint(endpoint: string): void {
+  try {
+    const trimmed = endpoint.trim();
+    if (!trimmed) {
+      localStorage.removeItem(LS_MCP_ENDPOINT_KEY);
+    } else {
+      localStorage.setItem(LS_MCP_ENDPOINT_KEY, trimmed);
+    }
   } catch {
     // ignore
   }
@@ -280,18 +404,17 @@ export function loadApiSettings(): NaiApiSettings {
     if (!raw) return def;
     const parsed = JSON.parse(raw) as Partial<NaiApiSettings>;
     const merged: NaiApiSettings = { ...def, ...parsed };
-    if (merged.model !== "nai-diffusion-4-5-full" && merged.model !== "nai-diffusion-5-full-medium") {
+    if (
+      merged.model !== "nai-diffusion-4-5-full" &&
+      merged.model !== "nai-diffusion-5-full" &&
+      merged.model !== "nai-diffusion-5-full-medium"
+    ) {
       merged.model = def.model;
     }
     if (!Number.isFinite(merged.steps)) merged.steps = def.steps;
     merged.steps = Math.max(1, Math.min(50, Math.round(merged.steps)));
-    if (
-      merged.precise_ref_workflow !== "chara_only" &&
-      merged.precise_ref_workflow !== "style_plus_chara" &&
-      merged.precise_ref_workflow !== "single_char_and_style"
-    ) {
-      merged.precise_ref_workflow = def.precise_ref_workflow;
-    }
+    if (!Number.isFinite(merged.batch_count)) merged.batch_count = 1;
+    merged.batch_count = Math.max(1, Math.min(8, Math.round(merged.batch_count)));
     if (
       merged.uc_preset_mode !== "heavy" &&
       merged.uc_preset_mode !== "light" &&
@@ -300,33 +423,31 @@ export function loadApiSettings(): NaiApiSettings {
     ) {
       merged.uc_preset_mode = def.uc_preset_mode;
     }
+    let needsSave = false;
     if (!parsed.uc_preset_migrated_v2) {
       if (!parsed.uc_preset_mode || parsed.uc_preset_mode === "none") {
         merged.uc_preset_mode = "heavy";
       }
       merged.uc_preset_migrated_v2 = true;
+      needsSave = true;
+    }
+    if (!parsed.pos_neg_split_migrated_v1) {
+      merged.keep_inline_negatives = false;
+      merged.pos_neg_split_migrated_v1 = true;
+      needsSave = true;
+    } else {
+      merged.keep_inline_negatives =
+        merged.keep_inline_negatives === undefined
+          ? def.keep_inline_negatives
+          : Boolean(merged.keep_inline_negatives);
+    }
+    if (needsSave) {
       saveApiSettings(merged);
     }
-    merged.keep_inline_negatives =
-      merged.keep_inline_negatives === undefined ? def.keep_inline_negatives : Boolean(merged.keep_inline_negatives);
-    if (!Number.isFinite(merged.precise_ref_strength)) {
-      merged.precise_ref_strength = def.precise_ref_strength;
-    }
-    if (!Number.isFinite(merged.precise_ref_fidelity)) {
-      merged.precise_ref_fidelity = def.precise_ref_fidelity;
-    }
-    if (!Number.isFinite(merged.precise_style_strength)) {
-      merged.precise_style_strength = def.precise_style_strength;
-    }
-    if (!Number.isFinite(merged.precise_style_fidelity)) {
-      merged.precise_style_fidelity = def.precise_style_fidelity;
-    }
-    merged.precise_ref_strength = Math.max(0, Math.min(1, Number(merged.precise_ref_strength)));
-    merged.precise_ref_fidelity = Math.max(0, Math.min(1, Number(merged.precise_ref_fidelity)));
-    merged.precise_ref_enabled = Boolean(merged.precise_ref_enabled);
-    merged.precise_style_strength = Math.max(0, Math.min(1, Number(merged.precise_style_strength)));
-    merged.precise_style_fidelity = Math.max(0, Math.min(1, Number(merged.precise_style_fidelity)));
-    merged.precise_style_enabled = Boolean(merged.precise_style_enabled);
+    merged.vibe_transfer_enabled =
+      parsed.vibe_transfer_enabled === undefined ? true : Boolean(parsed.vibe_transfer_enabled);
+    merged.vibe_normalize_strength =
+      parsed.vibe_normalize_strength === undefined ? true : Boolean(parsed.vibe_normalize_strength);
     if (merged.carousel_auto_mode !== "follow_latest" && merged.carousel_auto_mode !== "timed") {
       merged.carousel_auto_mode = parsed.carousel_interval_sec === 0 ? "follow_latest" : "timed";
     }
@@ -348,28 +469,12 @@ export function saveApiSettings(settings: NaiApiSettings): void {
 }
 
 // ==========================================
-// IndexedDB Storage for V4.5 Precise Reference (Character) Image
+// IndexedDB Storage for Vibe Transfer Bundle (.naiv4vibebundle / .naiv4vibe)
 // ==========================================
-export interface StoredPreciseRefImage {
-  filename: string;
-  rawBytes: Uint8Array;
-  preparedPngBytes: Uint8Array;
-  origWidth: number;
-  origHeight: number;
-  normWidth: number;
-  normHeight: number;
-  prepVersion?: number;
-  updatedAt: number;
-}
-
 const IDB_NAME = "nai_wb_idb_v1";
 const IDB_STORE = "kv";
-const IDB_PRECISE_REF_KEY = "precise_ref_character_v1";
-const IDB_PRECISE_STYLE_REF_KEY = "precise_ref_style_v1";
-const memPreciseRefSlots: Record<string, StoredPreciseRefImage | null> = {
-  [IDB_PRECISE_REF_KEY]: null,
-  [IDB_PRECISE_STYLE_REF_KEY]: null,
-};
+const IDB_VIBE_BUNDLE_KEY = "vibe_transfer_items_v1";
+let memVibeItems: StoredVibeItem[] = [];
 
 function openWorkbenchIdb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -389,82 +494,60 @@ function openWorkbenchIdb(): Promise<IDBDatabase> {
   });
 }
 
-function toUint8Array(val: unknown): Uint8Array {
-  if (val instanceof Uint8Array) return val;
-  if (val instanceof ArrayBuffer) return new Uint8Array(val);
-  if (ArrayBuffer.isView(val)) {
-    return new Uint8Array(val.buffer, val.byteOffset, val.byteLength);
-  }
-  return new Uint8Array(0);
-}
-
-async function loadPreciseRefByKey(key: string): Promise<StoredPreciseRefImage | null> {
+export async function loadStoredVibeItems(): Promise<StoredVibeItem[]> {
   try {
     const db = await openWorkbenchIdb();
     const record = await new Promise<unknown>((resolve, reject) => {
       const tx = db.transaction(IDB_STORE, "readonly");
       const store = tx.objectStore(IDB_STORE);
-      const getReq = store.get(key);
+      const getReq = store.get(IDB_VIBE_BUNDLE_KEY);
       getReq.onsuccess = () => resolve(getReq.result);
       getReq.onerror = () => reject(getReq.error);
     });
     db.close();
-    if (!record || typeof record !== "object") {
-      return memPreciseRefSlots[key] ?? null;
+    if (!Array.isArray(record)) {
+      return memVibeItems;
     }
-    const r = record as Record<string, unknown>;
-    const rawBytes = toUint8Array(r.rawBytes);
-    const preparedPngBytes = toUint8Array(r.preparedPngBytes);
-    if (preparedPngBytes.length === 0) {
-      return memPreciseRefSlots[key] ?? null;
-    }
-    const loaded: StoredPreciseRefImage = {
-      filename: String(r.filename || "reference.png"),
-      rawBytes: rawBytes.length > 0 ? rawBytes : preparedPngBytes,
-      preparedPngBytes,
-      origWidth: Number(r.origWidth || 0),
-      origHeight: Number(r.origHeight || 0),
-      normWidth: Number(r.normWidth || 0),
-      normHeight: Number(r.normHeight || 0),
-      prepVersion: Number(r.prepVersion || 1),
-      updatedAt: Number(r.updatedAt || Date.now()),
-    };
-    memPreciseRefSlots[key] = loaded;
-    return loaded;
+    const valid = (record as StoredVibeItem[]).filter(
+      (it) => it && typeof it === "object" && typeof it.id === "string" && it.encodings
+    );
+    memVibeItems = valid;
+    return valid;
   } catch {
-    return memPreciseRefSlots[key] ?? null;
+    return memVibeItems;
   }
 }
 
-async function savePreciseRefByKey(key: string, item: StoredPreciseRefImage): Promise<void> {
-  // Store canonical prepared PNG in IndexedDB without duplicating huge 17MB+ 4K raw files
-  const compactItem: StoredPreciseRefImage = {
-    ...item,
-    rawBytes:
-      item.rawBytes.byteLength > 4 * 1024 * 1024 ? item.preparedPngBytes : item.rawBytes,
-  };
-  memPreciseRefSlots[key] = compactItem;
+export async function saveStoredVibeItems(items: StoredVibeItem[]): Promise<void> {
+  const compactList: StoredVibeItem[] = items.map((it) => ({
+    ...it,
+    rawImageBase64:
+      it.rawImageBase64 && it.rawImageBase64.length > 600_000 && it.thumbnailDataUrl
+        ? undefined
+        : it.rawImageBase64,
+  }));
+  memVibeItems = items;
   try {
     const db = await openWorkbenchIdb();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(IDB_STORE, "readwrite");
-      tx.objectStore(IDB_STORE).put(compactItem, key);
+      tx.objectStore(IDB_STORE).put(compactList, IDB_VIBE_BUNDLE_KEY);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
     db.close();
   } catch {
-    // Keep in-memory copy if IndexedDB is blocked in local/incognito context
+    // Keep in-memory copy if IndexedDB is unavailable
   }
 }
 
-async function clearPreciseRefByKey(key: string): Promise<void> {
-  memPreciseRefSlots[key] = null;
+export async function clearStoredVibeItems(): Promise<void> {
+  memVibeItems = [];
   try {
     const db = await openWorkbenchIdb();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(IDB_STORE, "readwrite");
-      tx.objectStore(IDB_STORE).delete(key);
+      tx.objectStore(IDB_STORE).delete(IDB_VIBE_BUNDLE_KEY);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -472,28 +555,4 @@ async function clearPreciseRefByKey(key: string): Promise<void> {
   } catch {
     // ignore
   }
-}
-
-export async function loadPreciseRefImage(): Promise<StoredPreciseRefImage | null> {
-  return loadPreciseRefByKey(IDB_PRECISE_REF_KEY);
-}
-
-export async function savePreciseRefImage(item: StoredPreciseRefImage): Promise<void> {
-  return savePreciseRefByKey(IDB_PRECISE_REF_KEY, item);
-}
-
-export async function clearPreciseRefImage(): Promise<void> {
-  return clearPreciseRefByKey(IDB_PRECISE_REF_KEY);
-}
-
-export async function loadPreciseStyleRefImage(): Promise<StoredPreciseRefImage | null> {
-  return loadPreciseRefByKey(IDB_PRECISE_STYLE_REF_KEY);
-}
-
-export async function savePreciseStyleRefImage(item: StoredPreciseRefImage): Promise<void> {
-  return savePreciseRefByKey(IDB_PRECISE_STYLE_REF_KEY, item);
-}
-
-export async function clearPreciseStyleRefImage(): Promise<void> {
-  return clearPreciseRefByKey(IDB_PRECISE_STYLE_REF_KEY);
 }

@@ -1,12 +1,10 @@
 export type PerspectiveMode = "pov" | "3rd";
-export type MultiPanelMode = "2koma" | "single_a" | "single_b" | "single_pair";
+export type ActionMode = "positions" | "multi_angle" | "free";
 
 export interface CharacterConfig {
   preset_name: string;
   char_tag: string;
   eng_name: string;
-  eye_color: string;
-  hair_tags: string;
   canon_neg_tags: string;
   extra_char_tags: string;
 
@@ -36,8 +34,6 @@ export interface CharacterConfig {
   fluid_scale: number;
 
   perspective_mode: PerspectiveMode;
-  include_sub_variants: boolean;
-  multi_panel_mode: MultiPanelMode;
 
   enable_quality: boolean;
   enable_style: boolean;
@@ -50,16 +46,21 @@ export interface CharacterConfig {
   enable_expression: boolean;
   enable_anatomy: boolean;
   enable_action_fluids: boolean;
-  enable_remnants: boolean;
   enable_t5_prose: boolean;
   enable_negatives: boolean;
   enable_multi_angle_nsfw: boolean;
+  enable_uterus_xray: boolean;
+  enable_condom: boolean;
 
   pos_transparent_bg: boolean;
   pos_scene: string;
   pos_male_mode: string;
   pos_show_penis: boolean;
   pos_stage: string;
+
+  free_action_tags: string;
+  free_action_prose: string;
+  free_action_nsfw: boolean;
 
   cam_enable_override: boolean;
   cam_azimuth: number;
@@ -76,8 +77,9 @@ export interface CharacterConfig {
   expr_heart_eyes: boolean;
   expr_empty_eyes: boolean;
   expr_tears: boolean;
-  expr_override_sleeping: boolean;
   custom_expression_tags: string;
+  pos_token_limit?: number;
+  wb_v2_migrated?: boolean;
 }
 
 export function createDefaultCharacterConfig(): CharacterConfig {
@@ -85,9 +87,7 @@ export function createDefaultCharacterConfig(): CharacterConfig {
     preset_name: "标枪 Javelin（碧蓝航线 · 默认）",
     char_tag: "javelin (azur lane)",
     eng_name: "Javelin",
-    eye_color: "purple eyes",
-    hair_tags: "hair ribbon, x hair ornament, pointy hair, stray hair",
-    canon_neg_tags: "neckerchief, serafuku, plaid, gloves",
+    canon_neg_tags: "neckerchief, serafuku, plaid, gloves, crown",
     extra_char_tags: "",
 
     body_preset: "纤细娇小（原版默认 slender, petite）",
@@ -115,9 +115,7 @@ export function createDefaultCharacterConfig(): CharacterConfig {
     pigment_preset: "3A 透肤暖珊瑚无色差（原版默认）",
     fluid_scale: 1.0,
 
-    perspective_mode: "pov",
-    include_sub_variants: false,
-    multi_panel_mode: "2koma",
+    perspective_mode: "3rd",
 
     enable_quality: true,
     enable_style: true,
@@ -130,16 +128,21 @@ export function createDefaultCharacterConfig(): CharacterConfig {
     enable_expression: true,
     enable_anatomy: true,
     enable_action_fluids: true,
-    enable_remnants: true,
     enable_t5_prose: true,
     enable_negatives: true,
     enable_multi_angle_nsfw: false,
+    enable_uterus_xray: false,
+    enable_condom: false,
 
     pos_transparent_bg: false,
     pos_scene: "🛋️ 默认暖光室内沙发（indoors, couch, lamp）",
     pos_male_mode: "👤 正常显示男方（默认无脸男 faceless male）",
     pos_show_penis: true,
     pos_stage: "🔥 1. 射精前 · 进行中（默认专注体位连接 · 无白浊）",
+
+    free_action_tags: "cowboy shot, sitting, crossed legs, head tilt, gentle smile, looking at viewer",
+    free_action_prose: "",
+    free_action_nsfw: false,
 
     cam_enable_override: false,
     cam_azimuth: 0,
@@ -156,8 +159,8 @@ export function createDefaultCharacterConfig(): CharacterConfig {
     expr_heart_eyes: false,
     expr_empty_eyes: false,
     expr_tears: false,
-    expr_override_sleeping: false,
     custom_expression_tags: "",
+    wb_v2_migrated: true,
   };
 }
 
@@ -175,17 +178,38 @@ export interface TokenCountInfo {
   exact_spiece: boolean;
 }
 
-export type NaiModelId = "nai-diffusion-5-full-medium" | "nai-diffusion-4-5-full";
+export type NaiModelId =
+  | "nai-diffusion-5-full"
+  | "nai-diffusion-5-full-medium"
+  | "nai-diffusion-4-5-full";
 export type NaiUcPresetMode = "heavy" | "light" | "human_focus" | "none";
-export type PreciseRefMode = "character" | "style" | "character&style";
-export type PreciseRefWorkflowMode = "chara_only" | "style_plus_chara" | "single_char_and_style";
 export type CarouselMode = "manual" | "follow_latest" | "timed";
 
-export interface PreciseRefSlotInput {
-  mode: PreciseRefMode;
-  pngBytes: Uint8Array;
+export interface VibeEncodingEntry {
+  hashKey: string;
+  encoding: string;
+  informationExtracted: number;
+}
+
+export interface StoredVibeItem {
+  id: string;
+  name: string;
+  enabled: boolean;
   strength: number;
-  fidelity: number;
+  selectedModelKey: string;
+  selectedHashKey: string;
+  informationExtracted: number;
+  encodings: Record<string, VibeEncodingEntry[]>;
+  thumbnailDataUrl?: string;
+  rawImageBase64?: string;
+  createdAt: number;
+}
+
+export interface VibeTransferSlotInput {
+  encoding: string;
+  strength: number;
+  informationExtracted: number;
+  name?: string;
 }
 
 export interface NaiApiSettings {
@@ -196,19 +220,15 @@ export interface NaiApiSettings {
   scale: number;
   cfg_rescale: number;
   seed: number;
-  use_s00_seed: boolean;
+  batch_count: number;
   uc_preset_mode: NaiUcPresetMode;
   uc_preset_migrated_v2?: boolean;
+  pos_neg_split_migrated_v1?: boolean;
   keep_inline_negatives: boolean;
   extra_uc: string;
   append_v5_quality: boolean;
-  precise_ref_workflow: PreciseRefWorkflowMode;
-  precise_ref_enabled: boolean;
-  precise_ref_strength: number;
-  precise_ref_fidelity: number;
-  precise_style_enabled: boolean;
-  precise_style_strength: number;
-  precise_style_fidelity: number;
+  vibe_transfer_enabled: boolean;
+  vibe_normalize_strength: boolean;
   auto_download: boolean;
   auto_upscale_replace: boolean;
   auto_fullscreen_carousel: boolean;
@@ -219,25 +239,21 @@ export interface NaiApiSettings {
 export function createDefaultNaiApiSettings(): NaiApiSettings {
   return {
     api_token: "",
-    model: "nai-diffusion-5-full-medium",
+    model: "nai-diffusion-4-5-full",
     steps: 28,
     canvas_preset: "🔄 自动跟随本幕推荐画布",
-    scale: 6.0,
+    scale: 7.0,
     cfg_rescale: 0.0,
     seed: -1,
-    use_s00_seed: true,
+    batch_count: 1,
     uc_preset_mode: "heavy",
     uc_preset_migrated_v2: true,
-    keep_inline_negatives: true,
+    pos_neg_split_migrated_v1: true,
+    keep_inline_negatives: false,
     extra_uc: "",
     append_v5_quality: true,
-    precise_ref_workflow: "style_plus_chara",
-    precise_ref_enabled: true,
-    precise_ref_strength: 1.0,
-    precise_ref_fidelity: 1.0,
-    precise_style_enabled: true,
-    precise_style_strength: 1.0,
-    precise_style_fidelity: 1.0,
+    vibe_transfer_enabled: true,
+    vibe_normalize_strength: true,
     auto_download: false,
     auto_upscale_replace: false,
     auto_fullscreen_carousel: true,
@@ -272,6 +288,8 @@ export interface GeneratedImageRecord {
   elapsed_sec: number;
   estimated_anlas: number;
   created_at: number;
+  prompt_pos?: string;
+  prompt_neg?: string;
   is_upscaled?: boolean;
   saved_to_dir?: boolean;
 }

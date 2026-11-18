@@ -2,79 +2,10 @@
 
 export const QUALITY_TAGS = "masterpiece, best quality, 0.8::very aesthetic::, absurdres, year 2025";
 
-export const MODULE_SWITCH_PRESETS: Record<string, Record<string, boolean>> = {
-  "🌕 全量直出（默认全开）": {
-    "enable_quality": true,
-    "enable_style": true,
-    "enable_identity": true,
-    "enable_body": true,
-    "enable_outfit": true,
-    "enable_clothing_state": true,
-    "enable_legwear": true,
-    "enable_background": true,
-    "enable_expression": true,
-    "enable_anatomy": true,
-    "enable_action_fluids": true,
-    "enable_remnants": true,
-    "enable_t5_prose": true,
-    "enable_negatives": true
-  },
-  "🎯 精密参照：人物+画风（关身份/外观/画风）": {
-    "enable_quality": true,
-    "enable_style": false,
-    "enable_identity": false,
-    "enable_body": false,
-    "enable_outfit": false,
-    "enable_clothing_state": true,
-    "enable_legwear": false,
-    "enable_background": true,
-    "enable_expression": true,
-    "enable_anatomy": true,
-    "enable_action_fluids": true,
-    "enable_remnants": true,
-    "enable_t5_prose": true,
-    "enable_negatives": true
-  },
-  "👤 精密参照：仅锁人物（保留本台画风+动作）": {
-    "enable_quality": true,
-    "enable_style": true,
-    "enable_identity": false,
-    "enable_body": false,
-    "enable_outfit": false,
-    "enable_clothing_state": true,
-    "enable_legwear": false,
-    "enable_background": true,
-    "enable_expression": true,
-    "enable_anatomy": true,
-    "enable_action_fluids": true,
-    "enable_remnants": true,
-    "enable_t5_prose": true,
-    "enable_negatives": true
-  },
-  "🦴 极简纯动作骨架（除动作与视角外全 OFF）": {
-    "enable_quality": false,
-    "enable_style": false,
-    "enable_identity": false,
-    "enable_body": false,
-    "enable_outfit": false,
-    "enable_clothing_state": false,
-    "enable_legwear": false,
-    "enable_background": false,
-    "enable_expression": false,
-    "enable_anatomy": false,
-    "enable_action_fluids": false,
-    "enable_remnants": false,
-    "enable_t5_prose": false,
-    "enable_negatives": true
-  }
-};
-
 export const BUILTIN_CHARACTERS: Record<string, Record<string, string>> = {
   "标枪 Javelin（碧蓝航线 · 默认）": {
     "char_tag": "javelin (azur lane)",
     "eng_name": "Javelin",
-    "eye_color": "purple eyes",
-    "hair_tags": "short purple hair, hair ribbon, x hair ornament, pointy hair, stray hair",
     "canon_neg_tags": "neckerchief, serafuku, plaid, gloves, crown",
     "canon_outfit": "serafuku, white crop top, neckerchief, purple plaid skirt, pleated skirt, white gloves",
     "canon_top_only": "serafuku, white crop top, neckerchief, white gloves",
@@ -86,8 +17,6 @@ export const BUILTIN_CHARACTERS: Record<string, Record<string, string>> = {
   "拉菲 Laffey（碧蓝航线）": {
     "char_tag": "laffey (azur lane)",
     "eng_name": "Laffey",
-    "eye_color": "red eyes",
-    "hair_tags": "white hair, twintails, bunny hair ornament, fake animal ears, messy hair, stray hair",
     "canon_neg_tags": "red jacket, neckerchief, cuffs, skirt",
     "canon_outfit": "red open jacket, white dress, neckerchief, detached cuffs, pleated skirt",
     "canon_top_only": "red open jacket, white top, neckerchief, detached cuffs",
@@ -99,8 +28,6 @@ export const BUILTIN_CHARACTERS: Record<string, Record<string, string>> = {
   "绫波 Ayanami（碧蓝航线）": {
     "char_tag": "ayanami (azur lane)",
     "eng_name": "Ayanami",
-    "eye_color": "red eyes",
-    "hair_tags": "white hair, long hair, ponytail, mechanical ears, hairband, stray hair",
     "canon_neg_tags": "serafuku, neckerchief, navel cutout, gloves, sword",
     "canon_outfit": "white serafuku, yellow neckerchief, navel cutout, black pleated skirt, white gloves",
     "canon_top_only": "white serafuku, yellow neckerchief, navel cutout, white gloves",
@@ -112,8 +39,6 @@ export const BUILTIN_CHARACTERS: Record<string, Record<string, string>> = {
   "独角兽 Unicorn（碧蓝航线）": {
     "char_tag": "unicorn (azur lane)",
     "eng_name": "Unicorn",
-    "eye_color": "purple eyes",
-    "hair_tags": "long purple hair, lowbraided sidelocks, hairband, stray hair",
     "canon_neg_tags": "white dress, capelet, detached sleeves, plushie",
     "canon_outfit": "white dress, purple capelet, detached sleeves",
     "canon_top_only": "purple capelet, white top, detached sleeves",
@@ -125,8 +50,6 @@ export const BUILTIN_CHARACTERS: Record<string, Record<string, string>> = {
   "天狼星 Sirius（碧蓝航线）": {
     "char_tag": "sirius (azur lane)",
     "eng_name": "Sirius",
-    "eye_color": "blue eyes",
-    "hair_tags": "short white hair, wavy hair, swept bangs, stray hair",
     "canon_neg_tags": "maid headdress, maid apron, black dress, detached sleeves, gloves",
     "canon_outfit": "maid headdress, maid apron, black dress, detached sleeves, white gloves",
     "canon_top_only": "maid headdress, maid collar, detached sleeves, white gloves, open clothes",
@@ -138,8 +61,6 @@ export const BUILTIN_CHARACTERS: Record<string, Record<string, string>> = {
   "可畏 Formidable（碧蓝航线）": {
     "char_tag": "formidable (azur lane)",
     "eng_name": "Formidable",
-    "eye_color": "red eyes",
-    "hair_tags": "silver hair, very long hair, twintails, hair ribbon, stray hair",
     "canon_neg_tags": "gothic lolita, black dress, frills, maid headdress",
     "canon_outfit": "gothic lolita, black dress, frills, maid headdress",
     "canon_top_only": "gothic lolita, black bodice, frills, maid headdress",
@@ -151,8 +72,6 @@ export const BUILTIN_CHARACTERS: Record<string, Record<string, string>> = {
   "流萤 Firefly（崩坏：星穹铁道）": {
     "char_tag": "firefly (honkai: star rail)",
     "eng_name": "Firefly",
-    "eye_color": "teal eyes, gradient eyes",
-    "hair_tags": "long silver hair, black hairband, hair intakes, stray hair",
     "canon_neg_tags": "jacket, neckerchief, green dress, gloves, thigh strap",
     "canon_outfit": "jacket, neckerchief, green dress, white gloves, thigh strap",
     "canon_top_only": "jacket, neckerchief, white gloves",
@@ -164,8 +83,6 @@ export const BUILTIN_CHARACTERS: Record<string, Record<string, string>> = {
   "银狼 Silver Wolf（崩坏：星穹铁道）": {
     "char_tag": "silver wolf (honkai: star rail)",
     "eng_name": "Silver Wolf",
-    "eye_color": "grey eyes",
-    "hair_tags": "grey hair, drill hair, high ponytail, hairclip, tinted sunglasses on head, stray hair",
     "canon_neg_tags": "crop jacket, shorts, fingerless gloves, boots",
     "canon_outfit": "crop jacket, black crop top, shorts, fingerless gloves",
     "canon_top_only": "crop jacket, black crop top, fingerless gloves",
@@ -177,8 +94,6 @@ export const BUILTIN_CHARACTERS: Record<string, Record<string, string>> = {
   "芙莉莲 Frieren（葬送的芙莉莲）": {
     "char_tag": "frieren",
     "eng_name": "Frieren",
-    "eye_color": "green eyes",
-    "hair_tags": "white hair, twintails, pointy ears, elf, striped earrings, stray hair",
     "canon_neg_tags": "capelet, white jacket, gold trim, skirt, boots, staff",
     "canon_outfit": "white capelet, white jacket, gold trim, white skirt",
     "canon_top_only": "white capelet, white jacket, gold trim",
@@ -190,8 +105,6 @@ export const BUILTIN_CHARACTERS: Record<string, Record<string, string>> = {
   "初音未来 Hatsune Miku": {
     "char_tag": "hatsune miku",
     "eng_name": "Miku",
-    "eye_color": "aqua eyes",
-    "hair_tags": "aqua hair, very long twintails, hair ornament, stray hair",
     "canon_neg_tags": "necktie, sleeveless shirt, detached sleeves, headset, pleated skirt",
     "canon_outfit": "sleeveless grey shirt, cyan necktie, detached sleeves, black pleated skirt",
     "canon_top_only": "sleeveless grey shirt, cyan necktie, detached sleeves",
@@ -200,11 +113,9 @@ export const BUILTIN_CHARACTERS: Record<string, Record<string, string>> = {
     "body_preset": "匀称修长少女（slender, narrow waist, long legs）",
     "bust_preset": "小巧适中（small breasts）"
   },
-  "原创白发猫娘 OC（无需作品Tag）": {
+  "原创角色 OC（无需作品Tag · 用额外常驻Tag定义外貌）": {
     "char_tag": "original",
-    "eng_name": "the catgirl",
-    "eye_color": "golden eyes",
-    "hair_tags": "silver hair, messy bob cut, sidelocks, ahoge, cat ears, animal ear fluff, stray hair",
+    "eng_name": "the girl",
     "canon_neg_tags": "",
     "canon_outfit": "frilled blouse, ribbon, pleated skirt",
     "canon_top_only": "frilled blouse, ribbon",
@@ -216,12 +127,56 @@ export const BUILTIN_CHARACTERS: Record<string, Record<string, string>> = {
 };
 
 export const BUNDLED_CUSTOM_PRESETS: Record<string, Record<string, unknown>> = {
+  "⭐ 🧬 标枪 M2 · 极细净线青瞳 (mikozin 0.62 + 内置3槽Vibe)": {
+    "preset_name": "⭐ 🧬 标枪 M2 · 极细净线青瞳 (mikozin 0.62 + 内置3槽Vibe)",
+    "bundled_vibe_pack": "m2_mikozin062_triple",
+    "char_tag": "javelin (azur lane)",
+    "eng_name": "Javelin",
+    "canon_neg_tags": "neckerchief, serafuku, plaid, gloves, crown, tiara, hair crown, cat ears, animal ears, heterochromia, yellow button, brooch, wristband, bracelet",
+    "extra_char_tags": "",
+    "body_preset": "纤柔嫩骨·精致锁骨双向防折痕少女（Slim-Tender · 无腹褶无肋骨）",
+    "bust_preset": "小巧适中（small breasts）",
+    "skin_preset": "自然暖透肤（原版默认）",
+    "outfit_preset": "🎽 滑肩宽松白背心 + 深蓝运动短裤（露锁骨居家休闲 · 解扣拨档）",
+    "outfit_state_mode": "🔄 智能适配穿脱（原设/裙装自动撩裙拨内裤 · 单件上衣自动真空）",
+    "custom_outfit_tags": "",
+    "keep_canon_elements": false,
+    "legwear_preset": "赤足裸腿（barefoot 默认）",
+    "add_cat_ears": false,
+    "add_horns_tail": false,
+    "add_glasses": false,
+    "add_choker": false,
+    "add_extra_sweat": false,
+    "style_preset": "🧬✨ M2 单画师极细净线赛璐璐风（mikozin 0.62 + 净黑细线 · 内置3槽Vibe调校）",
+    "lighting_preset": "💎👁️ 极细净黑线 · 丝绒渐变瞳双眼皮睫毛 + 三阶奶桃锁骨柔影（M2 Razor-Fine Cel）",
+    "env_preset": "🪴 落地窗日光绿植 · 绒毛米色地毯木地板（furry beige rug, floor-to-ceiling window, potted plant）",
+    "pos_scene": "🪴 落地窗日光绿植 · 绒毛米色地毯木地板（furry beige rug, floor-to-ceiling window, potted plant）",
+    "custom_style_pos": "",
+    "custom_style_neg": "",
+    "morph_preset": "1D 微明显蝴蝶低过渡（原版默认）",
+    "pubic_preset": "默认不额外指定",
+    "pigment_preset": "3A 透肤暖珊瑚无色差（原版默认）",
+    "fluid_scale": 1.0,
+    "perspective_mode": "3rd",
+    "enable_quality": true,
+    "enable_style": true,
+    "enable_identity": true,
+    "enable_body": true,
+    "enable_outfit": true,
+    "enable_clothing_state": true,
+    "enable_legwear": true,
+    "enable_background": true,
+    "enable_expression": true,
+    "enable_anatomy": true,
+    "enable_action_fluids": true,
+    "enable_t5_prose": true,
+    "enable_negatives": true,
+    "enable_multi_angle_nsfw": false
+  },
   "⭐ hood2": {
     "preset_name": "⭐ hood2",
     "char_tag": "hood (azur lane)",
     "eng_name": "hood",
-    "eye_color": "",
-    "hair_tags": "",
     "canon_neg_tags": "cape, capelet, blue jacket, blue sleeves, fur trim, ascot, jabot, cravat, gold trim, frills, white gloves",
     "extra_char_tags": "",
     "body_preset": "匀称修长少女（slender, narrow waist, long legs）",
@@ -245,8 +200,6 @@ export const BUNDLED_CUSTOM_PRESETS: Record<string, Record<string, unknown>> = {
     "pigment_preset": "3A 透肤暖珊瑚无色差（原版默认）",
     "fluid_scale": 1.0,
     "perspective_mode": "3rd",
-    "include_sub_variants": false,
-    "multi_panel_mode": "2koma",
     "enable_quality": true,
     "enable_style": true,
     "enable_identity": true,
@@ -258,7 +211,6 @@ export const BUNDLED_CUSTOM_PRESETS: Record<string, Record<string, unknown>> = {
     "enable_expression": true,
     "enable_anatomy": true,
     "enable_action_fluids": true,
-    "enable_remnants": true,
     "enable_t5_prose": true,
     "enable_negatives": true,
     "enable_multi_angle_nsfw": true
@@ -281,6 +233,18 @@ export const BODY_PRESETS: Record<string, [string, string]> = {
   "成熟高挑丰满（tall female, curvy, narrow waist）": [
     "tall female, mature female, curvy, narrow waist, wide hips",
     "loli, petite"
+  ],
+  "娇小细腰宽胯肉腿圆脸（petite, wide hips, thick thighs, round face）": [
+    "1.2::petite::, small breasts, narrow waist, wide hips, 1.3::thick thighs::, long legs, round face",
+    "tall female, mature female, skinny, obese"
+  ],
+  "袖珍娇小窄肩细腰笔直长腿·微Q萌圆脸（0.25 chibi + short slender mini-lady）": [
+    "0.25::chibi::, 1.25::short female::, 1.15::very short::, 1.2::petite::, small frame, 1.3::slender::, 1.3::slender legs::, slim waist, narrow shoulders, 1.25::narrow hips::, -0.45::wide hips::, -0.45::thick thighs::, -0.40::plump::, short torso, small breasts, thigh gap, long legs, short face, round face",
+    "super deformed, doll, plushie, oversized head, stubby legs, short legs, tall female, mature female, muscular, muscular female, broad shoulders, wide shoulders, long torso, plump, chubby, fat, thick thighs, wide hips, curvy, pointy chin, sharp chin, long face, giantess, towering, miniature furniture, low doorframe"
+  ],
+  "纤柔嫩骨·精致锁骨双向防折痕少女（Slim-Tender · 无腹褶无肋骨）": [
+    "1.2::short female::, 1.2::petite::, small frame, 1.18::slender::, slim waist, small breasts, narrow shoulders, slender legs, 1.25::collarbone::, round face, short face",
+    "super deformed, doll, plushie, stubby legs, short legs, tall female, mature female, muscular, muscular female, abs, six pack, bony, skinny, visible ribs, gaunt, broad shoulders, wide shoulders, long torso, chubby, plump, fat, obese, belly fat, stomach folds, skin folds, muffin top, thick waist, wide hips, curvy, thick thighs, pointy chin, sharp chin, long face"
   ]
 };
 
@@ -430,6 +394,26 @@ export const OUTFIT_PRESETS: Record<string, Record<string, string>> = {
     "kind": "preset",
     "bottom_type": "none"
   },
+  "🎽 宽松无袖白背心 + 深蓝运动三角裤（居家休闲套装 · 拨档互动）": {
+    "design_tags": "loose white sleeveless tank top, bare shoulders, bare legs, navy athletic briefs",
+    "state_tags": "clothes lift, panties aside",
+    "sleep_extra": "disheveled clothes",
+    "prose": "her loose white sleeveless tank top and shifted navy athletic briefs",
+    "intact_prose": "a loose white sleeveless tank top and navy athletic briefs",
+    "allow_canon": "0",
+    "kind": "preset",
+    "bottom_type": "panties"
+  },
+  "🎽 滑肩宽松白背心 + 深蓝运动短裤（露锁骨居家休闲 · 解扣拨档）": {
+    "design_tags": "off-shoulder, loose white sleeveless tank top, bare shoulders, bare legs, navy athletic shorts",
+    "state_tags": "clothes lift, unbuttoned, open shorts, panties aside",
+    "sleep_extra": "disheveled clothes",
+    "prose": "her off-shoulder white sleeveless tank top and open navy athletic shorts",
+    "intact_prose": "an off-shoulder loose white sleeveless tank top and navy athletic shorts",
+    "allow_canon": "0",
+    "kind": "preset",
+    "bottom_type": "shorts"
+  },
   "自定义穿搭（使用下方自定义穿搭框）": {
     "design_tags": "",
     "state_tags": "",
@@ -467,8 +451,8 @@ export const LEGWEAR_PRESETS: Record<string, [string, string, string]> = {
     "anklet-adorned bare feet"
   ],
   "白色过膝丝袜（white thighhighs）": [
-    "white thighhighs",
-    "white thighhighs, clothed feet",
+    "white thighhighs, 1.35::skindentation::, bare legs, white thigh strap",
+    "white thighhighs, 1.35::skindentation::, bare legs, white thigh strap, clothed feet",
     "white-stockinged feet"
   ],
   "黑色蕾丝腿环过膝袜（black thighhighs, garter）": [
@@ -503,6 +487,34 @@ export const STYLE_PRESETS: Record<string, [string, string]> = {
   "☕ 四画师细棕彩线空气感瓷肌风（ask 0.65 + ciloranko 0.58 + kuroduki + yahako）": [
     "0.65::artist:ask (askzy)::, 0.58::artist:ciloranko::, 0.50::artist:kuroduki (pieat)::, 0.42::artist:yahako::, colored lineart, brown lineart, colored eyelashes, eyeshadow, pale color, soft shading, translucent hair, no text",
     "thick outlines, bold lineart, black outlines, cel shading, flat color, harsh shadows, realistic, photorealistic, 3d, figure, faux figurine, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, lowres"
+  ],
+  "🌙 四画师低饱和暗调柔影彩线风（hitsukuya 0.65 + nanaken + sonao + nijihashi）": [
+    "0.65::artist:hitsukuya::, 0.55::artist:nanaken nana::, 0.55::artist:sonao::, 0.45::artist:nijihashi sora::, 1.4::muted color::, 1.4::dim lighting::, 1.35::shade::, 0.85::dark::, partially shaded face, colored lineart, soft shading, no text",
+    "neon colors, oversaturated, vibrant colors, thick outlines, bold lineart, black outlines, cel shading, flat color, harsh shadows, realistic, photorealistic, 3d, figure, faux figurine, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, lowres"
+  ],
+  "💎 四画师丝光亮发瓷肌Gal抱枕CG风（sakura yuki 0.60 + senji + douya + ke-ta）": [
+    "0.60::artist:sakura yuki (clochette)::, 0.58::artist:senji (tegone spike)::, 0.50::artist:douya (233)::, 0.48::artist:ke-ta::, dakimakura (medium), clean lineart, soft shading, shiny skin, glossy hair, eyelashes, no text",
+    "two-sided fabric, rough sketch, visible brushstrokes, impasto, oil painting (medium), watercolor (medium), thick outlines, bold lineart, no lineart, lineless, flat color, harsh shadows, dark, realistic, photorealistic, 3d, figure, faux figurine, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "🎀 四画师稳态清透逆光萌系风（mikozin 0.68 + kani 0.44 + kasumi 0.42 + neit 0.22）": [
+    "0.68::artist:mikozin::, 0.44::artist:kani bonara::, 0.42::artist:kasumi (skchkko)::, 0.22::artist:neit ni sei::, clean lineart, soft shading, shiny skin, no text",
+    "realistic, 3d, painterly, oil painting, crosshatching, hatching (texture), thick outlines, bold lineart, comic, wide-eyed, crossed eyes, asymmetrical eyes, harsh shadows, neon colors, muddy colors, bad anatomy, bad hands, extra digits, fewer digits, missing fingers, fused fingers, extra limbs, watermark, signature, username, text"
+  ],
+  "🌷 安定萌化mikozin（mikozin 0.66 + kani 0.55 + hori 0.48 + gotyou 0.42）": [
+    "0.66::artist:mikozin::, 0.55::artist:kani bonara::, 0.48::artist:hori (hori no su)::, 0.42::artist:gotyou::, gradient eyes, no text",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "🌿 安定中度萌化淡画风（shouu-kun 0.56 + mikozin 0.40 + gotyou 0.38）": [
+    "0.40::artist:mikozin::, 0.56::artist:shouu-kun::, 0.38::artist:gotyou::, clean lineart, soft shading, pastel colors, light colors, no text",
+    "oversaturated, neon colors, high contrast, harsh shadows, thick outlines, bold lineart, cel shading, flat color, realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, crosshatching, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "🍑 四画师清透奶桃纤柔赛璐璐风（shouu-kun 0.52 + mikozin 0.36 + gotyou 0.32 + izuoku 0.28）": [
+    "0.36::artist:mikozin::, 0.52::artist:shouu-kun::, 0.32::artist:gotyou::, 0.28::artist:izuoku::, cel shading, anime coloring, lineart, 1.18::shiny skin::, no text",
+    "realistic, photorealistic, 3d, figure, faux figurine, watercolor (medium), oil painting, painterly, impasto, visible brushstrokes, crosshatching, flat color, harsh shadow, posterization, red skin, sunburn, oversaturated, body oil, oily skin, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "🧬✨ M2 单画师极细净线赛璐璐风（mikozin 0.62 + 净黑细线 · 内置3槽Vibe调校）": [
+    "0.62::artist:mikozin::, 1.25::clean lineart::, 1.18::fine lineart::, crisp lineart, smooth lineart, cel shading, anime coloring, shiny skin, no text",
+    "jpeg artifacts, compression artifacts, scan artifacts, noise, grainy, blurry, dirty lines, messy lines, rough lines, stray lines, double lines, scratchy lines, hairy lines, sketch, sketchy, unfinished, bold lineart, thick outlines, marker (medium), hatching, crosshatching, screentones, blush stickers, glowing eyes, sparkling eyes, overly bright eyes, bags under eyes, dark circles, exhausted, monochrome, greyscale, painterly, watercolor (medium), oil painting, impasto, visible brushstrokes, realistic, 3d, figure, faux figurine, multiple views, comic, watermark, signature, username, text"
   ],
   "🍬 清亮黑线高混融水润反光萌系CG风（收窄小脸+长条乳白反光 · 140209723精修款）": [
     "1.05::artist:tianliang duohe fangdongye::, 1.05::artist:kanikama::, 1.05::artist:kani biimu::, 0.75::artist:mignon::, 0.35::artist:mikozin::, 1.35::smooth shading::, soft shading, 1.25::shiny skin::, glossy highlights, subsurface scattering, clean lines, sharp focus",
@@ -566,7 +578,9 @@ export const LIGHTING_PRESETS: Record<
     prose: string;
     badge: string;
     strip_head_lighting?: boolean;
+    strip_style_tags?: string[];
     unblock_neg?: string[];
+    extra_neg?: string;
   }
 > = {
   "🔄 随画风与本幕默认光影（不额外覆盖）": {
@@ -606,7 +620,128 @@ export const LIGHTING_PRESETS: Record<
     strip_head_lighting: true,
     unblock_neg: ["overexposed", "blown out", "depth of field", "blurry", "soft focus", "out of focus", "hazy"],
   },
+  "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）": {
+    code: "cool_warm_25d_cel",
+    tags: "1.15::cel shading::, anime coloring, lineart, 1.2::high contrast::, 1.15::color contrast::, saturated, 1.25::backlighting::, 1.15::sunlight::, light rays, 1.15::subsurface scattering::, 1.18::shiny skin::, sparkle",
+    prose:
+      "Rich multi-layered 2.5D anime cel coloring with dual-lobe soft-candy skin speculars: wide feathered satin glow cushions on rounded hips, knees, and shoulders accented by tiny broken pinprick white specular dots and short dashed highlight specks along the center of the thighs rather than wide oily streaks; crisp diagonal blush lines on rosy cheeks, a tiny soft white nose-tip triangle highlight, cool periwinkle-to-violet gradient hair, and deep navy accents.",
+    badge: "💎✨2.5D软糖双瓣高光",
+    strip_head_lighting: true,
+    strip_style_tags: [
+      "pastel colors",
+      "light colors",
+      "soft shading",
+      "smooth shading",
+      "clean lineart",
+      "no lineart",
+      "lineless",
+    ],
+    unblock_neg: [
+      "cel shading",
+      "cel highlight",
+      "anime coloring",
+      "lineart",
+      "outlines",
+      "clean lines",
+      "thick outlines",
+      "bold lineart",
+      "black outlines",
+      "harsh shadow",
+      "harsh shadows",
+      "high contrast",
+      "saturated",
+      "oversaturated",
+      "neon colors",
+      "vibrant colors",
+      "blush stickers",
+      "shiny ass",
+      "light spots",
+      "wet clothes",
+    ],
+    extra_neg:
+      "watercolor (medium), flat color, painterly, oil painting, crosshatching, low contrast, dull colors, grey skin, pallid, matte skin, dry skin, body oil, oily skin, plastic skin, flying sweatdrops, dripping, splash",
+  },
+  "🍑✨ 三阶奶桃柔影 · 锁骨烟粉次级暗部 + 白衣冰蓝冷影（Milky-Peach 3-Tier Cel）": {
+    code: "milky_peach_3tier_cel",
+    tags: "cel shading, anime coloring, lineart, 1.15::backlighting::, sunlight, light rays, 1.18::shiny skin::",
+    prose:
+      "Crisp anime cel hair and clean lineart paired with slim, delicate proportions and smooth three-tier milky-peach skin shading: gentle warm peach primary shadow across the neck and slim torso turns, deep cocoa chin cast occlusion, and subtle dusty-rose secondary hollows nestled neatly inside the collarbone depressions, shoulder-arm creases, and bent hip-and-knee joints, accented by soft satin glow cushions and tiny pinprick white specular dots along the shoulders and thighs, with cool ice-blue shadows on the white tank top.",
+    badge: "🍑✨三阶奶桃柔影",
+    strip_head_lighting: true,
+    strip_style_tags: [
+      "pastel colors",
+      "light colors",
+      "soft shading",
+      "smooth shading",
+      "clean lineart",
+      "no lineart",
+      "lineless",
+      "high contrast",
+      "saturated",
+    ],
+    unblock_neg: [
+      "cel shading",
+      "cel highlight",
+      "anime coloring",
+      "lineart",
+      "outlines",
+      "clean lines",
+      "thick outlines",
+      "bold lineart",
+      "black outlines",
+      "blush stickers",
+      "shiny ass",
+      "light spots",
+      "wet clothes",
+    ],
+    extra_neg:
+      "watercolor (medium), oil painting, impasto, crosshatching, flat color, harsh shadow, posterization, red skin, sunburn, oversaturated, body oil, oily skin",
+  },
+  "💎👁️ 极细净黑线 · 丝绒渐变瞳双眼皮睫毛 + 三阶奶桃锁骨柔影（M2 Razor-Fine Cel）": {
+    code: "m2_razor_fine_cel",
+    tags: "1.25::clean lineart::, 1.18::fine lineart::, crisp lineart, smooth lineart, cel shading, anime coloring, shiny skin, 1.16::gradient eyes::, thick eyelashes, eyelid crease, small white eye highlights",
+    prose:
+      "Ultra-clean, razor-fine commercial anime lineart with glass-smooth black ink contours and zero stray lines, paired with soft velvety gradient eyes, delicate double-eyelid creases, thick curved upper eyelashes, three-tier milky-peach collarbone shading, and crisp pinprick highlights.",
+    badge: "💎👁️M2极细净线",
+    strip_head_lighting: false,
+    strip_style_tags: [
+      "no lineart",
+      "lineless",
+      "painterly",
+      "watercolor (medium)",
+      "colored sketch",
+    ],
+    unblock_neg: [
+      "cel shading",
+      "anime coloring",
+      "lineart",
+      "clean lines",
+    ],
+    extra_neg:
+      "dirty lines, messy lines, rough lines, stray lines, double lines, scratchy lines, hairy lines, bold lineart, thick outlines, marker (medium), hatching, crosshatching, screentones, blush stickers, glowing eyes, sparkling eyes, overly bright eyes, bags under eyes, dark circles",
+  },
 };
+
+export const STYLE_RECOMMENDED_LIGHTING: Record<string, string> = {
+  "🧬✨ M2 单画师极细净线赛璐璐风（mikozin 0.62 + 净黑细线 · 内置3槽Vibe调校）":
+    "💎👁️ 极细净黑线 · 丝绒渐变瞳双眼皮睫毛 + 三阶奶桃锁骨柔影（M2 Razor-Fine Cel）",
+  "🍑 四画师清透奶桃纤柔赛璐璐风（shouu-kun 0.52 + mikozin 0.36 + gotyou 0.32 + izuoku 0.28）":
+    "🍑✨ 三阶奶桃柔影 · 锁骨烟粉次级暗部 + 白衣冰蓝冷影（Milky-Peach 3-Tier Cel）",
+  "🎀 四画师稳态清透逆光萌系风（mikozin 0.68 + kani 0.44 + kasumi 0.42 + neit 0.22）":
+    "☀️ 窗边过曝白昼侧逆光 · 暖金轮廓柔光（Window Sidelight & Golden Rim）",
+};
+
+export const STYLE_BUNDLED_VIBE_PACK: Record<string, string> = {
+  "🧬✨ M2 单画师极细净线赛璐璐风（mikozin 0.62 + 净黑细线 · 内置3槽Vibe调校）":
+    "m2_mikozin062_triple",
+};
+
+export function resolveLightingForStyle(stylePreset: string): string {
+  return (
+    STYLE_RECOMMENDED_LIGHTING[stylePreset] ??
+    "🔄 随画风与本幕默认光影（不额外覆盖）"
+  );
+}
 
 export const ENV_PRESETS: Record<
   string,
@@ -647,14 +782,54 @@ export const ENV_PRESETS: Record<
     extra_neg: "indoors, bedroom, bed, couch, sofa, pillow, bedsheet, curtains",
     unblock_dark: true,
   },
+  "🪴 落地窗日光绿植 · 绒毛米色地毯木地板（furry beige rug, floor-to-ceiling window, potted plant）": {
+    code: "sunlit_rug_floor_window",
+    tags: "indoors, 1.25::furry beige rug::, rug, wooden floor, large floor-to-ceiling window, daylight, backlighting, sunlight, potted plant",
+    prose: " on a soft furry beige rug over a wooden floor beside a sunlit floor-to-ceiling window and potted plant",
+    badge: "🪴落地窗绒毯",
+    extra_neg: "outdoors, bed, couch, sofa, bedsheet",
+  },
 };
 
-export const MULTI_PANEL_MODE_PRESETS: Record<string, string> = {
-  "📑 同屏双格漫画差分 (2koma 默认)": "2koma",
-  "🖼️ 仅出单张图 · 前半拍进行中 (深坐/含入)": "single_a",
-  "🖼️ 仅出单张图 · 后半拍事后拉丝 (微抬脱出/松口)": "single_b",
-  "🎞️ 拆成前后两张独立单图 (预览框可切换挑选)": "single_pair"
-};
+export const FREE_ACTION_STARTERS: Array<{
+  label: string;
+  tags: string;
+  prose: string;
+  nsfw?: boolean;
+}> = [
+  {
+    label: "🪑 坐姿翘腿微笑",
+    tags: "cowboy shot, sitting, crossed legs, head tilt, gentle smile, looking at viewer",
+    prose: "sitting gracefully with her legs crossed, tilting her head with a gentle smile toward the viewer.",
+  },
+  {
+    label: "🧍 站立背手全身",
+    tags: "full body, standing, arms behind back, slight lean forward, playful smile, looking at viewer",
+    prose: "standing in full view with her arms behind her back, leaning slightly forward with a playful smile.",
+  },
+  {
+    label: "🛋️ 俯卧托腮翘脚",
+    tags: "full body, from side, lying, on stomach, propped on elbows, hand on own cheek, legs up, bent knees, soles, looking at viewer",
+    prose: "lying on her stomach propped on her elbows with one hand resting on her cheek and her lower legs kicked playfully upward.",
+  },
+  {
+    label: "📸 举手机镜面自拍",
+    tags: "upper body, selfie, mirror selfie, holding phone, smartphone, peace sign, wink, looking at viewer",
+    prose: "taking a playful mirror selfie with her smartphone while flashing a peace sign and winking.",
+  },
+  {
+    label: "🎀 跪坐撩裙羞涩 (R18)",
+    tags: "cowboy shot, kneeling, wariza, lifting own skirt, clothes lift, shy, blush, averted gaze, looking at viewer",
+    prose: "kneeling shyly while lifting the hem of her outfit with flushed cheeks.",
+    nsfw: true,
+  },
+  {
+    label: "🌸 仰卧M字开腿展示 (R18)",
+    tags: "full body, from above, lying, on back, m legs, spread legs, knees up, grabbing own breasts, heavy blush, parted lips, looking at viewer",
+    prose: "lying on her back in an open M-leg posture gazing up with flushed cheeks.",
+    nsfw: true,
+  },
+];
 
 export const MORPH_PRESETS: Record<string, [string, string]> = {
   "1D 微明显蝴蝶低过渡（原版默认）": [
@@ -667,7 +842,7 @@ export const MORPH_PRESETS: Record<string, [string, string]> = {
   ],
   "1B 饱满馒头丘陵型（Fat Mons & Puffy）": [
     "groin, mons pubis, 1.3::fat mons::, pussy, puffy pussy, cleft of venus",
-    "1.8::labia::, gaping, barbie doll anatomy"
+    "labia, spread labia, gaping, barbie doll anatomy"
   ],
   "1C 花苞微露含蓄型（Subtle Peeking）": [
     "groin, pussy, 0.5::labia::, 0.5::spread pussy::",
@@ -737,6 +912,12 @@ export const EXPRESSION_PRESETS: Record<string, { code: string; tags: string; pr
     "tags": ":p, tongue out, smug, grin, furrowed brow, half-closed eyes, blush, floating heart",
     "prose": "with a smug, playful expression and sticking the tip of her tongue out",
     "short": "😝 俏皮吐舌"
+  },
+  "🐱 俏皮猫嘴·得意萌笑（:3, grin, mischievous, blush）": {
+    "code": "cat_mouth_cute",
+    "tags": ":3, closed mouth, slight smile, smug, naughty face, blush",
+    "prose": "with a playful, mischievous cat-like :3 smile and a soft blush",
+    "short": "🐱 W猫嘴萌笑"
   },
   "💢 雌小鬼嘲讽·嚣张挑衅（mesugaki, smug, evil smile, jitome, naughty face, blush）": {
     "code": "mesugaki_tease",
@@ -863,7 +1044,8 @@ export const EXPRESSION_MOUTH_PRESETS: Record<string, string> = {
   "😛 俏皮吐舌 (:p, tongue out)": "playful_tongue",
   "🥵 伸舌滴涎 (1.35::tongue out::, drooling)": "drool_tongue",
   "😬 咬紧下唇 (1.3::biting lip::)": "bite_lip",
-  "😒 嘟嘴微嗔 (1.3::pout::)": "pout"
+  "😒 嘟嘴微嗔 (1.3::pout::)": "pout",
+  "🐱 W猫嘴俏皮笑 (:3)": "cat_mouth_w"
 };
 
 export const EXPRESSION_BLUSH_PRESETS: Record<string, string> = {
@@ -893,7 +1075,8 @@ export const EXPR_MOUTH_TAGS: Record<string, string> = {
   "playful_tongue": ":p, tongue out",
   "drool_tongue": "1.35::tongue out::, drooling",
   "bite_lip": "1.3::biting lip::",
-  "pout": "1.3::pout::"
+  "pout": "1.3::pout::",
+  "cat_mouth_w": ":3, closed mouth"
 };
 
 export const EXPR_BLUSH_TAGS: Record<string, string> = {
@@ -922,6 +1105,7 @@ export const EXPR_EYE_CONFLICT_TAGS: string[] = [
 ];
 
 export const EXPR_MOUTH_CONFLICT_TAGS: string[] = [
+  ":3",
   ":p",
   "biting lip",
   "clenched teeth",
@@ -962,74 +1146,6 @@ export const EXPR_BLUSH_CONFLICT_TAGS: string[] = [
   "shy",
   "soft blush",
   "v-shaped eyebrows"
-];
-
-export const STORY_CHAPTERS: Array<{ id: string; title: string; actor_type: string }> = [
-  {
-    "id": "F00",
-    "title": "✨ 正脸试妆 · 晨光白床跪坐前倾（正面状态校验）",
-    "actor_type": "Solo"
-  },
-  {
-    "id": "S00",
-    "title": "第 00 幕 · 沙发跪爬吐舌回眸",
-    "actor_type": "Solo"
-  },
-  {
-    "id": "S01",
-    "title": "第 01 幕 · 沙发跪爬口部互动进行中",
-    "actor_type": "Duo"
-  },
-  {
-    "id": "S02",
-    "title": "第 02 幕 · 口部事后松口拉丝 + 发丝沾染",
-    "actor_type": "Duo"
-  },
-  {
-    "id": "S03",
-    "title": "第 03 幕 · 事前 vs 事后拉丝双格漫画差分 (2koma)",
-    "actor_type": "2koma"
-  },
-  {
-    "id": "S04",
-    "title": "第 04 幕 · 骑乘位双格：左深坐溢流 ➔ 右微抬脱出疲软拉丝",
-    "actor_type": "2koma"
-  },
-  {
-    "id": "S05",
-    "title": "第 05 幕 · 单人犬式单侧屈膝高抬腿排泄 + 大滩积液",
-    "actor_type": "Solo"
-  },
-  {
-    "id": "S06",
-    "title": "第 06 幕 · 体力透支仰躺沙发熟睡 + 小腹积存一滩白浊",
-    "actor_type": "Solo"
-  },
-  {
-    "id": "S07",
-    "title": "第 07 幕 · 熟睡盘腿脚心相对 + 双手抓脚足交（双脚糊满拉丝）",
-    "actor_type": "Duo"
-  },
-  {
-    "id": "S08",
-    "title": "第 08 幕 · 盘腿抓脚互动中被弄醒 · 睡眼惺忪略带妩媚",
-    "actor_type": "Duo"
-  },
-  {
-    "id": "S09",
-    "title": "第 09 幕 · 欺身单手轻拢脖颈 · 迷离仰视（中近景全痕迹保留）",
-    "actor_type": "Duo"
-  },
-  {
-    "id": "S10",
-    "title": "第 10 幕 · 单手轻拢脖颈 + 传教士位压身深入（全痕迹保留）",
-    "actor_type": "Duo"
-  },
-  {
-    "id": "S11",
-    "title": "第 11 幕 · 传教士位双腿间拔出外射至小腹（全痕迹叠加）",
-    "actor_type": "Duo"
-  }
 ];
 
 export const MULTI_ANGLE_CHAPTERS: Array<{ id: string; title: string; actor_type: string }> = [
@@ -1076,6 +1192,16 @@ export const MULTI_ANGLE_CHAPTERS: Array<{ id: string; title: string; actor_type
   {
     "id": "MA8",
     "title": "08 盘腿托腮 · 柔毯前倾好奇凝视",
+    "actor_type": "MultiAngle"
+  },
+  {
+    "id": "MA9",
+    "title": "09 俯卧枕臂翘脚 · 落地窗绒毛地毯侧景 (1216x832)",
+    "actor_type": "MultiAngle"
+  },
+  {
+    "id": "MA10",
+    "title": "10 俯卧肘撑捧腮 · 露锁骨翘脚3/4斜景 (1216x832)",
     "actor_type": "MultiAngle"
   }
 ];
@@ -1143,6 +1269,20 @@ export const MULTI_ANGLE_TEMPLATES: Record<string, { title: string; canvas: stri
     "allow_multi_views": false,
     "scene": "slight three-quarter angle, sitting cross-legged on soft rug, leaning forward, chin resting on both hands, elbows on knees, curious bright gaze, looking at viewer, cozy sunlit living room",
     "prose": "sitting cross-legged on a soft rug, leaning forward with her chin resting on both hands and gazing curiously at the viewer."
+  },
+  "MA9": {
+    "title": "MA9 · 落地窗绒毯俯卧枕臂翘脚 (Prone On Furry Rug)",
+    "canvas": "横图 1216x832",
+    "allow_multi_views": false,
+    "scene": "full body, 1.3::from side::, slightly from above, 1.35::on stomach::, lying on rug, arms crossed on floor, head resting on arms, bent knees, 1.3::feet up::, indoors, furry beige rug, wooden floor, large floor-to-ceiling window, clear blue sky, daylight, backlighting, sunlight, potted plant, looking at viewer, gentle smile, half-closed eyes, tareme, blush, nose blush",
+    "prose": "lying on her stomach in side view on a furry beige rug over a wooden floor beside a large sunlit floor-to-ceiling window and potted plant, resting her head on her crossed arms with both knees bent and feet playfully raised while looking toward the viewer."
+  },
+  "MA10": {
+    "title": "MA10 · 落地窗绒毯俯卧肘撑捧腮露锁骨 (Propped Elbows Chin Rest)",
+    "canvas": "横图 1216x832",
+    "allow_multi_views": false,
+    "scene": "full body, 1.3::three-quarter view::, slightly from above, 1.35::on stomach::, lying on rug, 1.35::propped on elbows::, 1.3::hands under chin::, bent knees, 1.3::feet up::, 1.3::collarbone::, armpit crease, indoors, furry beige rug, wooden floor, large floor-to-ceiling window, clear blue sky, daylight, backlighting, sunlight, potted plant, looking at viewer, gentle smile, half-closed eyes, tareme, blush, nose blush",
+    "prose": "lying on her stomach in three-quarter view on a furry beige rug over a wooden floor beside a large sunlit floor-to-ceiling window and potted plant, propped up on her elbows with both hands cupped under her chin, knees bent and feet playfully raised while smiling gently at the viewer."
   }
 };
 
@@ -1203,6 +1343,14 @@ export const POS_SCENE_PRESETS: Record<
     strip_indoor_pose: true,
     unblock_dark: true,
     extra_neg: "indoors, bedroom, bed, couch, sofa, pillow, bedsheet, curtains",
+  },
+  "🪴 落地窗日光绿植 · 绒毛米色地毯木地板（furry beige rug, floor-to-ceiling window, potted plant）": {
+    code: "sunlit_rug_floor_window",
+    tags: "indoors, 1.25::furry beige rug::, rug, wooden floor, large floor-to-ceiling window, daylight, backlighting, sunlight, potted plant",
+    prose: " on a soft furry beige rug over a wooden floor beside a sunlit floor-to-ceiling window and potted plant",
+    badge: " · [🪴落地窗绒毯]",
+    strip_indoor_pose: true,
+    extra_neg: "outdoors, bed, couch, sofa, bedsheet",
   },
 };
 
@@ -2216,11 +2364,16 @@ export const GAZE_TAGS_TO_STRIP: string[] = [
 ];
 
 export const NAI_IMAGE_ENDPOINT = "https://image.novelai.net";
+export const MODEL_V5_FULL = "nai-diffusion-5-full";
 export const MODEL_V5_FULL_MEDIUM = "nai-diffusion-5-full-medium";
 export const MODEL_V4_5_FULL = "nai-diffusion-4-5-full";
-export const NAI_MODEL_OPTIONS: Array<{ id: "nai-diffusion-5-full-medium" | "nai-diffusion-4-5-full"; label: string }> = [
-  { id: "nai-diffusion-5-full-medium", label: "⚡ V5 Full Medium (14步极速 · 512词 · 原生透明底)" },
-  { id: "nai-diffusion-4-5-full", label: "🪪 V4.5 Full (28步精绘 · 支持 Character 精密参照)" },
+export const NAI_MODEL_OPTIONS: Array<{
+  id: "nai-diffusion-5-full" | "nai-diffusion-5-full-medium" | "nai-diffusion-4-5-full";
+  label: string;
+}> = [
+  { id: "nai-diffusion-4-5-full", label: "♾️ V4.5 Full (28步 · Opus真无限0点 · 原生支持Vibe)" },
+  { id: "nai-diffusion-5-full", label: "🔥 V5 Full High (28步 · 全题材独立UC · Opus恢复池)" },
+  { id: "nai-diffusion-5-full-medium", label: "⚡ V5 Full Medium (14步极速 · 省42%恢复池 · 内联负权)" },
 ];
 export const MAX_T5_TOKENS = 512;
 export const V5_HEAVY_UC_BASE = "lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page";

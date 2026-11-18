@@ -1,11 +1,11 @@
 ---
 name: nai-pose-taxonomy
-description: Comprehensive NovelAI V4.5 / V5 posture, interaction position, transparent background, and partner-visibility decoupling reference. Covers 8 major posture families (supine, straddling/top, prone/rear, lateral/side, standing/carried, upper-body/oral-framing, external-contact poses, and acrobatic/flexible poses), POV vs 3rd-person camera framing, V5 native RGBA transparent background tags, and partner/anatomy visibility state-preservation rules.
+description: Comprehensive NovelAI V4.5 / V5 posture, two-person & multi-person (MMF/FFM threesome, yuri, group/surrounded) interaction taxonomy, 5-stage progression, condom & uterus x-ray physics, transparent background, and partner-visibility decoupling reference. Covers 10 posture families (P01-P51 + MP01-MP14 multi-person actions), V4.5/V5 [Character N (A1..E5)] spatial partitioning & source#/target#/mutual# tags, MA0-MA10 multi-angle showcase, FREE custom action mode, and V5 native RGBA cutout rules.
 ---
 
 # NovelAI V4.5 / V5 Full Posture & Interaction Taxonomy Skill
 
-This skill documents the complete structural taxonomy of postures and two-person interaction compositions supported by NovelAI V4.5 and V5 (Danbooru tag system + T5 natural-language framing), along with **native V5 RGBA transparent background** rules and **partner / contact-organ state decoupling**.
+This skill documents the complete structural taxonomy of solo, two-person, and **multi-person (`MMF` / `FFM` / `Yuri` / `Group`)** interaction compositions supported by NovelAI V4.5 and V5 (Danbooru tag system + multi-character coordinate boxes + T5 natural-language framing), along with **native V5 RGBA transparent background** rules and **partner / contact-organ state decoupling**.
 
 ---
 
@@ -63,10 +63,41 @@ When hiding partner anatomy (`pos_show_penis = False`), **never revert the femal
      - Retain `curled fingers, cylindrical grip gesture, one-handed / two-handed hold` at chest or lap level.
    - **`thigh_glute_channel` (Intercrural / glute press postures)**:
      - Retain `1.3::thighs squeezed together::, pressed thighs, arched hips` or `squeezed glutes, arched back`.
+   - **`fingering` / `grope_fingering` / `clit_tease` / `breast_grope` (Family 9 manual foreplay `P45..P51`)**:
+     - Driven by partner hand/finger tags rather than phallic contact; when `maleCode === "off"`, keep self-spread / arched showcase geometry cleanly without stray extra hands.
+
+### C. Five-Stage Progression, Calibrated Condom Physics & Uterus X-Ray
+1. **5 Interaction Stages (`pos_stage`)**:
+   - `before` (进行中·未射) · `during` (高潮射精瞬间) · `after_inside` (射后体内停留溢流) · `pull_out` (刚拔出·拉丝滴落) · `prolapse` (拔出脱垂·粉嫩宫颈外翻特写 `1.55::vaginal prolapse::, 1.35::prolapse::, cervix`).
+2. **Calibrated Condom Physics (`enable_condom`)**:
+   - **`before`**: `1.35::condom::, 1.3::condom on penis::` (sheathed contact).
+   - **`during` & `after_inside` (Vaginal)**: Auto-inject womb cutaway X-ray showing the condom tip pushing through the cervix and inflating like a taut white pouch filling the entire uterus (`1.5::x-ray::, 1.45::cross-section::, 1.4::uterus::, cervix, 1.35::cervical penetration::, 1.5::cum in condom::, cum inflation, stomach bulge`).
+   - **`pull_out` & `prolapse` (Vaginal)**: **Never** keep `condom on penis` after withdrawal! Strip `condom on penis` (and block it in UC) so the partner pulls out a bare uncovered shaft while a single translucent latex condom stays caught halfway inside the entrance (`1.85::used condom in pussy::, 1.2::used condom::, 1.5::condom::, 1.4::cum in condom::, puddle`) with its rolled ring hanging outside spilling into a puddle.
+3. **Standalone Uterus X-Ray (`enable_uterus_xray`)**:
+   - Injects `1.35::x-ray::, 1.35::cross-section::, 1.4::uterus::, cervix` (+ stage-aware `1.4::cum in uterus::` or `1.25::cervical penetration::`) on lower-body channels (`vaginal`, `solo`, `fingering`, `grope_fingering`, `clit_tease`, `thigh`), NSFW `MA1..MA10`, and NSFW `FREE` mode without duplicating vaginal condom `during`/`after_inside` cutaway tags.
+
+### D. Multi-Person Spatial Partitioning & Role-Binding Rules (`MMF` / `FFM` / `Yuri` / `Group`)
+1. **Strict Headcount Header & `solo` Removal**:
+   - **Always strip `solo`** from Positive (and add `solo` to UC if extra partners fail to appear). Declare exact headcount immediately in `[Base Prompt]`:
+     - **MMF (一女两男)**: `1girl, 2boys, threesome, mmf threesome`
+     - **FFM (两女一男)**: `2girls, 1boy, threesome, ffm threesome`
+     - **Yuri / Twin Female (双女/多女百合)**: `2girls, yuri, females only` (or `3girls, yuri, females only`)
+     - **Group / Surrounded (一女多男群像)**: `1girl, multiple boys, 3boys, group sex, gangbang` (or `harem` for multi-girl `multiple girls, 1boy, harem`)
+2. **Workbench Native `[Base Prompt]` + `[Character N (Coord)]` Multi-Box Syntax**:
+   - `parseStructuredPrompt` (`web/src/engine/t5Tokenizer.ts`) natively compiles `[Base Prompt]` + `[Character 1 (C3)]` + `[Character 2 (B3)]` + ... into V4.5/V5 `v4_prompt.caption.char_captions` using the `5×5` `POSITION_GRID`:
+     - Columns `A`..`E` = horizontal `x: 0.1, 0.3, 0.5, 0.7, 0.9` (Left → Center → Right)
+     - Rows `1`..`5` = vertical `y: 0.1, 0.3, 0.5, 0.7, 0.9` (Top → Middle → Bottom)
+   - **Mandatory Character Isolation for `2girls` / `FFM`**: Never put two distinct named girls' hair/eye/outfit tags into one flat prompt (causes 100% trait fusion/twins). Put shared style, lighting, environment, and group tags in `[Base Prompt]`, and isolate each character's identity, outfit, and local pose in `[Character 1 (B3)]` and `[Character 2 (D3)]`.
+   - **Token Budget Discipline**: Total T5 tokens **summed across `[Base Prompt]` + ALL `[Character N]` boxes** share the single `512` limit (`<= 400` with 3 V4.5 Vibes). Keep faceless male partner boxes ultra-lean (`12–22` tokens, e.g., `boy, faceless male, muscular, standing, ...`) so hero female boxes retain full detail.
+3. **Directed Action Prefixes (`source#` / `target#` / `mutual#`)**:
+   - In V4.5 / V5 multi-character boxes, bind asymmetric actions explicitly so roles never invert:
+     - Initiator box: `source#fellatio`, `source#breast grab`, `source#fingering`, `source#kissing cheek`
+     - Receiver box: `target#fellatio`, `target#breast grab`, `target#fingering`, `target#kissing cheek`
+     - Symmetric shared action (both boxes): `mutual#french kiss`, `mutual#holding hands`, `mutual#hug`, `mutual#tribadism`
 
 ---
 
-## 3. Eight Complete Posture Families (NovelAI / Danbooru Reference)
+## 3. Ten Complete Posture Families (`P01`–`P51` + `MP01`–`MP14` Multi-Person Reference)
 
 ### Family 1: Supine & Reclining Postures (`仰卧·正面展开系`)
 | Code | Posture Name | Core Danbooru Posture Tags | Recommended Framing |
@@ -144,8 +175,64 @@ When hiding partner anatomy (`pos_show_penis = False`), **never revert the femal
 | `P43` | M-Shaped Squat Showcase (`正面M字开脚蹲坐展示位`) | `sitting, 1.4::m legs::, knees bent wide, hands on knees or ankles, frontal view` | Frontal `832x1216` |
 | `P44` | Rear-Focus Arch Showcase (`跪趴塌腰回眸展示位`) | `all fours, arched back, hips raised toward viewer, 1.3::from behind::, looking back` | Rear POV `832x1216` |
 
+### Family 9: Manual Foreplay, Grope & Fingering Postures (`9. 手部爱抚·指技前戏系`)
+| Code | Posture Name | Channel | Core Danbooru Posture Tags | Recommended Framing |
+| :--- | :--- | :--- | :--- | :--- |
+| `P45` | Supine Deep Fingering (`仰卧开腿双指深入指交位`) | `fingering` | `1.3::from above::, lying on back, 1.35::spread legs::, knees bent wide, arched waist` | Vertical `832x1216` |
+| `P46` | Rear Grope & Fingering (`背后拥抱一手揉胸一手抠弄位`) | `grope_fingering` | `sitting on lap, back against chest, 1.35::spread legs::, head tilted back` | Frontal / close cowboy `832x1216` |
+| `P47` | Spread & Clitoral Tease (`双手拨开阴唇精准玩弄阴蒂位`) | `clit_tease` | `low angle, reclining on back, 1.4::m legs::, knees wide apart, hips tilted forward` | Low-angle close `832x1216` |
+| `P48` | Standing Leg-Up Fingering (`站立抬单腿探手深抠位`) | `fingering` | `standing, against wall, 1.35::one leg lifted::, open hip, leaning against wall` | Vertical `832x1216` |
+| `P49` | All-Fours Rear Fingering (`跪趴塌腰后方探手抠弄潮吹位`) | `fingering` | `1.35::from behind::, all fours, arched back, raised hips, knees apart, 1.3::looking back::` | Landscape `1216x832` |
+| `P50` | Rear Dual Breast Grope (`背后环抱双手陷肉揉胸捏乳首`) | `breast_grope` | `held from behind, back against chest, arched chest pushed forward, head tilted back` | Vertical cowboy `832x1216` |
+| `P51` | Cradled M-Spread Fingering (`背后抱腿大开脚正面指交展示位`) | `fingering` | `1.35::carried from behind::, lifted under knees, wide M-legs in air, feet off ground` | Frontal vertical `832x1216` |
+
+### Family 10: Multi-Person & Group Interaction Postures (`10. 多人互动·三人行·百合与群像系`)
+
+#### 10A. MMF Dual-Partner Focus (`一女两男 · 1girl, 2boys, threesome, mmf threesome`)
+| Code | Posture Name | Grid Coords (`[Character N]`) | Core Danbooru Posture Tags | Recommended Framing |
+| :--- | :--- | :--- | :--- | :--- |
+| `MP01` | Classic Spitroast (`前后串烧位 · 跪趴前后双端协同`) | Girl `C3` · Front `B3` · Rear `D3` | `1girl, 2boys, threesome, mmf threesome, 1.4::spitroast::, all fours, arched back, from side` | Side landscape `1216x832` |
+| `MP02` | Sandwich Straddle (`站/坐姿前后贴胸夹心位`) | Girl `C3` · Front `C4` · Rear `C2` | `1girl, 2boys, threesome, mmf threesome, 1.35::sandwich::, upright straddle, pressed between, simultaneous` | Side-3/4 vertical `832x1216` |
+| `MP03` | Suspended Twin-Carry (`双人左右/前后悬空托举开脚位`) | Girl `C3` · Left `B3` · Right `D3` | `1girl, 2boys, threesome, mmf threesome, carried, lifted in air, spread legs, feet off ground` | Frontal `1024x1024` / `832x1216` |
+| `MP04` | Kneeling Dual-Hand / Cheek Service (`跪姿左右双手并侍仰视位`) | Girl `C4` · Left `B3` · Right `D3` | `1girl, 2boys, threesome, mmf threesome, kneeling, 1.35::from above::, both hands occupied, looking up` | High-angle `1024x1024` |
+| `MP05` | Supine Upper-and-Lower Trio (`仰卧开腿上下双区同步互动位`) | Girl `C3` · Upper `B3` · Lower `D4` | `1girl, 2boys, threesome, mmf threesome, lying on back, spread legs, head turned to side, arched chest` | Landscape `1216x832` |
+
+#### 10B. FFM Dual-Heroine & Yuri Compositions (`两女一男 / 双女百合 · 2girls`)
+| Code | Posture Name | Grid Coords (`[Character N]`) | Core Danbooru Posture Tags | Recommended Framing |
+| :--- | :--- | :--- | :--- | :--- |
+| `MP06` | Cheek-to-Cheek Twin Kneeling (`双女贴脸并跪协同仰视奉仕`) | Girl1 `B3` · Girl2 `D3` (POV `C4`) | `2girls, 1boy, threesome, ffm threesome, kneeling, cheek-to-cheek, 1.3::from above::, looking up at viewer, holding hands` | High-angle POV `1024x1024` |
+| `MP07` | Stacked Prone Rear (`双女上下叠趴回眸后入位 / Daisy Stack`) | TopGirl `C2` · BotGirl `C4` · Partner `D3` | `2girls, 1boy, threesome, ffm threesome, lying on top of each other, prone, from behind, aligned hips, looking back` | Rear 3/4 `832x1216` |
+| `MP08` | Tandem Straddle + Upper Ride (`双女上下分跨同乘位`) | UpperGirl `C2` · LowerGirl `C4` | `2girls, 1boy, threesome, ffm threesome, girl on top, straddling, kneeling over chest, mutual#holding hands` | Low-angle vertical `832x1216` |
+| `MP09` | Twin Pressed Cleavage (`双女贴身并拢四乳夹持位`) | Girl1 `B3` · Girl2 `D3` | `2girls, 1boy, threesome, ffm threesome, upper body, close-up, breasts pressed together, symmetrical, looking up` | Square `1024x1024` |
+| `MP10` | Interlocked Scissoring (`双女剪刀交错磨镜位 / Yuri Tribadism`) | Girl1 `B3` · Girl2 `D4` | `2girls, yuri, females only, 1.4::interlocked legs::, spread legs, reclining, arched backs, mutual#holding hands` | Overhead 3/4 `1216x832` |
+| `MP11` | Rear-Embrace Assisted Showcase (`一女背后怀抱开腿·辅助展示位`) | BackGirl `C2` · FrontGirl `C3` | `2girls, yuri (or 1boy ffm), sitting, held from behind, back against chest, 1.35::spread legs::, mutual#kissing cheek` | Frontal vertical `832x1216` |
+
+#### 10C. Surrounded & Group Compositions (`多人环绕群像系 · multiple boys / harem`)
+| Code | Posture Name | Grid Coords (`[Character N]`) | Core Danbooru Posture Tags | Recommended Framing |
+| :--- | :--- | :--- | :--- | :--- |
+| `MP12` | Center-Kneeling Circle (`中心跪坐多方环绕仰视位`) | Girl `C3` (surrounding silhouettes in Base) | `1girl, multiple boys, 3boys, 1.35::surrounded::, kneeling in center, from above, looking up, faceless males` | Overhead `1024x1024` / `1216x832` |
+| `MP13` | Supine Limbs-Held Crowd (`仰卧四肢分持展开群像位`) | Girl `C3` · Left `A3` · Right `E3` | `1girl, multiple boys, lying on back, spread legs, wrists held, high angle, surrounded by faceless males` | Landscape `1216x832` |
+| `MP14` | Multi-Girl Harem Lap Surround (`多女环绕坐怀贴身群像位 / Harem`) | Center `C3` · LeftGirl `B3` · RightGirl `D3` | `3girls, 1boy, harem, sitting on lap, hugging from side, leaning in, crowded, looking at viewer` | Landscape `1216x832` |
+
+#### Multi-Character Structured Prompt Template (Directly Supported in Bottom Prompt Drawer & `nai_set_manual_prompt`)
+```text
+[Base Prompt]
+masterpiece, best quality, absurdres, year 2025, <style & lighting tags>, 2girls, 1boy, threesome, ffm threesome, pov, from above, bedroom, kneeling on bed, cheek-to-cheek, looking up at viewer. Two distinct petite heroines kneeling side by side looking up together in soft diffused light.
+
+[Character 1 (B3)]
+girl, <Character A tag & hair/eye/outfit>, kneeling on left, leaning right, cheek-to-cheek, mutual#holding hands, looking up at viewer, shy blush
+
+[Character 2 (D3)]
+girl, <Character B tag & hair/eye/outfit>, kneeling on right, leaning left, cheek-to-cheek, mutual#holding hands, looking up at viewer, naughty smile
+```
+
 ---
 
-## 4. Extensibility via Custom JSON (`custom_positions.json`)
+## 4. Studio 2.0 Three-Mode Action Matrix (`web/src/data/engineConstants.ts` & `storyEngine.ts`)
 
-The generator automatically loads optional user additions or tag overrides from `custom_positions.json` in the workspace root (if present), merging them into `ALL_POSITIONS_CHAPTERS` and `ALL_POSITIONS_TEMPLATES` without code edits.
+All posture templates live strictly in TypeScript (`ALL_POSITIONS_TEMPLATES` & `MULTI_ANGLE_TEMPLATES` in `web/src/data/engineConstants.ts`; legacy Python `custom_positions.json` and `F00+S00~S11` Storyline are removed):
+1. **`positions` (`P01`–`P51`)**: 51 structured postures across 9 categories, combinable with 3D Camera Radar (`camera_azimuth` / `camera_elevation` / `camera_shot` / `camera_gaze`, which automatically strips conflicting `ANGLE_TAGS_TO_STRIP`, `SHOT_TAGS_TO_STRIP`, and `GAZE_TAGS_TO_STRIP` before injecting the custom camera view).
+2. **`multi_angle` (`MA0`–`MA10`)**: `MA0` peaceful sleeping + 10 daily/showcase angles (`MA1`..`MA10`), with optional `enable_multi_angle_nsfw` lower-anatomy showcase toggle.
+3. **`free` (`FREE` Custom Action Mode) & Multi-Person Override**:
+   - Compiles user-written `free_action_tags` + `free_action_prose` (and optional `free_action_nsfw` full lower-anatomy + `fluid_scale` pipeline) on top of the active character, outfit, lighting, and style presets.
+   - **Important for `MP01`–`MP14` Multi-Person Scenes**: Because single-character `FREE` mode prepends `1girl, solo` from the active preset, when composing `MMF` / `FFM` / `2girls` / `Group` scenes on the live webpage, write a full `[Base Prompt]` + `[Character 1 (B3)]` + `[Character 2 (D3)]` multi-box prompt (or replace `1girl, solo` with the exact multi-person headcount header) in the bottom Prompt Drawer / via `nai_set_manual_prompt`.

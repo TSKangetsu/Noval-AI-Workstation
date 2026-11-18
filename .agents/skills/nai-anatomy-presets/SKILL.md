@@ -86,7 +86,13 @@ description: >-
 - **4A. 完全紧闭态**：不加 `spread pussy`，保留 `cleft of venus`。
 - **4B. 清透淡化·轻度微张溢流态（`137_128` 默认款）**：`0.5::spread pussy::, after vaginal, cum in pussy, cumdrip` + 负向 `-1.5::labia::`。
 - **4C. 标准自然微开态（无需手扶）**：`spread pussy, pussy juice` + 负向 `-2::gaping, cameltoe::`。
-- **4D. 手指主动拨开展示态**：`spread pussy, spreading own pussy, fingers`（勿与双手比耶/四肢撑地同用）。
+- **4D. 手指主动拨开展示态（经 V4.5 四档双种子梯度校准）**：
+  - **黄金甜点权重（`1.25` 档 · 强烈推荐）**：`groin, pussy, labia, 1.25::spread pussy::, 1.25::spreading own pussy::, fingers`
+  - **必配防遮挡/防畸变负向**：`covering crotch, covering pussy, covering breasts, censor, mosaic censoring, bar censor, gaping`（缺省 `covering crotch` 时，V4.5 在半身/仰拍近景极易触发手掌挡住私处的自发打码反射）。
+  - **权重响应曲线（勿盲目拉高）**：
+    - `<= 1.10`：部分种子仅单侧手指轻触、开口偏浅；
+    - **`1.25`（黄金档）**：跨种子稳定实现食指+中指V字自然撑开，且**不抢夺另一只手的上半身动作**（如可完美共存单手脸颊比耶 `peace sign near cheek`）；
+    - `>= 1.38 ~ 1.52`：注意力向胯部过载，容易吞掉上半身手部姿势（如左臂背到身后）并使内侧黏膜线条变硬。
 - **4E. 紧身勒痕骆驼趾态（隔衣/泳装/紧身裤专用）**：`cameltoe, tight clothes`（脱衣状态下严禁使用，否则产生怪异硬折痕）。
 - **4F. 事后微松弛未闭合态**：`spread pussy, 0.55::gaping::, after vaginal, cum in pussy, cumdrip, excessive cum`（严禁超过 `0.7::gaping::` 以防橡胶化畸形）。
 - **4G. 内部断面透视态（エロ漫画断面図）**：`cross-section, uterus, internal cumshot, x-ray`。

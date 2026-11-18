@@ -12,16 +12,14 @@ import {
   EXPRESSION_EYE_PRESETS,
   EXPRESSION_MOUTH_PRESETS,
   EXPRESSION_PRESETS,
+  FREE_ACTION_STARTERS,
   LEGWEAR_PRESETS,
   LIGHTING_PRESETS,
   MODEL_V4_5_FULL,
+  MODEL_V5_FULL,
   MODEL_V5_FULL_MEDIUM,
-  MODULE_SWITCH_PRESETS,
   MORPH_PRESETS,
   MULTI_ANGLE_CHAPTERS,
-  MULTI_ANGLE_TEMPLATES,
-  MULTI_PANEL_MODE_PRESETS,
-  NAI_MODEL_OPTIONS,
   OUTFIT_PRESETS,
   OUTFIT_STATE_PRESETS,
   PIGMENT_PRESETS,
@@ -30,2834 +28,3145 @@ import {
   POS_SCENE_PRESETS,
   POS_STAGE_PRESETS,
   PUBIC_PRESETS,
+  resolveLightingForStyle,
   SKIN_PRESETS,
-  STORY_CHAPTERS,
+  STYLE_BUNDLED_VIBE_PACK,
   STYLE_PRESETS,
 } from "../data/engineConstants";
+import { BUNDLED_VIBE_PACKS, cloneBundledVibeItems } from "../data/bundledVibes";
 import { describeCameraShort } from "../engine/cameraRig";
 import {
-  compileExpressionOverride,
-  describeActiveModules,
   describeExpressionShort,
-  generateFullSuite,
   generateScenePrompts,
   isC5LowresPixelStyleActive,
   isExpressionOverrideActive,
 } from "../engine/storyEngine";
 import {
-  countPromptT5Tokens,
-  extractFirstPromptFromPreview,
-  extractPromptBlocksFromPreview,
+  buildFullNegativeString,
+  computeSafePosTokenLimit,
+  countSeparatedT5Tokens,
   initT5Tokenizer,
+  mergePosAndNegToInline,
+  splitPromptPosAndNeg,
 } from "../engine/t5Tokenizer";
 import {
   createDefaultCharacterConfig,
+  type ActionMode,
   type CarouselMode,
   type CharacterConfig,
   type GeneratedImageRecord,
-  type MultiPanelMode,
   type NaiApiSettings,
   type NaiModelId,
   type NaiUcPresetMode,
-  type PerspectiveMode,
-  type PreciseRefSlotInput,
-  type PreciseRefWorkflowMode,
   type ScenePromptItem,
+  type StoredVibeItem,
   type SubscriptionInfo,
+  type VibeTransferSlotInput,
 } from "../engine/types";
 import {
   detectImageExt,
+  encodeVibeImageNai,
   estimateNaiAnlas,
   fetchSubscriptionInfo,
   generateSingleImageNai,
-  NaiApiError,
   parseCanvasSize,
-  preparePreciseReferencePng,
+  uint8ArrayToBase64,
   upscaleSingleImageNai,
 } from "../services/naiApiClient";
 import {
+  McpBridgeClient,
+  type McpBridgeStatus,
+} from "../services/mcpBridgeClient";
+import {
   buildStoreZipBlob,
-  clearPreciseRefImage,
-  clearPreciseStyleRefImage,
+  clearDeletedPresets,
+  clearStoredVibeItems,
   formatDateYYYYMMDD,
   formatTimeHHMMSS,
   getMountedDirName,
   loadActiveConfig,
   loadApiSettings,
   loadCustomPresets,
-  loadPreciseRefImage,
-  loadPreciseStyleRefImage,
+  loadDeletedPresets,
+  loadMcpBridgeEnabled,
+  loadMcpBridgeEndpoint,
+  loadStoredVibeItems,
+  markPresetDeleted,
   mountLocalOutputDirectory,
   saveActiveConfig,
   saveApiSettings,
   saveBytesToMountedDir,
   saveCustomPresets,
-  savePreciseRefImage,
-  savePreciseStyleRefImage,
+  saveMcpBridgeEnabled,
+  saveMcpBridgeEndpoint,
+  saveStoredVibeItems,
   supportsDirectoryPicker,
   triggerBlobDownload,
   triggerBytesDownload,
-  triggerTextDownload,
+  unmarkPresetDeleted,
   unmountLocalOutputDirectory,
-  type StoredPreciseRefImage,
 } from "../services/storageService";
+import {
+  buildActiveVibeSlotsForModel,
+  compactVibeThumbnailInBrowser,
+  MAX_VIBE_SLOTS,
+  parseVibeFileBytes,
+  resolveVibeEncodingForModel,
+} from "../services/vibeBundleParser";
 import { CameraRadarCanvas } from "./cameraRadarCanvas";
 
-const MODULE_LABELS: Array<[keyof CharacterConfig, string]> = [
-  ["enable_quality", "1. 基础质量词 (Quality)"],
-  ["enable_style", "2. 画风光影与负向 (Style)"],
-  ["enable_identity", "3. 角色名/瞳/发 (Identity)"],
-  ["enable_body", "4. 体型/胸/肤/萌点 (Body)"],
-  ["enable_outfit", "5. 服装款式 (Outfit)"],
-  ["enable_clothing_state", "6. 掀衣暴露辅助 (State)"],
-  ["enable_legwear", "7. 鞋袜与赤足 (Legwear)"],
-  ["enable_background", "8. 室内环境与光 (BG)"],
-  ["enable_expression", "9. 微表情与脸红 (Expr)"],
-  ["enable_anatomy", "10. 局部四维开关 (Anat)"],
-  ["enable_action_fluids", "11. 本幕核心流体 (Action)"],
-  ["enable_remnants", "12. 跨幕历史残留 (Remnant)"],
-  ["enable_t5_prose", "13. 句尾英文T5句 (Prose)"],
-  ["enable_negatives", "14. 防崩负向词块 (Negs)"],
-];
+function compactOptionText(raw: string, maxLen = 38): string {
+  const cleaned = raw.replace(/（([^）]{18,})）/g, (_m, inner: string) => {
+    const shortInner = inner.split("·")[0]?.trim() || inner.slice(0, 14);
+    return ` (${shortInner})`;
+  });
+  return cleaned.length > maxLen ? `${cleaned.slice(0, maxLen - 1)}…` : cleaned;
+}
+
+function splitPoseTitle(fullTitle: string): { main: string; sub: string } {
+  const stripped = fullTitle.replace(/^P\d+\s*·\s*/i, "").replace(/^\d+\s+/, "").trim();
+  const m = /^(.+?)\s*\(([^)]+)\)\s*$/.exec(stripped);
+  if (m) {
+    return { main: m[1].trim(), sub: m[2].trim() };
+  }
+  const parts = stripped.split(" · ");
+  if (parts.length >= 2) {
+    return { main: parts[0].trim(), sub: parts.slice(1).join(" · ").trim() };
+  }
+  return { main: stripped, sub: "" };
+}
 
 export class WorkbenchApp {
   private root: HTMLElement;
   private cfg: CharacterConfig;
-  private apiSettings: NaiApiSettings;
   private customPresets: Record<string, Partial<CharacterConfig>>;
+  private apiSettings: NaiApiSettings;
+  private subInfo: SubscriptionInfo | null = null;
 
-  private activeSuiteTab: "story" | "multi_angle" | "all_pos" = "story";
-  private activeLeftTab = "tab-identity";
-  private activeOutTab = "out-single";
-  private activeMobilePane: "config" | "scenes" | "output" = "scenes";
-  private mobileHeaderOpen = false;
-  private mobilePosFiltersOpen = false;
-
-  private activeSceneId = "S00";
-  private activeSubVariantIdx = 0;
-  private currentSceneItems: ScenePromptItem[] = [];
-  private isSingleEdited = false;
-
-  private selectedStoryIds = new Set<string>(
-    STORY_CHAPTERS.filter((c) => c.id !== "F00").map((c) => c.id)
-  );
-  private selectedMaIds = new Set<string>(MULTI_ANGLE_CHAPTERS.map((c) => c.id));
-  private selectedPosIds = new Set<string>(ALL_POSITIONS_CHAPTERS.map((c) => c.id));
-  private posCategory = POS_CATEGORIES[0];
+  private actionMode: ActionMode = "positions";
+  private activeSceneId = "P01";
+  private activePosCategory = POS_CATEGORIES[0];
   private posSearchQuery = "";
+  private checkedPositionIds = new Set<string>(["P01"]);
+  private checkedMultiAngleIds = new Set<string>(["MA1"]);
+
+  private currentSceneItems: ScenePromptItem[] = [];
+  private isManualPromptEdited = false;
+  private promptDrawerExpanded = false;
+  private showCustomOutfitExtra = false;
+  private checkerboardBg = false;
+  private mobileCol: "left" | "center" | "right" = "center";
+
+  private vibeItems: StoredVibeItem[] = [];
+  private gallery: GeneratedImageRecord[] = [];
+  private selectedGalleryIdx = -1;
+  private checkedGalleryIds = new Set<string>();
 
   private isGenerating = false;
-  private batchAbortCtrl: AbortController | null = null;
-  private lastS00Seed: number | null = null;
-  private subInfo: SubscriptionInfo | null = null;
-  private gallery: GeneratedImageRecord[] = [];
-  private activeGalleryIdx = -1;
-  private checkerboardOn = true;
-  private lightboxZoom1x = false;
+  private abortController: AbortController | null = null;
+  private genTimerHandle: number | null = null;
+
+  // Lightbox Carousel State (mutually exclusive modes)
+  private lightboxOpen = false;
+  private lightboxIdx = 0;
+  private carouselMode: CarouselMode = "follow_latest";
   private carouselTimer: number | null = null;
-  private carouselMode: CarouselMode = "manual";
-  private batchLightboxDismissed = false;
-  private batchProgressLabel = "";
-  private batchDoneLabel = "";
-  private autoCarouselCheckboxes: HTMLInputElement[] = [];
-  private autoUpscaleCheckboxes: HTMLInputElement[] = [];
-  private preciseRef: StoredPreciseRefImage | null = null;
-  private preciseRefThumbUrl: string | null = null;
-  private preciseStyleRef: StoredPreciseRefImage | null = null;
-  private preciseStyleRefThumbUrl: string | null = null;
-  private activePasteSlot: "char" | "style" = "char";
-  private pasteListenerBound = false;
 
-  private radarCtrl: CameraRadarCanvas | null = null;
-  private logs: string[] = [];
-
-  // Cached interactive elements
-  private elHeaderBar!: HTMLElement;
-  private elMobileHeaderToggleBtn!: HTMLButtonElement;
-  private elMobilePerspBtn!: HTMLButtonElement;
-  private elMobileQuickSceneLbl!: HTMLElement;
-  private elMobileOutBadge!: HTMLElement;
-  private elPosMalePills: Map<string, HTMLButtonElement> = new Map();
-  private elPosStagePills: Map<string, HTMLButtonElement> = new Map();
-  private elPosScenePills: Map<string, HTMLButtonElement> = new Map();
-  private elPosPenisLbl!: HTMLElement;
+  // Key DOM Refs
   private elPresetSelect!: HTMLSelectElement;
-  private elRefCapsule!: HTMLButtonElement;
-  private elExprCapsule!: HTMLButtonElement;
-  private elExprPreviewBox!: HTMLElement;
-  private elExprPresetPills: Map<string, HTMLButtonElement> = new Map();
-  private elCamCapsule!: HTMLButtonElement;
-  private elPreciseWorkflowBtns: Map<PreciseRefWorkflowMode, HTMLButtonElement> = new Map();
-  private elPreciseCharSlot!: HTMLElement;
-  private elPreciseCharModeLbl!: HTMLElement;
-  private elPreciseRefThumb!: HTMLElement;
-  private elPreciseRefToggleBtn!: HTMLButtonElement;
-  private elPreciseRefClearBtn!: HTMLButtonElement;
-  private elPreciseStyleSlot!: HTMLElement;
-  private elPreciseStyleThumb!: HTMLElement;
-  private elPreciseStyleToggleBtn!: HTMLButtonElement;
-  private elPreciseStyleClearBtn!: HTMLButtonElement;
-  private elPreciseRefStatus!: HTMLElement;
-  private elModTabRefBanner!: HTMLElement;
-  private elSingleSelect!: HTMLSelectElement;
-  private elSingleText!: HTMLTextAreaElement;
-  private elTokenBadge!: HTMLElement;
-  private elCanvasBadge!: HTMLElement;
-  private elPovText!: HTMLTextAreaElement;
-  private elTrdText!: HTMLTextAreaElement;
-  private elStatusText!: HTMLElement;
-  private elAnlasBadge!: HTMLElement;
-  private elApiSubBanner!: HTMLElement;
-  private elCostHint!: HTMLElement;
-  private elMountedDirBadge!: HTMLElement;
-  private elLogBox!: HTMLElement;
-  private elPreviewStage!: HTMLElement;
-  private elPreviewMeta!: HTMLElement;
-  private elFilmstrip!: HTMLElement;
+  private elDeletePresetBtn!: HTMLButtonElement;
+  private elModelBtns = new Map<NaiModelId, HTMLButtonElement>();
+  private elCanvasSelect!: HTMLSelectElement;
+  private elSeedInput!: HTMLInputElement;
+  private elBatchSelect!: HTMLSelectElement;
+  private elMcpPill!: HTMLButtonElement;
+  private elQuotaPill!: HTMLButtonElement;
+  private elMountBtn!: HTMLButtonElement;
+  private elHeroGenBtn!: HTMLButtonElement;
+  private elStopGenBtn!: HTMLButtonElement;
+  private mcpBridge!: McpBridgeClient;
+
+  private elColLeft!: HTMLElement;
+  private elColCenter!: HTMLElement;
+  private elColRight!: HTMLElement;
+  private elMobileBtns = new Map<string, HTMLButtonElement>();
+
+  // Left Inspector Refs
+  private elIdentityCard!: HTMLElement;
+  private elIdentitySwitch!: HTMLButtonElement;
+  private elIdentitySummary!: HTMLElement;
+  private elOutfitCard!: HTMLElement;
+  private elOutfitSwitch!: HTMLButtonElement;
+  private elOutfitSummary!: HTMLElement;
+  private elCustomOutfitWrap!: HTMLElement;
+  private elAnatomyCard!: HTMLElement;
+  private elAnatomySwitch!: HTMLButtonElement;
+  private elAnatomySummary!: HTMLElement;
+  private elStyleCard!: HTMLElement;
+  private elStyleCardTitle!: HTMLElement;
+  private elStyleSwitch!: HTMLButtonElement;
+  private elStyleSummary!: HTMLElement;
+  private elCustomStyleWrap!: HTMLElement;
+  private elVibePanel!: HTMLElement;
+  private elVibeSlotList!: HTMLElement;
+  private elVibeStatusNote!: HTMLElement;
+  private elVibeSwitch!: HTMLButtonElement;
+  private elVibeNormChk!: HTMLInputElement;
+  private elVibeNormWrap!: HTMLElement;
+  private elScaleRange!: HTMLInputElement;
+  private elScaleNum!: HTMLInputElement;
+  private elRescaleRange!: HTMLInputElement;
+  private elRescaleNum!: HTMLInputElement;
+  private elApiCard!: HTMLElement;
+  private elApiSummary!: HTMLElement;
+  private elStepsRange!: HTMLInputElement;
+  private elStepsNum!: HTMLInputElement;
+  private elStepsHint!: HTMLElement;
+  private elUcModeSelect!: HTMLSelectElement;
+
+  // Center Stage Refs
+  private elStageMeta!: HTMLElement;
+  private elHeroViewport!: HTMLElement;
+  private elProgressBanner!: HTMLElement;
+  private elProgressText!: HTMLElement;
+  private elFilmstripBar!: HTMLElement;
+  private elFilmstripScroll!: HTMLElement;
+  private elUpscaleBtn!: HTMLButtonElement;
+  private elAutoUpscaleBtn!: HTMLButtonElement;
+  private elAutoCarouselBtn!: HTMLButtonElement;
+
+  // Prompt Drawer Refs
+  private elPromptDrawer!: HTMLElement;
+  private elDrawerToggleBtn!: HTMLButtonElement;
+  private elPromptSceneLbl!: HTMLElement;
+  private elTokenPill!: HTMLElement;
+  private elManualLockPill!: HTMLElement;
+  private elPosTextarea!: HTMLTextAreaElement;
+  private elNegTextarea!: HTMLTextAreaElement;
+
+  // Right Matrix Refs
+  private elActionModeBtns = new Map<ActionMode, HTMLButtonElement>();
+  private elContextCtrlBox!: HTMLElement;
+  private elExprTrigger!: HTMLButtonElement;
+  private elCamTrigger!: HTMLButtonElement;
+  private elPoseFilterBar!: HTMLElement;
+  private elPoseListWrap!: HTMLElement;
+  private elFreeActionWrap!: HTMLElement;
+  private elBatchCheckedBtn!: HTMLButtonElement;
+
+  // Popovers & Lightbox
+  private elMcpPopover!: HTMLElement;
+  private elMcpEndpointInput!: HTMLInputElement;
+  private elMcpPopSwitch!: HTMLButtonElement;
+  private elMcpPopStatusNote!: HTMLElement;
+  private elExprPopover!: HTMLElement;
+  private elCamPopover!: HTMLElement;
+  private elSavePresetPopover!: HTMLElement;
+  private elSavePresetInput!: HTMLInputElement;
+  private radarWidget: CameraRadarCanvas | null = null;
   private elLightbox!: HTMLElement;
   private elLightboxImg!: HTMLImageElement;
-  private elLightboxBody!: HTMLElement;
   private elLightboxMeta!: HTMLElement;
-  private elLightboxProgress!: HTMLElement;
-  private elLightboxStopBatchBtn!: HTMLButtonElement;
-  private elLightboxFollowBtn!: HTMLButtonElement;
-  private elLightboxPlayBtn!: HTMLButtonElement;
-  private elLightboxIntervalBtns: Map<number, HTMLButtonElement> = new Map();
-  private elLightboxStrip!: HTMLElement;
+  private elLightboxModeBtns = new Map<CarouselMode, HTMLButtonElement>();
 
-  private formBindings: Map<keyof CharacterConfig, HTMLInputElement | HTMLSelectElement> = new Map();
-  private moduleBindings: Map<keyof CharacterConfig, HTMLInputElement> = new Map();
+  // Syncable form bindings
+  private syncHooks: Array<() => void> = [];
 
   constructor(root: HTMLElement) {
     this.root = root;
     this.cfg = loadActiveConfig();
-    this.apiSettings = loadApiSettings();
     this.customPresets = loadCustomPresets();
+    this.apiSettings = loadApiSettings();
+    this.carouselMode = this.apiSettings.carousel_auto_mode || "follow_latest";
+    this.showCustomOutfitExtra = Boolean(this.cfg.custom_outfit_tags.trim());
   }
 
   public async mount(): Promise<void> {
-    this.renderShell();
-    this.bindGlobalPasteForPreciseRef();
-    this.syncControlsFromConfig();
-    this.refreshAllOutputs();
-    const [savedRef, savedStyleRef] = await Promise.all([
-      loadPreciseRefImage(),
-      loadPreciseStyleRefImage(),
-    ]);
-    if (savedRef) {
-      const upgradedRef = await this.maybeUpgradeCachedPreciseRef("char", savedRef);
-      this.setPreciseRefMemory("char", upgradedRef);
+    initT5Tokenizer();
+    this.vibeItems = await loadStoredVibeItems();
+    // Auto-seed bundled Vibe pack if active preset or active style declares one and vibe list is empty
+    const activePresetObj = this.customPresets[this.cfg.preset_name] as
+      | Record<string, unknown>
+      | undefined;
+    const packId =
+      (typeof activePresetObj?.bundled_vibe_pack === "string"
+        ? activePresetObj.bundled_vibe_pack
+        : "") ||
+      STYLE_BUNDLED_VIBE_PACK[this.cfg.style_preset] ||
+      "";
+    if (packId && this.vibeItems.length === 0 && BUNDLED_VIBE_PACKS[packId]) {
+      this.vibeItems = cloneBundledVibeItems(packId);
+      await saveStoredVibeItems(this.vibeItems);
     }
-    if (savedStyleRef) {
-      const upgradedStyle = await this.maybeUpgradeCachedPreciseRef("style", savedStyleRef);
-      this.setPreciseRefMemory("style", upgradedStyle);
-    }
-    this.syncApiInputs();
-    this.syncPreciseRefDisplays();
-    this.updateCostHint();
-    this.setStatus("就绪 · 正在后台加载精确 T5 分词表 (32,000 词条)...");
-    await initT5Tokenizer();
-    this.updateTokenBadge();
-    this.setStatus("✅ 就绪 · T5 SentencePiece 精确分词器已激活 (32,000 词条零误差)");
+
+    this.mcpBridge = new McpBridgeClient({
+      enabled: loadMcpBridgeEnabled(),
+      customEndpoint: loadMcpBridgeEndpoint(),
+      onCommand: (method, params) => this.handleMcpCommand(method, params),
+      onStatusChange: (st) => this.syncMcpPill(st),
+    });
+    this.buildLayout();
+    this.bindGlobalEvents();
+    this.syncAllControls();
+    this.refreshSceneAndPrompt();
+
+    this.mcpBridge.start();
+    this.syncMcpPill(this.mcpBridge.getStatus());
 
     if (this.apiSettings.api_token.trim()) {
-      void this.onCheckSubscription(true);
+      void this.refreshSubscription(true);
     }
   }
 
   private el<K extends keyof HTMLElementTagNameMap>(
     tag: K,
-    cls?: string,
-    text?: string
+    className = "",
+    text = ""
   ): HTMLElementTagNameMap[K] {
     const node = document.createElement(tag);
-    if (cls) node.className = cls;
-    if (text !== undefined) node.textContent = text;
+    if (className) node.className = className;
+    if (text) node.textContent = text;
     return node;
   }
 
-  private setStatus(msg: string): void {
-    if (this.elStatusText) this.elStatusText.textContent = msg;
-  }
-
-  private appendLog(msg: string): void {
-    const stamp = new Date().toLocaleTimeString();
-    this.logs.push(`[${stamp}] ${msg}`);
-    if (this.logs.length > 200) this.logs.shift();
-    if (this.elLogBox) {
-      this.elLogBox.textContent = this.logs.join("\n");
-      this.elLogBox.scrollTop = this.elLogBox.scrollHeight;
-    }
-  }
-
-  private renderShell(): void {
+  private buildLayout(): void {
     this.root.innerHTML = "";
-    this.root.dataset.mobilePane = this.activeMobilePane;
-    this.mobileHeaderOpen = false;
-    this.mobilePosFiltersOpen = false;
-    this.autoCarouselCheckboxes = [];
-    this.autoUpscaleCheckboxes = [];
-    if (this.elLightbox && this.elLightbox.parentElement) {
-      this.elLightbox.parentElement.removeChild(this.elLightbox);
+
+    // 1. Top Studio Bar
+    this.root.appendChild(this.buildTopBar());
+
+    // 2. Mobile Column Switcher (< 1120px)
+    const mobileNav = this.el("div", "mobile-col-nav");
+    const mTabs: Array<["left" | "center" | "right", string]> = [
+      ["left", "👤 人设·画风·Vibe"],
+      ["center", "🖼️ 主画布·词条"],
+      ["right", "🔞 动作·镜头库"],
+    ];
+    for (const [colKey, label] of mTabs) {
+      const b = this.el("button", `btn btn-xs${this.mobileCol === colKey ? " btn-primary" : ""}`, label);
+      b.addEventListener("click", () => {
+        this.mobileCol = colKey;
+        this.syncMobileColumns();
+      });
+      this.elMobileBtns.set(colKey, b);
+      mobileNav.appendChild(b);
     }
+    this.root.appendChild(mobileNav);
 
-    // 1. HEADER BAR
-    const header = this.el("header", "header-bar");
-    this.elHeaderBar = header;
+    // 3. Three-Column Workspace
+    const ws = this.el("div", "studio-workspace");
+    this.elColLeft = this.buildLeftColumn();
+    this.elColCenter = this.buildCenterColumn();
+    this.elColRight = this.buildRightColumn();
+    ws.append(this.elColLeft, this.elColCenter, this.elColRight);
+    this.root.appendChild(ws);
 
-    const topRow = this.el("div", "header-top-row");
-    const title = this.el("div", "header-title");
-    title.append(
-      this.el("span", "header-logo", "🎬"),
-      this.el("span", "header-title-text", "NovelAI V4.5 / V5 故事线 & 全体位工作台")
+    // 4. Floating Popovers & Lightbox
+    this.elMcpPopover = this.buildMcpPopover();
+    this.elSavePresetPopover = this.buildSavePresetPopover();
+    this.elExprPopover = this.buildExpressionPopover();
+    this.elCamPopover = this.buildCameraPopover();
+    this.elLightbox = this.buildLightbox();
+    this.root.append(
+      this.elMcpPopover,
+      this.elSavePresetPopover,
+      this.elExprPopover,
+      this.elCamPopover,
+      this.elLightbox
     );
 
-    this.elMobilePerspBtn = this.el(
-      "button",
-      "btn-sm pill mobile-only mobile-persp-btn",
-      this.cfg.perspective_mode === "pov" ? "👁️ POV" : "🎥 3rd"
-    );
-    this.elMobilePerspBtn.title = "快捷切换第一人称 POV / 第三人称 3rd";
-    this.elMobilePerspBtn.addEventListener("click", () => {
-      this.cfg.perspective_mode = this.cfg.perspective_mode === "pov" ? "3rd" : "pov";
-      this.syncControlsFromConfig();
-      this.saveCfgAndRefresh();
-    });
+    this.syncMobileColumns();
+  }
 
-    this.elMobileHeaderToggleBtn = this.el(
-      "button",
-      "btn-sm mobile-only mobile-header-toggle",
-      "🎛️ 预设/顶栏 ▾"
-    );
-    this.elMobileHeaderToggleBtn.addEventListener("click", () => {
-      this.setMobileHeaderOpen(!this.mobileHeaderOpen);
-    });
-    topRow.append(title, this.elMobilePerspBtn, this.elMobileHeaderToggleBtn);
-    header.appendChild(topRow);
+  private syncMobileColumns(): void {
+    this.elColLeft.classList.toggle("mobile-active", this.mobileCol === "left");
+    this.elColCenter.classList.toggle("mobile-active", this.mobileCol === "center");
+    this.elColRight.classList.toggle("mobile-active", this.mobileCol === "right");
+    for (const [k, btn] of this.elMobileBtns.entries()) {
+      btn.classList.toggle("btn-primary", k === this.mobileCol);
+    }
+  }
 
-    const collapsible = this.el("div", "header-collapsible");
+  // ===========================================================================
+  // TOP STUDIO BAR
+  // ===========================================================================
+  private buildTopBar(): HTMLElement {
+    const bar = this.el("header", "studio-topbar");
 
-    const presetGrp = this.el("div", "header-group header-preset-group");
-    presetGrp.appendChild(this.el("span", "hint-text", "角色预设:"));
-    this.elPresetSelect = this.el("select", "preset-select");
-    this.populatePresetDropdown();
+    // Left: Brand + Character Preset Selector + Save/Delete/Reset
+    const gLeft = this.el("div", "topbar-group");
+    gLeft.appendChild(this.el("div", "brand-badge", "✨ NAI Studio 2.0"));
+
+    this.elPresetSelect = this.el("select", "preset-select-main");
+    this.elPresetSelect.title = "切换角色预设（支持内置含Vibe特调预设与自定义保存预设）";
+    this.populatePresetSelect();
     this.elPresetSelect.addEventListener("change", () => {
-      this.loadPresetByName(this.elPresetSelect.value);
+      void this.applySelectedCharacterPreset(this.elPresetSelect.value);
     });
-    presetGrp.appendChild(this.elPresetSelect);
 
-    const btnSavePreset = this.el("button", "btn-sm", "💾 存预设");
-    btnSavePreset.title = "将当前完整配置保存为自定义预设 (localStorage)";
-    btnSavePreset.addEventListener("click", () => this.onSavePreset());
-
-    const btnDelPreset = this.el("button", "btn-sm", "🗑️");
-    btnDelPreset.title = "删除当前选中的自定义预设";
-    btnDelPreset.addEventListener("click", () => this.onDeletePreset());
-
-    const btnImportJson = this.el("button", "btn-sm", "📥 导入JSON");
-    btnImportJson.title = "导入 character_presets.json 格式预设文件";
-    btnImportJson.addEventListener("click", () => this.onImportPresetsJson());
-
-    const btnExportJson = this.el("button", "btn-sm", "📤 导出JSON");
-    btnExportJson.title = "导出所有自定义预设为 JSON 文件";
-    btnExportJson.addEventListener("click", () => this.onExportPresetsJson());
-
-    presetGrp.append(btnSavePreset, btnDelPreset, btnImportJson, btnExportJson);
-    collapsible.appendChild(presetGrp);
-
-    // Perspective & Multi-panel controls
-    const modeGrp = this.el("div", "header-group header-mode-group");
-    const mkPerspRadio = (val: PerspectiveMode, lbl: string) => {
-      const wrap = this.el("label", "radio-pill");
-      const r = this.el("input");
-      r.type = "radio";
-      r.name = "persp_mode";
-      r.value = val;
-      r.checked = this.cfg.perspective_mode === val;
-      r.addEventListener("change", () => {
-        if (r.checked) {
-          this.cfg.perspective_mode = val;
-          this.saveCfgAndRefresh();
-        }
-      });
-      wrap.append(r, document.createTextNode(lbl));
-      return wrap;
-    };
-    modeGrp.append(mkPerspRadio("pov", "👁️ 第一人称 POV"), mkPerspRadio("3rd", "🎥 第三人称 3rd"));
-
-    const mpSel = this.el("select");
-    mpSel.title = "S03 / S04 多格或单图拆分模式";
-    for (const [lbl, code] of Object.entries(MULTI_PANEL_MODE_PRESETS)) {
-      const opt = this.el("option", "", lbl);
-      opt.value = code;
-      if (code === this.cfg.multi_panel_mode) opt.selected = true;
-      mpSel.appendChild(opt);
-    }
-    mpSel.addEventListener("change", () => {
-      this.cfg.multi_panel_mode = mpSel.value as MultiPanelMode;
-      this.saveCfgAndRefresh();
+    const btnSavePreset = this.el("button", "btn btn-icon", "💾");
+    btnSavePreset.title = "将当前人设、穿搭、画风等保存为自定义预设";
+    btnSavePreset.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.togglePopover(this.elSavePresetPopover, btnSavePreset);
+      this.elSavePresetInput.value = this.cfg.preset_name.startsWith("⭐ ")
+        ? this.cfg.preset_name.replace(/^⭐\s*/, "")
+        : `${this.cfg.eng_name || "角色"} 特调`;
+      this.elSavePresetInput.focus();
+      this.elSavePresetInput.select();
     });
-    modeGrp.appendChild(mpSel);
 
-    const chkSub = this.el("label", "check-row");
-    const subInput = this.el("input");
-    subInput.type = "checkbox";
-    subInput.checked = this.cfg.include_sub_variants;
-    subInput.addEventListener("change", () => {
-      this.cfg.include_sub_variants = subInput.checked;
-      this.saveCfgAndRefresh();
+    this.elDeletePresetBtn = this.el("button", "btn btn-icon", "🗑️");
+    this.elDeletePresetBtn.title = "删除当前下拉框选中的角色预设（刷新不复活；Shift+点击右侧 ↺ 可恢复出厂预设列表）";
+    this.elDeletePresetBtn.addEventListener("click", () => {
+      const cur = this.elPresetSelect.value || this.cfg.preset_name;
+      if (!cur) return;
+      void this.deletePresetByKey(cur);
     });
-    chkSub.append(subInput, document.createTextNode("含备选变体"));
-    modeGrp.appendChild(chkSub);
-    collapsible.appendChild(modeGrp);
 
-    collapsible.appendChild(this.el("div", "spacer header-spacer"));
-
-    const capGrp = this.el("div", "header-capsules");
-
-    // Top Precise Reference (Style+Chara / Chara单独) Capsule
-    this.elRefCapsule = this.el("button", "cam-capsule", "🪪 参照: 未启用");
-    this.elRefCapsule.title =
-      "左键：打开「⚡ NAI生图」V4.5 Full 精密参照 (Style+Chara 混合 / Chara 单独) 面板 | 右键：快捷启用/暂停当前参照";
-    this.elRefCapsule.addEventListener("click", () => {
-      this.switchLeftTab("tab-api");
-      this.switchMobilePane("config");
-      this.setMobileHeaderOpen(false);
-    });
-    this.elRefCapsule.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      this.togglePreciseRefEnabled();
-    });
-    capGrp.appendChild(this.elRefCapsule);
-
-    // Top Expression Quick Capsule
-    this.elExprCapsule = this.el("button", "cam-capsule", "😊 表情: 🔄 随本幕默认");
-    this.elExprCapsule.title = "左键：跳转到「😊 表情」设置页 | 右键：一键复位为随本幕默认表情";
-    this.elExprCapsule.addEventListener("click", () => {
-      this.switchLeftTab("tab-expr");
-      this.switchMobilePane("config");
-      this.setMobileHeaderOpen(false);
-    });
-    this.elExprCapsule.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      this.resetExpressionOverride();
-    });
-    capGrp.appendChild(this.elExprCapsule);
-
-    // Top 3D Camera Capsule
-    this.elCamCapsule = this.el("button", "cam-capsule", "🎥 机位: 🔄 随本幕默认");
-    this.elCamCapsule.title = "左键：跳转到「🎥 3D机位」设置页 | 右键：一键复位为随本幕默认机位";
-    this.elCamCapsule.addEventListener("click", () => {
-      this.switchLeftTab("tab-camera");
-      this.switchMobilePane("config");
-      this.setMobileHeaderOpen(false);
-    });
-    this.elCamCapsule.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      this.resetCameraOverride();
-    });
-    capGrp.appendChild(this.elCamCapsule);
-
-    collapsible.appendChild(capGrp);
-    header.appendChild(collapsible);
-    this.root.appendChild(header);
-
-    // 2. WORKBENCH BODY (Left Config + Right Suites & Preview)
-    const body = this.el("div", "workbench-body");
-    const leftPane = this.buildLeftPane();
-    const rightPane = this.buildRightPane();
-    body.append(leftPane, rightPane);
-    this.root.appendChild(body);
-
-    // 3. STATUS BAR
-    const footer = this.el("footer", "status-bar");
-    this.elStatusText = this.el("span", "", "就绪");
-    const rightFooter = this.el("div", "header-group");
-    this.elAnlasBadge = this.el("span", "hint-text", "Anlas: 未查询");
-    this.elMountedDirBadge = this.el("span", "hint-text", "存储: 浏览器下载 / ZIP模式");
-    rightFooter.append(this.elAnlasBadge, this.el("span", "hint-text", "|"), this.elMountedDirBadge);
-    footer.append(this.elStatusText, rightFooter);
-    this.root.appendChild(footer);
-
-    // 3.5 MOBILE STICKY BOTTOM NAV
-    this.root.appendChild(this.buildMobileBottomNav());
-
-    // 4. LIGHTBOX MODAL & FULLSCREEN CAROUSEL
-    this.elLightbox = this.el("div", "lightbox-modal");
-    const lbBar = this.el("div", "lightbox-bar");
-    const lbLeft = this.el("div", "header-group");
-    this.elLightboxMeta = this.el("span", "", "");
-    this.elLightboxProgress = this.el("span", "lightbox-status-pill", "");
-    this.elLightboxStopBatchBtn = this.el("button", "btn-sm btn-danger", "⏹ 停止连出");
-    this.elLightboxStopBatchBtn.style.display = "none";
-    this.elLightboxStopBatchBtn.addEventListener("click", () => {
-      if (this.batchAbortCtrl) {
-        this.batchAbortCtrl.abort();
-        this.appendLog("⏹ 全屏轮播页触发中断指令，等待当前请求结束...");
-        this.updateLightboxBatchStatus();
+    const btnResetAll = this.el("button", "btn btn-icon", "↺");
+    btnResetAll.title = "点击：重置当前面板为默认配置；按住 Shift 点击：恢复全部已删除的出厂角色预设";
+    btnResetAll.addEventListener("click", (ev) => {
+      if (ev.shiftKey) {
+        this.restoreFactoryPresets();
+        return;
       }
-    });
-    lbLeft.append(this.elLightboxMeta, this.elLightboxProgress, this.elLightboxStopBatchBtn);
-
-    const lbBtns = this.el("div", "header-group");
-    this.elLightboxFollowBtn = this.el("button", "btn-sm", "📌 跟踪最新");
-    this.elLightboxFollowBtn.title =
-      "开启后每当新图（含自动2x放大）完成时立即切到最新一张；与按秒轮播互斥";
-    this.elLightboxFollowBtn.addEventListener("click", () => {
-      if (this.carouselMode === "follow_latest") {
-        this.setCarouselMode("manual", false, false);
-      } else {
-        this.setCarouselMode("follow_latest", true, true);
-      }
+      this.cfg = createDefaultCharacterConfig();
+      saveActiveConfig(this.cfg);
+      this.isManualPromptEdited = false;
+      this.populatePresetSelect();
+      this.syncAllControls();
+      this.refreshSceneAndPrompt();
+      this.setStatus("↺ 已恢复默认角色与画风参数（提示：Shift+点击 ↺ 可恢复已删出厂预设）");
     });
 
-    this.elLightboxPlayBtn = this.el("button", "btn-sm btn-blue", "▶️ 按秒轮播");
-    this.elLightboxPlayBtn.title = "按右侧秒数循环播放画廊图片（快捷键：空格 Space）；后台出新图时不打断计时";
-    this.elLightboxPlayBtn.addEventListener("click", () => {
-      if (this.carouselMode === "timed") {
-        this.setCarouselMode("manual", false, false);
-      } else {
-        this.setCarouselMode("timed", false, true);
-      }
-    });
+    gLeft.append(this.elPresetSelect, btnSavePreset, this.elDeletePresetBtn, btnResetAll);
 
-    const intervalGrp = this.el("div", "lightbox-interval-group");
-    this.elLightboxIntervalBtns.clear();
-    for (const sec of [2, 3, 4, 6, 8]) {
-      const b = this.el("button", "lightbox-sec-btn", `${sec}s`);
-      b.title = `按 ${sec} 秒/张自动轮播`;
-      b.addEventListener("click", () => {
-        this.apiSettings.carousel_interval_sec = sec;
-        saveApiSettings(this.apiSettings);
-        this.setCarouselMode("timed", false, true);
-      });
-      this.elLightboxIntervalBtns.set(sec, b);
-      intervalGrp.appendChild(b);
-    }
-
-    const btnLbFullscreen = this.el("button", "btn-sm", "🖥️ 真全屏");
-    btnLbFullscreen.title = "切换浏览器全屏显示 (F11 效果)";
-    btnLbFullscreen.addEventListener("click", () => void this.toggleNativeFullscreen());
-
-    const btnLbChecker = this.el("button", "btn-sm", "🏁 透明棋盘底");
-    btnLbChecker.addEventListener("click", () => {
-      this.checkerboardOn = !this.checkerboardOn;
-      this.syncCheckerboard();
-    });
-    const btnLbZoom = this.el("button", "btn-sm", "🔍 100% 原始尺寸");
-    btnLbZoom.addEventListener("click", () => {
-      this.lightboxZoom1x = !this.lightboxZoom1x;
-      this.elLightboxImg.classList.toggle("zoomed-1x", this.lightboxZoom1x);
-      btnLbZoom.textContent = this.lightboxZoom1x ? "🔍 适应窗口" : "🔍 100% 原始尺寸";
-    });
-    const btnLbClose = this.el("button", "btn-sm btn-danger", "✕ 关闭 (Esc)");
-    btnLbClose.addEventListener("click", () => this.closeLightbox());
-    lbBtns.append(
-      this.elLightboxFollowBtn,
-      this.elLightboxPlayBtn,
-      intervalGrp,
-      btnLbFullscreen,
-      btnLbChecker,
-      btnLbZoom,
-      btnLbClose
-    );
-    lbBar.append(lbLeft, lbBtns);
-
-    const lbStage = this.el("div", "lightbox-stage");
-    const btnPrev = this.el("button", "lightbox-nav-btn prev", "◀");
-    btnPrev.title = "上一张 (←)";
-    btnPrev.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.handleManualLightboxStep(-1);
-    });
-    const btnNext = this.el("button", "lightbox-nav-btn next", "▶");
-    btnNext.title = "下一张 (→)";
-    btnNext.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.handleManualLightboxStep(1);
-    });
-
-    this.elLightboxBody = this.el("div", "lightbox-body checkerboard");
-    this.elLightboxImg = this.el("img");
-    this.elLightboxImg.addEventListener("click", () => {
-      this.lightboxZoom1x = !this.lightboxZoom1x;
-      this.elLightboxImg.classList.toggle("zoomed-1x", this.lightboxZoom1x);
-    });
-    this.elLightboxBody.appendChild(this.elLightboxImg);
-    lbStage.append(btnPrev, this.elLightboxBody, btnNext);
-
-    let touchStartX = 0;
-    let touchStartY = 0;
-    lbStage.addEventListener(
-      "touchstart",
-      (e: TouchEvent) => {
-        if (e.touches.length === 1) {
-          touchStartX = e.touches[0].clientX;
-          touchStartY = e.touches[0].clientY;
-        }
-      },
-      { passive: true }
-    );
-    lbStage.addEventListener(
-      "touchend",
-      (e: TouchEvent) => {
-        if (this.lightboxZoom1x || this.gallery.length <= 1 || e.changedTouches.length === 0) return;
-        const dx = e.changedTouches[0].clientX - touchStartX;
-        const dy = e.changedTouches[0].clientY - touchStartY;
-        if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.4) {
-          this.handleManualLightboxStep(dx > 0 ? -1 : 1);
-        }
-      },
-      { passive: true }
-    );
-
-    this.elLightboxStrip = this.el("div", "lightbox-filmstrip");
-    this.elLightbox.append(lbBar, lbStage, this.elLightboxStrip);
-    document.body.appendChild(this.elLightbox);
-    this.syncCarouselControlsUi();
-
-    window.addEventListener("keydown", (e) => {
-      if (!this.elLightbox.classList.contains("open")) return;
-      if (e.key === "Escape") {
-        this.closeLightbox();
-      } else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        this.handleManualLightboxStep(-1);
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        this.handleManualLightboxStep(1);
-      } else if (e.key === " ") {
-        e.preventDefault();
-        if (this.carouselMode === "timed") {
-          this.setCarouselMode("manual", false, false);
-        } else {
-          this.setCarouselMode("timed", false, true);
-        }
-      }
-    });
-  }
-
-  private buildMobileBottomNav(): HTMLElement {
-    const nav = this.el("nav", "mobile-bottom-nav");
-    nav.setAttribute("aria-label", "移动端主导航");
-    const items: Array<["config" | "scenes" | "output", string, string]> = [
-      ["config", "⚙️", "角色·参数"],
-      ["scenes", "🎬", "选幕·51式"],
-      ["output", "🖼️", "预览·词条"],
+    // Center: Model Segmented Pills + Canvas + Seed + Batch
+    const gCenter = this.el("div", "topbar-group");
+    const modelSeg = this.el("div", "seg-group");
+    const models: Array<[NaiModelId, string, string]> = [
+      [MODEL_V4_5_FULL, "♾️ V4.5 Full", "Opus 标准尺寸 28步真正无限 0 Anlas · 原生支持 Vibe Transfer"],
+      [MODEL_V5_FULL, "🔥 V5 High", "V5 Full High 28步 · 全题材独立负向 UC · Opus 走恢复池"],
+      [MODEL_V5_FULL_MEDIUM, "⚡ V5 Med", "V5 Full Medium 14步极速 · 省约 42% V5 恢复池额度"],
     ];
-    for (const [pane, icon, label] of items) {
-      const btn = this.el("button", `mobile-nav-btn ${pane === this.activeMobilePane ? "active" : ""}`);
-      btn.dataset.mobileNav = pane;
-      btn.append(this.el("span", "mobile-nav-icon", icon), this.el("span", "mobile-nav-lbl", label));
-      if (pane === "output") {
-        this.elMobileOutBadge = this.el("span", "mobile-nav-badge", "");
-        btn.appendChild(this.elMobileOutBadge);
-      }
-      btn.addEventListener("click", () => this.switchMobilePane(pane));
-      nav.appendChild(btn);
-    }
-    return nav;
-  }
-
-  private buildLeftPane(): HTMLElement {
-    const pane = this.el("aside", "left-pane");
-    const tabBar = this.el("div", "tab-bar");
-    const tabs: Array<[string, string]> = [
-      ["tab-identity", "👤 身份"],
-      ["tab-body", "👗 穿搭"],
-      ["tab-style", "🎨 画风局部"],
-      ["tab-expr", "😊 表情"],
-      ["tab-camera", "🎥 3D机位"],
-      ["tab-modules", "🎛️ 模块"],
-      ["tab-api", "⚡ NAI生图"],
-    ];
-
-    const panels = new Map<string, HTMLElement>();
-    for (const [id, label] of tabs) {
-      const btn = this.el("button", `tab-btn ${id === this.activeLeftTab ? "active" : ""}`, label);
-      btn.dataset.tabId = id;
-      btn.addEventListener("click", () => this.switchLeftTab(id));
-      tabBar.appendChild(btn);
-
-      const panel = this.el("div", `tab-panel ${id === this.activeLeftTab ? "active" : ""}`);
-      panel.dataset.panelId = id;
-      panels.set(id, panel);
-    }
-    pane.appendChild(tabBar);
-    for (const panel of panels.values()) {
-      pane.appendChild(panel);
+    this.elModelBtns.clear();
+    for (const [mId, lbl, tip] of models) {
+      const b = this.el("button", "seg-btn", lbl);
+      b.title = tip;
+      b.addEventListener("click", () => this.setModel(mId));
+      this.elModelBtns.set(mId, b);
+      modelSeg.appendChild(b);
     }
 
-    // Tab 1: Identity
-    const pId = panels.get("tab-identity")!;
-    const cardId = this.el("div", "field-card");
-    cardId.appendChild(this.el("div", "field-card-title", "角色标签与外形基础 (Danbooru)"));
-    cardId.append(
-      this.makeInputRow("char_tag", "角色核心 Tag (char_tag)", "例如: javelin (azur lane) 或 original"),
-      this.makeInputRow("eng_name", "T5 句用英文称呼 (eng_name)", "例如: Javelin / Hood / the girl"),
-      this.makeInputRow("eye_color", "瞳色标签 (eye_color)", "例如: purple eyes（闭眼幕次自动隐藏）"),
-      this.makeInputRow("hair_tags", "发型与头饰 (hair_tags)", "short purple hair, hair ribbon..."),
-      this.makeInputRow("canon_neg_tags", "原设服装负向防串词 (canon_neg_tags)", "更换便服时自动加入 -2 屏蔽"),
-      this.makeInputRow("extra_char_tags", "额外常驻特征 (extra_char_tags)", "可选追加角色常驻 Tag")
-    );
-    pId.appendChild(cardId);
-
-    // Tab 2: Body & Outfit
-    const pBody = panels.get("tab-body")!;
-    const cardBody = this.el("div", "field-card");
-    cardBody.appendChild(this.el("div", "field-card-title", "体型 · 胸围 · 肤色"));
-    cardBody.append(
-      this.makeSelectRow("body_preset", "体型预设", Object.keys(BODY_PRESETS)),
-      this.makeSelectRow("bust_preset", "胸围尺寸", Object.keys(BUST_PRESETS)),
-      this.makeSelectRow("skin_preset", "肤色质感", Object.keys(SKIN_PRESETS))
-    );
-    pBody.appendChild(cardBody);
-
-    const cardOutfit = this.el("div", "field-card");
-    cardOutfit.appendChild(this.el("div", "field-card-title", "服装款式 · 穿脱暴露 · 鞋袜"));
-    cardOutfit.append(
-      this.makeSelectRow("outfit_preset", "服装预设", Object.keys(OUTFIT_PRESETS), () => {
-        const curLeg = this.cfg.legwear_preset;
-        if (this.cfg.outfit_preset.includes("角色标签原设默认服装") && curLeg === "赤足裸腿（barefoot 默认）") {
-          this.cfg.legwear_preset = "🌟 随角色原设鞋袜 / 不强制赤足";
-        } else if (this.cfg.outfit_preset.includes("宽松滑肩白T恤") && curLeg === "🌟 随角色原设鞋袜 / 不强制赤足") {
-          this.cfg.legwear_preset = "赤足裸腿（barefoot 默认）";
-        }
-        this.syncControlsFromConfig();
-      }),
-      this.makeSelectRow("outfit_state_mode", "穿脱与暴露方式", Object.keys(OUTFIT_STATE_PRESETS)),
-      this.makeCheckboxRow("keep_canon_elements", "允许保留角色原皮衣装配件（关闭原设负向屏蔽）"),
-      this.makeInputRow("custom_outfit_tags", "自定义服装 Tag / 原设补充框", "如 1.45::reverse bunnysuit::, ..."),
-      this.makeSelectRow("legwear_preset", "足部与丝袜", Object.keys(LEGWEAR_PRESETS))
-    );
-    pBody.appendChild(cardOutfit);
-
-    const cardAcc = this.el("div", "field-card");
-    cardAcc.appendChild(this.el("div", "field-card-title", "额外萌点配件开关"));
-    cardAcc.append(
-      this.makeCheckboxRow("add_cat_ears", "🐱 猫耳与猫尾 (cat ears, animal ear fluff, cat tail)"),
-      this.makeCheckboxRow("add_horns_tail", "😈 恶魔角与尾巴 (demon horns, demon tail)"),
-      this.makeCheckboxRow("add_glasses", "👓 半框眼镜 (semi-rimless glasses)"),
-      this.makeCheckboxRow("add_choker", "🖤 项圈 (black choker)"),
-      this.makeCheckboxRow("add_extra_sweat", "💦 额外汗珠蒸汽 (sweatdrop, steam)")
-    );
-    pBody.appendChild(cardAcc);
-
-    // Tab 3: Style & Anatomy
-    const pStyle = panels.get("tab-style")!;
-    const cardSt = this.el("div", "field-card");
-    cardSt.appendChild(this.el("div", "field-card-title", "画风渲染流派"));
-    cardSt.append(
-      this.makeSelectRow("style_preset", "画风预设", Object.keys(STYLE_PRESETS), () => {
-        const sn = this.cfg.style_preset;
-        if (sn.includes("M6") || sn.includes("无描边暖杏真肤") || sn.includes("无界油画")) {
-          const isTune2 = sn.includes("M6-Tune2");
-          this.apiSettings.scale = 4.8;
-          this.apiSettings.cfg_rescale = isTune2 ? 0.0 : 0.25;
-          saveApiSettings(this.apiSettings);
-          this.syncApiInputs();
-          this.setStatus(
-            `🌤️ 已切换至 ${isTune2 ? "M6-Tune2 无界油画" : "M6 保留款"}（已自动同步 Scale=4.8, Rescale=${this.apiSettings.cfg_rescale}）`
-          );
-        } else if (Number(this.apiSettings.scale.toFixed(1)) === 4.8) {
-          this.apiSettings.scale = this.apiSettings.model === MODEL_V4_5_FULL ? 7.0 : 6.0;
-          this.apiSettings.cfg_rescale = 0.0;
-          saveApiSettings(this.apiSettings);
-          this.syncApiInputs();
-        }
-      }),
-      this.makeInputRow("custom_style_pos", "自定义画风正向（选自定义画风时生效）", "正向笔触/光影标签..."),
-      this.makeInputRow("custom_style_neg", "自定义画风负向（选自定义画风时生效）", "负向屏蔽标签...")
-    );
-    pStyle.appendChild(cardSt);
-
-    const cardLightEnv = this.el("div", "field-card");
-    cardLightEnv.appendChild(this.el("div", "field-card-title", "🌅 全局光影氛围与环境覆盖"));
-    cardLightEnv.append(
-      this.makeSelectRow("lighting_preset", "全局光影预设", Object.keys(LIGHTING_PRESETS)),
-      this.makeSelectRow("env_preset", "全局环境覆盖", Object.keys(ENV_PRESETS))
-    );
-    pStyle.appendChild(cardLightEnv);
-
-    const cardAnat = this.el("div", "field-card");
-    cardAnat.appendChild(this.el("div", "field-card-title", "局部四维模块与流体倍率"));
-    cardAnat.append(
-      this.makeSelectRow("morph_preset", "第一维 · 先天器型", Object.keys(MORPH_PRESETS)),
-      this.makeSelectRow("pubic_preset", "第二维 · 毛发修饰", Object.keys(PUBIC_PRESETS)),
-      this.makeSelectRow("pigment_preset", "第三维 · 色泽色素", Object.keys(PIGMENT_PRESETS))
-    );
-    const fluidRow = this.el("div", "field-row");
-    const fluidLbl = this.el("label", "lbl", `全局流体倍率: ${this.cfg.fluid_scale.toFixed(2)}x`);
-    const fluidSlider = this.el("input");
-    fluidSlider.type = "range";
-    fluidSlider.min = "0.5";
-    fluidSlider.max = "1.6";
-    fluidSlider.step = "0.05";
-    fluidSlider.value = String(this.cfg.fluid_scale);
-    fluidSlider.addEventListener("input", () => {
-      this.cfg.fluid_scale = parseFloat(fluidSlider.value);
-      fluidLbl.textContent = `全局流体倍率: ${this.cfg.fluid_scale.toFixed(2)}x`;
-      this.saveCfgAndRefresh();
-    });
-    this.formBindings.set("fluid_scale", fluidSlider);
-    fluidRow.append(fluidLbl, fluidSlider);
-    cardAnat.appendChild(fluidRow);
-    pStyle.appendChild(cardAnat);
-
-    // Tab 3.5: Character Expression Editor
-    this.buildExpressionTab(panels.get("tab-expr")!);
-
-    // Tab 4: 3D Spherical Camera Rig
-    const pCam = panels.get("tab-camera")!;
-    const cardCam = this.el("div", "field-card");
-    const camHead = this.el("div", "field-card-title");
-    camHead.appendChild(this.el("span", "", "🌐 3D 球面机位雷达控制器"));
-    const btnCamReset = this.el("button", "btn-sm", "🔄 复位随本幕默认");
-    btnCamReset.addEventListener("click", () => this.resetCameraOverride());
-    camHead.appendChild(btnCamReset);
-    cardCam.appendChild(camHead);
-
-    cardCam.appendChild(
-      this.makeCheckboxRow("cam_enable_override", "✅ 启用全局 3D 机位覆盖（关闭时保留每幕原生机位；拖拽雷达盘自动开启）")
-    );
-
-    const radarWrap = this.el("div", "radar-wrap");
-    const radarCanvas = this.el("canvas", "radar-canvas");
-    radarWrap.appendChild(radarCanvas);
-    cardCam.appendChild(radarWrap);
-
-    this.radarCtrl = new CameraRadarCanvas(
-      radarCanvas,
-      (next) => {
-        this.cfg.cam_enable_override = next.enabled;
-        this.cfg.cam_azimuth = next.azimuth;
-        this.cfg.cam_elevation = next.elevation;
-        this.syncControlsFromConfig();
-        this.saveCfgAndRefresh();
-      },
-      () => this.resetCameraOverride()
-    );
-
-    // Numeric sliders for Azimuth & Elevation
-    const azElGrid = this.el("div", "grid-2");
-    azElGrid.style.marginTop = "8px";
-    const mkRangeBox = (key: "cam_azimuth" | "cam_elevation", titleText: string, min: number, max: number) => {
-      const box = this.el("div", "field-row");
-      const lbl = this.el("label", "lbl", titleText);
-      const inp = this.el("input");
-      inp.type = "range";
-      inp.min = String(min);
-      inp.max = String(max);
-      inp.step = "1";
-      inp.addEventListener("input", () => {
-        this.cfg.cam_enable_override = true;
-        this.cfg[key] = parseInt(inp.value, 10);
-        this.syncControlsFromConfig();
-        this.saveCfgAndRefresh();
-      });
-      this.formBindings.set(key, inp);
-      box.append(lbl, inp);
-      return box;
+    this.elCanvasSelect = this.el("select", "topbar-canvas-select");
+    this.elCanvasSelect.title = "画幅尺寸选择";
+    const canvasLabels: Record<string, string> = {
+      "🔄 自动跟随本幕推荐画布": "🔄 画幅随动作",
+      "📱 竖图 832x1216 (标准 Portrait)": "📱 竖 832×1216",
+      "🖥️ 横图 1216x832 (标准 Landscape)": "🖥️ 横 1216×832",
+      "⬛ 方图 1024x1024 (标准 Square)": "⬛ 方 1024×1024",
     };
-    azElGrid.append(
-      mkRangeBox("cam_azimuth", "水平环绕角 (-180° ~ +180°)", -180, 180),
-      mkRangeBox("cam_elevation", "垂直俯仰角 (-80° ~ +85°)", -80, 85)
-    );
-    cardCam.appendChild(azElGrid);
-
-    // Quick Camera Capsules
-    const quickTitle = this.el("label", "lbl", "一键快捷机位胶囊:");
-    quickTitle.style.display = "block";
-    quickTitle.style.marginTop = "8px";
-    cardCam.appendChild(quickTitle);
-    const quickWrap = this.el("div", "flex-wrap-row");
-    quickWrap.style.marginTop = "4px";
-    for (const [lbl, az, el, shotKey, wide] of CAMERA_QUICK_PRESETS) {
-      const pill = this.el("button", "btn-sm pill", lbl);
-      pill.addEventListener("click", () => {
-        this.cfg.cam_enable_override = true;
-        this.cfg.cam_azimuth = az;
-        this.cfg.cam_elevation = el;
-        if (shotKey) this.cfg.cam_shot_preset = shotKey;
-        this.cfg.cam_wide_lens = wide;
-        this.syncControlsFromConfig();
-        this.saveCfgAndRefresh();
-      });
-      quickWrap.appendChild(pill);
-    }
-    cardCam.appendChild(quickWrap);
-
-    cardCam.appendChild(this.makeSelectRow("cam_shot_preset", "景别距离 (Shot Size)", Object.keys(CAMERA_SHOT_PRESETS)));
-    cardCam.appendChild(this.makeSelectRow("cam_gaze_preset", "视线跟随模式 (Gaze)", Object.keys(CAMERA_GAZE_PRESETS)));
-    const lensRow = this.el("div", "grid-2");
-    lensRow.append(
-      this.makeCheckboxRow("cam_wide_lens", "🔥 超广角强透视"),
-      this.makeCheckboxRow("cam_dutch_angle", "📐 荷兰斜角构图")
-    );
-    cardCam.appendChild(lensRow);
-    pCam.appendChild(cardCam);
-
-    // Tab 5: Precise Reference Modules
-    const pMod = panels.get("tab-modules")!;
-    const cardRefShortcut = this.el("div", "field-card");
-    const refShortHead = this.el("div", "field-card-title");
-    refShortHead.appendChild(this.el("span", "", "🪪 V4.5 Full 角色精密参照 (Character) 联动"));
-    const btnJumpRef = this.el("button", "btn-sm btn-primary", "📤 前往上传/调参");
-    btnJumpRef.addEventListener("click", () => {
-      this.switchLeftTab("tab-api");
-      this.switchMobilePane("config");
-    });
-    refShortHead.appendChild(btnJumpRef);
-    cardRefShortcut.appendChild(refShortHead);
-    this.elModTabRefBanner = this.el(
-      "div",
-      "hint-text",
-      "当前尚未载入角色参照图。可在「⚡ NAI生图」上传参考图并配合下方「👤 精密参照：仅锁人物」剔除原设冲突词。"
-    );
-    cardRefShortcut.appendChild(this.elModTabRefBanner);
-    pMod.appendChild(cardRefShortcut);
-
-    const cardModPresets = this.el("div", "field-card");
-    cardModPresets.appendChild(this.el("div", "field-card-title", "快捷精密参照预设组"));
-    const modPresetBtns = this.el("div", "flex-wrap-row");
-    for (const [name, mapping] of Object.entries(MODULE_SWITCH_PRESETS)) {
-      const b = this.el("button", "btn-sm", name);
-      b.addEventListener("click", () => {
-        for (const [k, v] of Object.entries(mapping)) {
-          (this.cfg as unknown as Record<string, boolean>)[k] = v;
-        }
-        this.syncControlsFromConfig();
-        this.saveCfgAndRefresh();
-        this.setStatus(`🎛️ 已应用模块开关方案：${name}`);
-      });
-      modPresetBtns.appendChild(b);
-    }
-    cardModPresets.appendChild(modPresetBtns);
-    pMod.appendChild(cardModPresets);
-
-    const cardModGrid = this.el("div", "field-card");
-    cardModGrid.appendChild(this.el("div", "field-card-title", "14 维精细开关（OFF 时精确剔除词条）"));
-    const modGrid = this.el("div", "module-grid");
-    for (const [key, label] of MODULE_LABELS) {
-      const row = this.el("label", "check-row");
-      const cb = this.el("input");
-      cb.type = "checkbox";
-      cb.addEventListener("change", () => {
-        (this.cfg as unknown as Record<string, boolean>)[key] = cb.checked;
-        this.saveCfgAndRefresh();
-      });
-      this.moduleBindings.set(key, cb);
-      row.append(cb, document.createTextNode(label));
-      modGrid.appendChild(row);
-    }
-    cardModGrid.appendChild(modGrid);
-    pMod.appendChild(cardModGrid);
-
-    // Tab 6: NAI Direct API Generation & Storage
-    this.buildApiTab(panels.get("tab-api")!);
-
-    return pane;
-  }
-
-  private buildExpressionTab(panel: HTMLElement): void {
-    const cardPreset = this.el("div", "field-card");
-    const head = this.el("div", "field-card-title");
-    head.appendChild(this.el("span", "", "🎭 角色表情预设与一键胶囊"));
-    const btnReset = this.el("button", "btn-sm", "🔄 复位随本幕默认");
-    btnReset.addEventListener("click", () => this.resetExpressionOverride());
-    head.appendChild(btnReset);
-    cardPreset.appendChild(head);
-
-    const pillWrap = this.el("div", "flex-wrap-row");
-    pillWrap.style.marginBottom = "8px";
-    this.elExprPresetPills.clear();
-    for (const [fullKey, info] of Object.entries(EXPRESSION_PRESETS)) {
-      if (info.code === "auto" || info.code === "custom_only") continue;
-      const pill = this.el("button", "btn-sm pill", info.short);
-      pill.title = fullKey;
-      pill.addEventListener("click", () => {
-        this.cfg.expr_preset = fullKey;
-        this.syncControlsFromConfig();
-        this.saveCfgAndRefresh();
-      });
-      this.elExprPresetPills.set(fullKey, pill);
-      pillWrap.appendChild(pill);
-    }
-    cardPreset.appendChild(pillWrap);
-
-    cardPreset.append(
-      this.makeSelectRow("expr_preset", "表情总预设", Object.keys(EXPRESSION_PRESETS), () => {
-        this.syncControlsFromConfig();
-      }),
-      this.makeCheckboxRow("expr_override_sleeping", "🌙 强制覆盖 S06/S07 熟睡闭眼幕次（默认保护熟睡闭眼）")
-    );
-    panel.appendChild(cardPreset);
-
-    const cardParts = this.el("div", "field-card");
-    cardParts.appendChild(this.el("div", "field-card-title", "👁️ 五官细分覆盖与瞳孔特效"));
-    cardParts.append(
-      this.makeSelectRow("expr_eye_state", "眼部状态覆盖", Object.keys(EXPRESSION_EYE_PRESETS)),
-      this.makeSelectRow("expr_mouth_state", "嘴部状态覆盖", Object.keys(EXPRESSION_MOUTH_PRESETS)),
-      this.makeSelectRow("expr_brow_blush", "眉眼与羞红强度", Object.keys(EXPRESSION_BLUSH_PRESETS))
-    );
-
-    const fxRow = this.el("div", "flex-wrap-row");
-    fxRow.style.marginTop = "4px";
-    fxRow.style.marginBottom = "6px";
-    fxRow.append(
-      this.makeCheckboxRow("expr_heart_eyes", "💖 爱心瞳"),
-      this.makeCheckboxRow("expr_empty_eyes", "🖤 空洞失神瞳"),
-      this.makeCheckboxRow("expr_tears", "😭 泪珠滑落")
-    );
-    cardParts.appendChild(fxRow);
-
-    cardParts.appendChild(
-      this.makeInputRow("custom_expression_tags", "自定义表情补充 Tag", "例如: open mouth, smirk, tongue out")
-    );
-    panel.appendChild(cardParts);
-
-    const cardPrev = this.el("div", "field-card");
-    cardPrev.appendChild(this.el("div", "field-card-title", "🔍 表情编译结果实时预览"));
-    this.elExprPreviewBox = this.el("div", "log-box");
-    this.elExprPreviewBox.style.maxHeight = "130px";
-    this.elExprPreviewBox.textContent = "🔄 当前跟随各幕次默认微表情（未覆盖）";
-    cardPrev.appendChild(this.elExprPreviewBox);
-    panel.appendChild(cardPrev);
-  }
-
-  private buildApiTab(panel: HTMLElement): void {
-    const cardConn = this.el("div", "field-card");
-    cardConn.appendChild(this.el("div", "field-card-title", "🔑 NovelAI 官方直连认证（CORS 纯前端直出）"));
-
-    this.elApiSubBanner = this.el(
-      "div",
-      "sub-banner",
-      "💎 Opus 订阅与点数状态：待查询（填入 Token 后将自动获取，或点击「🔍 查点数」）"
-    );
-    cardConn.appendChild(this.elApiSubBanner);
-
-    const tokRow = this.el("div", "field-row");
-    tokRow.appendChild(this.el("label", "lbl", "Persistent API Token (pst-...，仅存于本机浏览器 localStorage)"));
-    const tokWrap = this.el("div", "header-group");
-    const tokInput = this.el("input");
-    tokInput.type = "password";
-    tokInput.id = "api-token-input";
-    tokInput.style.flex = "1";
-    tokInput.placeholder = "pst-...";
-    tokInput.value = this.apiSettings.api_token;
-    tokInput.addEventListener("input", () => {
-      this.apiSettings.api_token = tokInput.value;
-      saveApiSettings(this.apiSettings);
-    });
-    const btnToggleVis = this.el("button", "btn-sm", "👁️");
-    btnToggleVis.addEventListener("click", () => {
-      tokInput.type = tokInput.type === "password" ? "text" : "password";
-    });
-    const btnCheckSub = this.el("button", "btn-sm btn-blue", "🔍 查点数");
-    btnCheckSub.addEventListener("click", () => void this.onCheckSubscription(false));
-    tokWrap.append(tokInput, btnToggleVis, btnCheckSub);
-    tokRow.appendChild(tokWrap);
-    cardConn.appendChild(tokRow);
-
-    // Precise Reference (Style+Chara / Chara单独 / 单图Chara&Style - V4.5 Full) Card
-    const cardRef = this.el("div", "field-card precise-ref-card");
-    const refHead = this.el("div", "field-card-title");
-    refHead.appendChild(this.el("span", "", "🪪 Precise Reference · 精密参照 (V4.5 Full)"));
-    const refHeadBtns = this.el("div", "header-group");
-
-    const fileInputChar = this.el("input");
-    fileInputChar.type = "file";
-    fileInputChar.accept = "image/*";
-    fileInputChar.style.display = "none";
-    fileInputChar.addEventListener("change", () => {
-      const f = fileInputChar.files?.[0];
-      if (f) void this.handleUploadPreciseRefFile("char", f);
-      fileInputChar.value = "";
-    });
-
-    const fileInputStyle = this.el("input");
-    fileInputStyle.type = "file";
-    fileInputStyle.accept = "image/*";
-    fileInputStyle.style.display = "none";
-    fileInputStyle.addEventListener("change", () => {
-      const f = fileInputStyle.files?.[0];
-      if (f) void this.handleUploadPreciseRefFile("style", f);
-      fileInputStyle.value = "";
-    });
-
-    const btnUploadChar = this.el("button", "btn-sm btn-primary", "📤 人物图");
-    btnUploadChar.title = "上传 Character 人物基图（也可直接拖入下方角色槽位，或选中槽位后 Ctrl+V 粘贴）";
-    btnUploadChar.addEventListener("click", () => {
-      this.setActivePasteSlot("char");
-      fileInputChar.click();
-    });
-
-    const btnUploadStyle = this.el("button", "btn-sm", "🎨 画风图");
-    btnUploadStyle.title = "上传 Style 画风基图（自动切至「Style+Chara 混合」双槽模式）";
-    btnUploadStyle.addEventListener("click", () => {
-      if (this.apiSettings.precise_ref_workflow !== "style_plus_chara") {
-        this.setPreciseRefWorkflow("style_plus_chara");
-      }
-      this.setActivePasteSlot("style");
-      fileInputStyle.click();
-    });
-
-    refHeadBtns.append(fileInputChar, fileInputStyle, btnUploadChar, btnUploadStyle);
-    refHead.appendChild(refHeadBtns);
-    cardRef.appendChild(refHead);
-
-    // 3-Way Workflow Mode Bar: Style+Chara双图混合 / Chara单独 / 单图Chara&Style
-    const wfBar = this.el("div", "precise-ref-workflow-bar");
-    const wfOptions: Array<[PreciseRefWorkflowMode, string, string]> = [
-      [
-        "style_plus_chara",
-        "🎨+👤 Style+Chara 混合",
-        "双槽独立混合：同时附带 Character 人物基图 + Style 画风基图（各 +5 Anlas，共 +10 Anlas）",
-      ],
-      [
-        "chara_only",
-        "👤 Chara 单独",
-        "仅发送 Character 人物基图（+5 Anlas），自动暂停画风基图以配合本台文字画风词条混用（不删除已缓存画风图）",
-      ],
-      [
-        "single_char_and_style",
-        "👤&🎨 单图 Chara&Style",
-        "单张参考图同时锁定 Character & Style 档位（base_caption=character&style，单图 +5 Anlas）",
-      ],
-    ];
-    this.elPreciseWorkflowBtns.clear();
-    for (const [wfId, wfLabel, wfTip] of wfOptions) {
-      const b = this.el("button", "precise-ref-wf-btn", wfLabel);
-      b.title = wfTip;
-      b.addEventListener("click", () => this.setPreciseRefWorkflow(wfId));
-      this.elPreciseWorkflowBtns.set(wfId, b);
-      wfBar.appendChild(b);
-    }
-    cardRef.appendChild(wfBar);
-
-    const buildRefSlotUi = (
-      slotKind: "char" | "style",
-      slotTitle: string,
-      inputPrefix: string,
-      initStrength: number,
-      initFidelity: number,
-      onApplyStrength: (val: number) => void,
-      onApplyFidelity: (val: number) => void,
-      onPickFile: () => void,
-      onClearSlot: () => void,
-      onToggleSlot: () => void
-    ) => {
-      const slotEl = this.el("div", "precise-ref-slot");
-      slotEl.addEventListener("click", () => this.setActivePasteSlot(slotKind));
-      slotEl.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        slotEl.classList.add("drag-over");
-      });
-      slotEl.addEventListener("dragleave", () => {
-        slotEl.classList.remove("drag-over");
-      });
-      slotEl.addEventListener("drop", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        slotEl.classList.remove("drag-over");
-        this.setActivePasteSlot(slotKind);
-        const f = e.dataTransfer?.files?.[0];
-        if (f && f.type.startsWith("image/")) {
-          void this.handleUploadPreciseRefFile(slotKind, f);
-        }
-      });
-
-      const body = this.el("div", "precise-ref-body");
-      const left = this.el("div", "precise-ref-left");
-      const thumb = this.el("div", "precise-ref-thumb");
-      thumb.title = `点击上传或替换${slotTitle}（支持拖拽图片至此框，或选中后按 Ctrl+V 粘贴）`;
-      thumb.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.setActivePasteSlot(slotKind);
-        onPickFile();
-      });
-
-      const actions = this.el("div", "precise-ref-thumb-actions");
-      const btnClr = this.el("button", "btn-sm", "🗑️");
-      btnClr.title = `移除当前${slotTitle}`;
-      btnClr.addEventListener("click", (e) => {
-        e.stopPropagation();
-        onClearSlot();
-      });
-
-      const btnTgl = this.el("button", "btn-sm", "✓");
-      btnTgl.title = `启用 / 暂停${slotTitle}`;
-      btnTgl.addEventListener("click", (e) => {
-        e.stopPropagation();
-        onToggleSlot();
-      });
-
-      actions.append(btnClr, btnTgl);
-      left.append(thumb, actions);
-
-      const right = this.el("div", "precise-ref-right");
-      const modeLock = this.el("div", "precise-ref-mode-lock");
-      const modeTitleSpan = this.el("span", "", slotTitle);
-      const modeSubSpan = this.el(
-        "span",
-        "hint-text",
-        slotKind === "char" ? "人物槽" : "画风槽"
-      );
-      modeLock.append(modeTitleSpan, modeSubSpan);
-      right.appendChild(modeLock);
-
-      const strRow = this.el("div", "field-row");
-      strRow.appendChild(this.el("label", "lbl", "Strength (强度)"));
-      const strCtrl = this.el("div", "slider-num-row");
-      const strNum = this.el("input");
-      strNum.id = `${inputPrefix}-strength-num`;
-      strNum.type = "number";
-      strNum.min = "0";
-      strNum.max = "1";
-      strNum.step = "0.05";
-      strNum.value = String(Number(initStrength.toFixed(2)));
-      const strRange = this.el("input");
-      strRange.id = `${inputPrefix}-strength-range`;
-      strRange.type = "range";
-      strRange.min = "0";
-      strRange.max = "1";
-      strRange.step = "0.01";
-      strRange.value = String(initStrength);
-      const syncStr = (raw: number) => {
-        const clamped = Number(Math.max(0, Math.min(1, Number.isNaN(raw) ? 1 : raw)).toFixed(2));
-        strNum.value = String(clamped);
-        strRange.value = String(clamped);
-        onApplyStrength(clamped);
-      };
-      strRange.addEventListener("input", () => syncStr(parseFloat(strRange.value)));
-      strNum.addEventListener("change", () => syncStr(parseFloat(strNum.value)));
-      strCtrl.append(strNum, strRange);
-      strRow.appendChild(strCtrl);
-      right.appendChild(strRow);
-
-      const fidRow = this.el("div", "field-row");
-      fidRow.appendChild(this.el("label", "lbl", "Fidelity (保真度)"));
-      const fidCtrl = this.el("div", "slider-num-row");
-      const fidNum = this.el("input");
-      fidNum.id = `${inputPrefix}-fidelity-num`;
-      fidNum.type = "number";
-      fidNum.min = "0";
-      fidNum.max = "1";
-      fidNum.step = "0.05";
-      fidNum.value = String(Number(initFidelity.toFixed(2)));
-      const fidRange = this.el("input");
-      fidRange.id = `${inputPrefix}-fidelity-range`;
-      fidRange.type = "range";
-      fidRange.min = "0";
-      fidRange.max = "1";
-      fidRange.step = "0.01";
-      fidRange.value = String(initFidelity);
-      const syncFid = (raw: number) => {
-        const clamped = Number(Math.max(0, Math.min(1, Number.isNaN(raw) ? 1 : raw)).toFixed(2));
-        fidNum.value = String(clamped);
-        fidRange.value = String(clamped);
-        onApplyFidelity(clamped);
-      };
-      fidRange.addEventListener("input", () => syncFid(parseFloat(fidRange.value)));
-      fidNum.addEventListener("change", () => syncFid(parseFloat(fidNum.value)));
-      fidCtrl.append(fidNum, fidRange);
-      fidRow.appendChild(fidCtrl);
-      right.appendChild(fidRow);
-
-      body.append(left, right);
-      slotEl.appendChild(body);
-      return { slotEl, thumb, btnClr, btnTgl, modeTitleSpan };
-    };
-
-    const charUi = buildRefSlotUi(
-      "char",
-      "👤 Character (人物基图)",
-      "api-ref",
-      this.apiSettings.precise_ref_strength,
-      this.apiSettings.precise_ref_fidelity,
-      (clamped) => {
-        this.apiSettings.precise_ref_strength = clamped;
-        saveApiSettings(this.apiSettings);
-        this.syncPreciseRefDisplays();
-      },
-      (clamped) => {
-        this.apiSettings.precise_ref_fidelity = clamped;
-        saveApiSettings(this.apiSettings);
-        this.syncPreciseRefDisplays();
-      },
-      () => fileInputChar.click(),
-      () => void this.onClearPreciseRef("char"),
-      () => this.togglePreciseRefSlot("char")
-    );
-    this.elPreciseCharSlot = charUi.slotEl;
-    this.elPreciseCharModeLbl = charUi.modeTitleSpan;
-    this.elPreciseRefThumb = charUi.thumb;
-    this.elPreciseRefClearBtn = charUi.btnClr;
-    this.elPreciseRefToggleBtn = charUi.btnTgl;
-    cardRef.appendChild(this.elPreciseCharSlot);
-
-    const styleUi = buildRefSlotUi(
-      "style",
-      "🎨 Style (画风基图)",
-      "api-style-ref",
-      this.apiSettings.precise_style_strength,
-      this.apiSettings.precise_style_fidelity,
-      (clamped) => {
-        this.apiSettings.precise_style_strength = clamped;
-        saveApiSettings(this.apiSettings);
-        this.syncPreciseRefDisplays();
-      },
-      (clamped) => {
-        this.apiSettings.precise_style_fidelity = clamped;
-        saveApiSettings(this.apiSettings);
-        this.syncPreciseRefDisplays();
-      },
-      () => fileInputStyle.click(),
-      () => void this.onClearPreciseRef("style"),
-      () => this.togglePreciseRefSlot("style")
-    );
-    this.elPreciseStyleSlot = styleUi.slotEl;
-    this.elPreciseStyleThumb = styleUi.thumb;
-    this.elPreciseStyleClearBtn = styleUi.btnClr;
-    this.elPreciseStyleToggleBtn = styleUi.btnTgl;
-    cardRef.appendChild(this.elPreciseStyleSlot);
-
-    this.elPreciseRefStatus = this.el("div", "precise-ref-status", "");
-    cardRef.appendChild(this.elPreciseRefStatus);
-
-    const refQuickRow = this.el("div", "flex-wrap-row");
-    refQuickRow.style.marginTop = "6px";
-    const btnApplyDualMod = this.el(
-      "button",
-      "btn-sm",
-      "🎯 切「人物+画风双锁」词条"
-    );
-    btnApplyDualMod.title = "关闭提示词中的画风+身份+体型+衣服词条，完全交由 Style+Chara 双精密参照决定";
-    btnApplyDualMod.addEventListener("click", () => {
-      const preset = MODULE_SWITCH_PRESETS["🎯 精密参照：人物+画风（关身份/外观/画风）"];
-      if (preset) {
-        for (const [k, v] of Object.entries(preset)) {
-          (this.cfg as unknown as Record<string, boolean>)[k] = v;
-        }
-        this.syncControlsFromConfig();
-        this.saveCfgAndRefresh();
-        this.setStatus("🎯 已切换模块开关为「精密参照：人物+画风」（已关闭本台文字画风与身份外观词条）");
-      }
-    });
-    const btnApplyCharOnlyMod = this.el(
-      "button",
-      "btn-sm",
-      "👤 切「仅锁人物」词条"
-    );
-    btnApplyCharOnlyMod.title = "保留本台画风词条，仅关闭身份/发型/体型/衣服词条（适合 Chara 单独参照 + 文字画风混合）";
-    btnApplyCharOnlyMod.addEventListener("click", () => {
-      const preset = MODULE_SWITCH_PRESETS["👤 精密参照：仅锁人物（保留本台画风+动作）"];
-      if (preset) {
-        for (const [k, v] of Object.entries(preset)) {
-          (this.cfg as unknown as Record<string, boolean>)[k] = v;
-        }
-        this.syncControlsFromConfig();
-        this.saveCfgAndRefresh();
-        this.setStatus("👤 已切换模块开关为「精密参照：仅锁人物」（保留本台文字画风，剔除身份/服装冲突词）");
-      }
-    });
-    const btnRestoreFullMod = this.el("button", "btn-sm", "🌕 恢复全量词条");
-    btnRestoreFullMod.addEventListener("click", () => {
-      const preset = MODULE_SWITCH_PRESETS["🌕 全量直出（默认全开）"];
-      if (preset) {
-        for (const [k, v] of Object.entries(preset)) {
-          (this.cfg as unknown as Record<string, boolean>)[k] = v;
-        }
-        this.syncControlsFromConfig();
-        this.saveCfgAndRefresh();
-        this.setStatus("🌕 已恢复全部 14 维提示词模块开启");
-      }
-    });
-    refQuickRow.append(btnApplyDualMod, btnApplyCharOnlyMod, btnRestoreFullMod);
-    cardRef.appendChild(refQuickRow);
-
-    // AI Settings Card (Model + Canvas + Steps + Guidance + Seed)
-    const cardParams = this.el("div", "field-card");
-    const paramsHead = this.el("div", "field-card-title");
-    const paramsTitleSpan = this.el("span", "", "⚙️ AI Settings · 生图模型与采样参数");
-    paramsTitleSpan.id = "api-params-card-title";
-    const btnResetAiDefaults = this.el("button", "btn-sm", "↺ 默认参数");
-    btnResetAiDefaults.title = "恢复当前模型的官方推荐 Steps / Guidance / Rescale 默认值";
-    btnResetAiDefaults.addEventListener("click", () => {
-      const isV45 = this.apiSettings.model === MODEL_V4_5_FULL;
-      this.apiSettings.steps = 28;
-      this.apiSettings.scale = isV45 ? 7.0 : 6.0;
-      this.apiSettings.cfg_rescale = 0.0;
-      this.apiSettings.uc_preset_mode = "heavy";
-      this.apiSettings.keep_inline_negatives = true;
-      saveApiSettings(this.apiSettings);
-      this.syncApiInputs();
-      this.updateCostHint();
-      this.setStatus(
-        `↺ 已恢复 ${isV45 ? "V4.5 Full (Steps=28, Guidance=7, Rescale=0, UC=Heavy, 内联负权保留)" : "V5 Full Medium (Steps=14, Guidance=6, Rescale=0)"} 默认参数`
-      );
-    });
-    paramsHead.append(paramsTitleSpan, btnResetAiDefaults);
-    cardParams.appendChild(paramsHead);
-
-    const modelRow = this.el("div", "field-row");
-    modelRow.appendChild(this.el("label", "lbl", "生图模型 (Model · k_euler_ancestral / karras)"));
-    const modelSel = this.el("select");
-    modelSel.id = "api-model-select";
-    for (const mOpt of NAI_MODEL_OPTIONS) {
-      const opt = this.el("option", "", mOpt.label);
-      opt.value = mOpt.id;
-      if (mOpt.id === this.apiSettings.model) opt.selected = true;
-      modelSel.appendChild(opt);
-    }
-    modelSel.addEventListener("change", () => {
-      this.setModel(modelSel.value as NaiModelId, true);
-    });
-    modelRow.appendChild(modelSel);
-    cardParams.appendChild(modelRow);
-
-    const canvasRow = this.el("div", "field-row");
-    canvasRow.appendChild(this.el("label", "lbl", "输出画布尺寸"));
-    const canvasSel = this.el("select");
-    canvasSel.id = "api-canvas-select";
     for (const key of Object.keys(CANVAS_PRESETS)) {
-      const opt = this.el("option", "", key);
+      const opt = this.el("option", "", canvasLabels[key] || key);
       opt.value = key;
-      if (key === this.apiSettings.canvas_preset) opt.selected = true;
-      canvasSel.appendChild(opt);
+      this.elCanvasSelect.appendChild(opt);
     }
-    canvasSel.addEventListener("change", () => {
-      this.apiSettings.canvas_preset = canvasSel.value;
+    this.elCanvasSelect.addEventListener("change", () => {
+      this.apiSettings.canvas_preset = this.elCanvasSelect.value;
       saveApiSettings(this.apiSettings);
-      this.updateCostHint();
+      this.updateQuotaPill();
     });
-    canvasRow.appendChild(canvasSel);
-    this.elCostHint = this.el("div", "hint-text", "");
-    this.elCostHint.style.marginTop = "2px";
-    canvasRow.appendChild(this.elCostHint);
-    cardParams.appendChild(canvasRow);
 
-    // Steps Row (unlocked 1~50 on V4.5 Full, fixed 14 on V5 Full Medium)
-    const stepsRow = this.el("div", "field-row");
-    const stepsLbl = this.el("label", "lbl", "Steps (采样步数)");
-    stepsLbl.id = "api-steps-lbl";
-    const stepsCtrl = this.el("div", "slider-num-row");
-    const stepsNum = this.el("input");
-    stepsNum.id = "api-steps-num";
-    stepsNum.type = "number";
-    stepsNum.min = "1";
-    stepsNum.max = "50";
-    stepsNum.step = "1";
-    const stepsRange = this.el("input");
-    stepsRange.id = "api-steps-range";
-    stepsRange.type = "range";
-    stepsRange.min = "1";
-    stepsRange.max = "50";
-    stepsRange.step = "1";
-    const applySteps = (raw: number) => {
-      if (this.apiSettings.model !== MODEL_V4_5_FULL) return;
-      const clamped = Math.max(1, Math.min(50, Math.round(Number.isNaN(raw) ? 28 : raw)));
-      this.apiSettings.steps = clamped;
-      saveApiSettings(this.apiSettings);
-      this.syncApiInputs();
-      this.updateCostHint();
-    };
-    stepsRange.addEventListener("input", () => applySteps(parseInt(stepsRange.value, 10)));
-    stepsNum.addEventListener("change", () => applySteps(parseInt(stepsNum.value, 10)));
-    stepsCtrl.append(stepsNum, stepsRange);
-    stepsRow.append(stepsLbl, stepsCtrl);
-    cardParams.appendChild(stepsRow);
-
-    const gridSC = this.el("div", "grid-2");
-    const scaleRow = this.el("div", "field-row");
-    const scaleLbl = this.el("label", "lbl", `Prompt Guidance: ${this.apiSettings.scale.toFixed(1)}`);
-    scaleLbl.id = "api-scale-lbl";
-    const scaleCtrl = this.el("div", "slider-num-row");
-    const scaleNum = this.el("input");
-    scaleNum.id = "api-scale-num";
-    scaleNum.type = "number";
-    scaleNum.min = "1";
-    scaleNum.max = "10";
-    scaleNum.step = "0.1";
-    scaleNum.value = String(Number(this.apiSettings.scale.toFixed(1)));
-    const scaleInp = this.el("input");
-    scaleInp.id = "api-scale-input";
-    scaleInp.type = "range";
-    scaleInp.min = "1";
-    scaleInp.max = "10";
-    scaleInp.step = "0.1";
-    scaleInp.value = String(this.apiSettings.scale);
-    const applyScale = (raw: number) => {
-      const clamped = Number(Math.max(1, Math.min(10, Number.isNaN(raw) ? 7 : raw)).toFixed(1));
-      this.apiSettings.scale = clamped;
-      saveApiSettings(this.apiSettings);
-      this.syncApiInputs();
-    };
-    scaleInp.addEventListener("input", () => applyScale(parseFloat(scaleInp.value)));
-    scaleNum.addEventListener("change", () => applyScale(parseFloat(scaleNum.value)));
-    scaleCtrl.append(scaleNum, scaleInp);
-    scaleRow.append(scaleLbl, scaleCtrl);
-
-    const rescaleRow = this.el("div", "field-row");
-    const rescaleLbl = this.el("label", "lbl", `Guidance Rescale: ${this.apiSettings.cfg_rescale.toFixed(2)}`);
-    rescaleLbl.id = "api-rescale-lbl";
-    const rescaleCtrl = this.el("div", "slider-num-row");
-    const rescaleNum = this.el("input");
-    rescaleNum.id = "api-rescale-num";
-    rescaleNum.type = "number";
-    rescaleNum.min = "0";
-    rescaleNum.max = "1";
-    rescaleNum.step = "0.05";
-    rescaleNum.value = String(Number(this.apiSettings.cfg_rescale.toFixed(2)));
-    const rescaleInp = this.el("input");
-    rescaleInp.id = "api-rescale-input";
-    rescaleInp.type = "range";
-    rescaleInp.min = "0";
-    rescaleInp.max = "1";
-    rescaleInp.step = "0.05";
-    rescaleInp.value = String(this.apiSettings.cfg_rescale);
-    const applyRescale = (raw: number) => {
-      const clamped = Number(Math.max(0, Math.min(1, Number.isNaN(raw) ? 0 : raw)).toFixed(2));
-      this.apiSettings.cfg_rescale = clamped;
-      saveApiSettings(this.apiSettings);
-      this.syncApiInputs();
-    };
-    rescaleInp.addEventListener("input", () => applyRescale(parseFloat(rescaleInp.value)));
-    rescaleNum.addEventListener("change", () => applyRescale(parseFloat(rescaleNum.value)));
-    rescaleCtrl.append(rescaleNum, rescaleInp);
-    rescaleRow.append(rescaleLbl, rescaleCtrl);
-    gridSC.append(scaleRow, rescaleRow);
-    cardParams.appendChild(gridSC);
-
-    const seedRow = this.el("div", "field-row");
-    seedRow.appendChild(this.el("label", "lbl", "固定 Seed（-1 为每次随机）"));
-    const seedWrap = this.el("div", "header-group");
-    const seedInp = this.el("input", "seed-input");
-    seedInp.id = "api-seed-input";
-    seedInp.type = "number";
-    seedInp.value = String(this.apiSettings.seed);
-    seedInp.addEventListener("input", () => {
-      const v = parseInt(seedInp.value, 10);
-      this.apiSettings.seed = Number.isNaN(v) ? -1 : v;
+    const seedBox = this.el("div", "seed-box");
+    seedBox.appendChild(this.el("span", "seed-box-lbl", "Seed"));
+    this.elSeedInput = this.el("input") as HTMLInputElement;
+    this.elSeedInput.type = "number";
+    this.elSeedInput.placeholder = "-1 随机";
+    this.elSeedInput.title = "-1 表示每次随机生成新 Seed；填入正整数则固定 Seed";
+    this.elSeedInput.addEventListener("change", () => {
+      const v = parseInt(this.elSeedInput.value, 10);
+      this.apiSettings.seed = Number.isFinite(v) && v > 0 ? v : -1;
+      this.elSeedInput.value = String(this.apiSettings.seed);
       saveApiSettings(this.apiSettings);
     });
-    const btnRandSeed = this.el("button", "btn-sm", "🎲 -1");
+    const btnRandSeed = this.el("button", "btn btn-xs btn-icon", "🎲");
+    btnRandSeed.title = "恢复每次随机 Seed (-1)";
     btnRandSeed.addEventListener("click", () => {
       this.apiSettings.seed = -1;
-      seedInp.value = "-1";
+      this.elSeedInput.value = "-1";
       saveApiSettings(this.apiSettings);
     });
-    const btnLockS00 = this.el("button", "btn-sm", "🔒 填入最近 S00");
-    btnLockS00.addEventListener("click", () => {
-      if (this.lastS00Seed === null) {
-        this.setStatus("⚠️ 尚未生成过 S00 图片，暂无可锁定的 Seed");
+    const btnLockLastSeed = this.el("button", "btn btn-xs btn-icon", "📌");
+    btnLockLastSeed.title = "锁定当前预览画布图片的 Seed";
+    btnLockLastSeed.addEventListener("click", () => {
+      const curRec = this.gallery[this.selectedGalleryIdx];
+      if (!curRec) {
+        this.setStatus("⚠️ 当前画廊暂无已生成图片可锁 Seed", true);
         return;
       }
-      this.apiSettings.seed = this.lastS00Seed;
-      seedInp.value = String(this.lastS00Seed);
+      this.apiSettings.seed = curRec.seed;
+      this.elSeedInput.value = String(curRec.seed);
       saveApiSettings(this.apiSettings);
-      this.setStatus(`🔒 已锁定 Seed 为最近 S00 种子：${this.lastS00Seed}`);
+      this.setStatus(`📌 已锁定 Seed: ${curRec.seed}`);
     });
-    seedWrap.append(seedInp, btnRandSeed, btnLockS00);
-    seedRow.appendChild(seedWrap);
-    cardParams.appendChild(seedRow);
+    seedBox.append(this.elSeedInput, btnRandSeed, btnLockLastSeed);
 
-    const ucPresetRow = this.el("div", "field-row");
-    ucPresetRow.style.marginTop = "6px";
-    const ucPresetLbl = this.el("label", "lbl", "V4.5 全局负向预设 (Undesired Content Preset)");
-    ucPresetLbl.id = "api-uc-preset-lbl";
-    const ucPresetSel = this.el("select");
-    ucPresetSel.id = "api-uc-preset-select";
-    const ucPresetOptions: Array<[NaiUcPresetMode, string]> = [
-      ["heavy", "🛡️ Heavy · 官方网页端默认强力防崩（推荐 · 保异色瞳/抑三视图平涂）"],
-      ["light", "🪶 Light · 官方轻量防崩（保留噪点/网点肌理）"],
-      ["human_focus", "👤 Human Focus · 人体强化（含禁异色瞳 mismatched pupils，异色瞳勿选）"],
-      ["none", "🧼 None · 空全局负向（仅高步数或纯手写负向时用）"],
-    ];
-    for (const [val, txt] of ucPresetOptions) {
-      const opt = this.el("option", "", txt);
-      opt.value = val;
-      if (val === this.apiSettings.uc_preset_mode) opt.selected = true;
-      ucPresetSel.appendChild(opt);
+    this.elBatchSelect = this.el("select", "batch-select");
+    this.elBatchSelect.title = "每次点击生图连续抽取的张数";
+    for (const n of [1, 2, 3, 4, 6, 8]) {
+      const opt = this.el("option", "", `连抽 ${n}×`);
+      opt.value = String(n);
+      this.elBatchSelect.appendChild(opt);
     }
-    ucPresetSel.addEventListener("change", () => {
-      this.apiSettings.uc_preset_mode = ucPresetSel.value as NaiUcPresetMode;
+    this.elBatchSelect.addEventListener("change", () => {
+      this.apiSettings.batch_count = Math.max(1, Math.min(8, parseInt(this.elBatchSelect.value, 10) || 1));
       saveApiSettings(this.apiSettings);
-      this.syncApiInputs();
+      this.updateQuotaPill();
     });
-    ucPresetRow.append(ucPresetLbl, ucPresetSel);
-    cardParams.appendChild(ucPresetRow);
 
-    const chkS00 = this.el("label", "check-row");
-    const cbS00 = this.el("input");
-    cbS00.type = "checkbox";
-    cbS00.checked = this.apiSettings.use_s00_seed;
-    cbS00.addEventListener("change", () => {
-      this.apiSettings.use_s00_seed = cbS00.checked;
-      saveApiSettings(this.apiSettings);
+    gCenter.append(modelSeg, this.elCanvasSelect, seedBox, this.elBatchSelect);
+
+    // Right: MCP Bridge Pill + Quota Pill + Folder Mount + Hero Generate / Stop
+    const gRight = this.el("div", "topbar-group");
+    this.elMcpPill = this.el("button", "mcp-pill");
+    this.elMcpPill.title = "MCP 实时控制桥（支持本机与局域网/远程连接）：点击设置服务器地址或开关";
+    this.elMcpPill.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.elMcpEndpointInput.value = this.mcpBridge.getCustomEndpoint();
+      this.syncMcpPill(this.mcpBridge.getStatus());
+      this.togglePopover(this.elMcpPopover, this.elMcpPill);
     });
-    chkS00.append(cbS00, document.createTextNode("批量连出时自动沿用第 00 幕 (S00) Seed 锁定画风/角色"));
-    cardParams.appendChild(chkS00);
 
-    const chkQual = this.el("label", "check-row");
-    chkQual.style.marginTop = "5px";
-    const cbQual = this.el("input");
-    cbQual.id = "api-append-qual-cb";
-    cbQual.type = "checkbox";
-    cbQual.checked = this.apiSettings.append_v5_quality;
-    cbQual.addEventListener("change", () => {
-      this.apiSettings.append_v5_quality = cbQual.checked;
-      saveApiSettings(this.apiSettings);
+    this.elQuotaPill = this.el("button", "quota-pill", "🔑 未设Token");
+    this.elQuotaPill.title = "点击查看/刷新 API Token 与账户点数状态";
+    this.elQuotaPill.addEventListener("click", () => {
+      this.elApiCard.classList.remove("collapsed");
+      this.mobileCol = "left";
+      this.syncMobileColumns();
+      this.elApiCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (this.apiSettings.api_token.trim()) {
+        void this.refreshSubscription(false);
+      }
     });
-    chkQual.append(cbQual, document.createTextNode("追加官方 Quality Tags: Standard 尾缀 (very aesthetic, masterpiece, no text)"));
-    cardParams.appendChild(chkQual);
 
-    const chkInlineNeg = this.el("label", "check-row");
-    chkInlineNeg.style.marginTop = "5px";
-    const cbInlineNeg = this.el("input");
-    cbInlineNeg.id = "api-keep-inline-neg-cb";
-    cbInlineNeg.type = "checkbox";
-    cbInlineNeg.checked = this.apiSettings.keep_inline_negatives;
-    cbInlineNeg.addEventListener("change", () => {
-      this.apiSettings.keep_inline_negatives = cbInlineNeg.checked;
-      saveApiSettings(this.apiSettings);
-    });
-    chkInlineNeg.append(
-      cbInlineNeg,
-      document.createTextNode("📌 保留提示词内联负权重 (-2::...::) 原样直发（与网页端单框完全一致）")
-    );
-    cardParams.appendChild(chkInlineNeg);
-
-    const chkCarousel = this.el("label", "check-row");
-    chkCarousel.style.marginTop = "5px";
-    const cbCarousel = this.el("input");
-    cbCarousel.type = "checkbox";
-    cbCarousel.checked = this.apiSettings.auto_fullscreen_carousel;
-    cbCarousel.addEventListener("change", () => this.setAutoCarouselEnabled(cbCarousel.checked));
-    this.autoCarouselCheckboxes.push(cbCarousel);
-    chkCarousel.append(cbCarousel, document.createTextNode("🎬 连续批量生成时自动弹出全屏轮播画廊"));
-    cardParams.appendChild(chkCarousel);
-
-    const chkAutoUpscale = this.el("label", "check-row");
-    chkAutoUpscale.style.marginTop = "5px";
-    const cbAutoUpscale = this.el("input");
-    cbAutoUpscale.type = "checkbox";
-    cbAutoUpscale.checked = this.apiSettings.auto_upscale_replace;
-    cbAutoUpscale.addEventListener("change", () => this.setAutoUpscaleEnabled(cbAutoUpscale.checked));
-    this.autoUpscaleCheckboxes.push(cbAutoUpscale);
-    chkAutoUpscale.append(
-      cbAutoUpscale,
-      document.createTextNode("🔎 生成后立刻 2x 放大并移除放大前原图 (每张 +1 Anlas)")
-    );
-    cardParams.appendChild(chkAutoUpscale);
-
-    const ucRow = this.el("div", "field-row");
-    ucRow.style.marginTop = "6px";
-    ucRow.appendChild(this.el("label", "lbl", "额外全局负向 UC（可留空）"));
-    const ucInp = this.el("input");
-    ucInp.type = "text";
-    ucInp.value = this.apiSettings.extra_uc;
-    ucInp.addEventListener("input", () => {
-      this.apiSettings.extra_uc = ucInp.value;
-      saveApiSettings(this.apiSettings);
-    });
-    ucRow.appendChild(ucInp);
-    cardParams.appendChild(ucRow);
-
-    // Local Disk / Dual-mode storage card
-    const cardDisk = this.el("div", "field-card");
-    cardDisk.appendChild(this.el("div", "field-card-title", "💾 双模落盘存储（本地目录直写 / 浏览器 ZIP 下载）"));
-    const diskBtns = this.el("div", "header-group");
-    const btnMountDir = this.el("button", "btn-sm btn-green", "📂 挂载本地 outputs 目录直写");
-    btnMountDir.disabled = !supportsDirectoryPicker();
-    btnMountDir.addEventListener("click", async () => {
+    this.elMountBtn = this.el("button", "btn", "📂 挂载目录");
+    this.elMountBtn.title = "授权本地文件夹后，每张出图与 2x 放大图将自动按日期子目录落盘保存";
+    if (!supportsDirectoryPicker()) {
+      this.elMountBtn.style.display = "none";
+    }
+    this.elMountBtn.addEventListener("click", async () => {
+      if (getMountedDirName()) {
+        unmountLocalOutputDirectory();
+        this.syncMountButton();
+        this.setStatus("📂 已断开本地自动保存目录");
+        return;
+      }
       try {
         const name = await mountLocalOutputDirectory();
-        this.elMountedDirBadge.textContent = `📁 已挂载直写: ${name}/`;
-        this.elMountedDirBadge.style.color = "var(--green)";
-        this.appendLog(`已授权挂载本地输出目录：${name}/（生图将直接按日期子目录写盘）`);
+        this.syncMountButton();
+        this.setStatus(`📂 已挂载本地输出目录：${name}（新生成图片将自动落盘）`);
       } catch (err) {
-        this.appendLog(`挂载本地目录未完成：${err instanceof Error ? err.message : String(err)}`);
-      }
-    });
-    const btnUnmountDir = this.el("button", "btn-sm", "🔌 断开挂载");
-    btnUnmountDir.addEventListener("click", () => {
-      unmountLocalOutputDirectory();
-      this.elMountedDirBadge.textContent = "存储: 浏览器下载 / ZIP模式";
-      this.elMountedDirBadge.style.color = "";
-    });
-    diskBtns.append(btnMountDir, btnUnmountDir);
-    cardDisk.appendChild(diskBtns);
-
-    const chkAutoDl = this.el("label", "check-row");
-    chkAutoDl.style.marginTop = "6px";
-    const cbAutoDl = this.el("input");
-    cbAutoDl.type = "checkbox";
-    cbAutoDl.checked = this.apiSettings.auto_download;
-    cbAutoDl.addEventListener("change", () => {
-      this.apiSettings.auto_download = cbAutoDl.checked;
-      saveApiSettings(this.apiSettings);
-    });
-    chkAutoDl.append(cbAutoDl, document.createTextNode("未挂载文件夹时，出图后自动触发浏览器单张下载"));
-    cardDisk.appendChild(chkAutoDl);
-
-    // Action Buttons & Log
-    const cardRun = this.el("div", "field-card");
-    cardRun.appendChild(this.el("div", "field-card-title", "🚀 生图控制与日志"));
-    const runBtns = this.el("div", "flex-wrap-row");
-    const btnGenSingle = this.el("button", "btn-primary", "🎨 单张生成当前幕");
-    btnGenSingle.addEventListener("click", () => this.onGenerateCurrentPreview());
-    const btnBatchCur = this.el("button", "btn-blue", "🎬 批量连出当前套勾选");
-    btnBatchCur.addEventListener("click", () => this.onBatchGenerateCurrentSuite());
-    const btnStop = this.el("button", "btn-danger btn-sm", "⏹ 中断");
-    btnStop.addEventListener("click", () => {
-      if (this.batchAbortCtrl) {
-        this.batchAbortCtrl.abort();
-        this.appendLog("⏹ 收到中断指令，等待当前请求结束...");
-      }
-    });
-    const btnUpLast = this.el("button", "btn-yellow btn-sm", "🔎 2x 放大当前图 (1 Anlas)");
-    btnUpLast.addEventListener("click", () => this.onUpscaleActiveImage());
-    runBtns.append(btnGenSingle, btnBatchCur, btnStop, btnUpLast);
-    cardRun.appendChild(runBtns);
-
-    this.elLogBox = this.el("div", "log-box");
-    this.elLogBox.style.marginTop = "8px";
-    this.elLogBox.textContent = "等待生图指令...";
-    cardRun.appendChild(this.elLogBox);
-
-    panel.append(cardConn, cardRef, cardParams, cardDisk, cardRun);
-  }
-
-  private buildRightPane(): HTMLElement {
-    const right = this.el("main", "right-pane");
-
-    // RIGHT TOP: 3 SUITE TABS
-    const rTop = this.el("section", "right-top");
-    const suiteBar = this.el("div", "tab-bar");
-    const sTabs: Array<["story" | "multi_angle" | "all_pos", string]> = [
-      ["story", "📖 剧情故事线 (F00+S00~S11)"],
-      ["multi_angle", "🎥 角色多角度套图 (MA0~MA8)"],
-      ["all_pos", "🔞 全体位生成器 (51式 · 透明背景 · 男方开关)"],
-    ];
-    for (const [id, lbl] of sTabs) {
-      const btn = this.el("button", `tab-btn ${id === this.activeSuiteTab ? "active" : ""}`, lbl);
-      btn.dataset.suiteId = id;
-      btn.addEventListener("click", () => this.switchSuiteTab(id));
-      suiteBar.appendChild(btn);
-    }
-    rTop.appendChild(suiteBar);
-
-    const storyPanel = this.buildStorySuitePanel();
-    const maPanel = this.buildMultiAngleSuitePanel();
-    const posPanel = this.buildAllPositionsSuitePanel();
-    storyPanel.dataset.suitePanel = "story";
-    maPanel.dataset.suitePanel = "multi_angle";
-    posPanel.dataset.suitePanel = "all_pos";
-    rTop.append(storyPanel, maPanel, posPanel);
-
-    const quickBar = this.el("div", "mobile-scene-quickbar mobile-only");
-    this.elMobileQuickSceneLbl = this.el("span", "mobile-quick-scene-lbl", "当前: S00");
-    const btnEditPrompt = this.el("button", "btn-sm", "🔍 词条微调");
-    btnEditPrompt.addEventListener("click", () => {
-      this.switchOutTab("out-single");
-      this.switchMobilePane("output");
-    });
-    const btnQuickGen = this.el("button", "btn-sm btn-primary", "🎨 立即生图");
-    btnQuickGen.addEventListener("click", () => {
-      void this.onGenerateCurrentPreview();
-    });
-    quickBar.append(this.elMobileQuickSceneLbl, btnEditPrompt, btnQuickGen);
-    rTop.appendChild(quickBar);
-
-    // RIGHT BOTTOM: 4 OUTPUT TABS
-    const rBot = this.el("section", "right-bottom");
-    const outBar = this.el("div", "tab-bar");
-    const oTabs: Array<[string, string]> = [
-      ["out-single", "🔍 单幕详情与微调"],
-      ["out-image", "🖼️ NAI 生成画面预览 & 历史画廊"],
-      ["out-pov", "👁️ 第一人称全卷 (POV)"],
-      ["out-3rd", "🎥 第三人称全卷 (3rd)"],
-    ];
-    for (const [id, lbl] of oTabs) {
-      const btn = this.el("button", `tab-btn ${id === this.activeOutTab ? "active" : ""}`, lbl);
-      btn.dataset.outTabId = id;
-      btn.addEventListener("click", () => this.switchOutTab(id));
-      outBar.appendChild(btn);
-    }
-    rBot.appendChild(outBar);
-
-    const pOutSingle = this.buildSingleOutPanel();
-    const pOutImage = this.buildImageGalleryPanel();
-    const pOutPov = this.buildFullTextPanel("pov");
-    const pOutTrd = this.buildFullTextPanel("3rd");
-    rBot.append(pOutSingle, pOutImage, pOutPov, pOutTrd);
-
-    right.append(rTop, rBot);
-    return right;
-  }
-
-  private buildStorySuitePanel(): HTMLElement {
-    const wrap = this.el("div", "tab-panel flex-col active");
-    wrap.style.padding = "0";
-    const tb = this.el("div", "suite-toolbar");
-    const btnAll = this.el("button", "btn-sm", "✅ 全选 S00~S11");
-    btnAll.addEventListener("click", () => {
-      for (const ch of STORY_CHAPTERS) if (ch.id !== "F00") this.selectedStoryIds.add(ch.id);
-      this.renderStoryRows(list);
-      this.refreshSuiteTexts();
-    });
-    const btnNone = this.el("button", "btn-sm", "⬜ 清空");
-    btnNone.addEventListener("click", () => {
-      this.selectedStoryIds.clear();
-      this.renderStoryRows(list);
-      this.refreshSuiteTexts();
-    });
-    const btnBatch = this.el("button", "btn-sm btn-primary", "🚀 连出已勾选故事线");
-    btnBatch.addEventListener("click", () => this.runBatchForIds(this.getOrderedSelectedStoryIds(), "story"));
-    tb.append(btnAll, btnNone, btnBatch);
-    wrap.appendChild(tb);
-
-    const list = this.el("div", "suite-list");
-    list.id = "story-list-container";
-    this.renderStoryRows(list);
-    wrap.appendChild(list);
-    return wrap;
-  }
-
-  private renderStoryRows(container: HTMLElement): void {
-    container.innerHTML = "";
-    for (const ch of STORY_CHAPTERS) {
-      const row = this.el("div", `scene-row ${ch.id === this.activeSceneId ? "active" : ""}`);
-      row.dataset.sceneId = ch.id;
-      const cb = this.el("input");
-      cb.type = "checkbox";
-      cb.checked = this.selectedStoryIds.has(ch.id);
-      cb.addEventListener("click", (e) => e.stopPropagation());
-      cb.addEventListener("change", () => {
-        if (cb.checked) this.selectedStoryIds.add(ch.id);
-        else this.selectedStoryIds.delete(ch.id);
-        this.refreshSuiteTexts();
-      });
-      const title = this.el("span", "scene-row-title", ch.title);
-      const badge = this.el("span", "scene-row-badge", ch.actor_type);
-      const genBtn = this.el("button", "btn-sm btn-blue", "🎨 生成");
-      genBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.selectSingleScene(ch.id);
-        this.onGenerateCurrentPreview();
-      });
-      row.addEventListener("click", () => this.selectSingleScene(ch.id));
-      row.append(cb, title, badge, genBtn);
-      container.appendChild(row);
-    }
-  }
-
-  private buildMultiAngleSuitePanel(): HTMLElement {
-    const wrap = this.el("div", "tab-panel flex-col");
-    wrap.style.padding = "0";
-    const tb = this.el("div", "suite-toolbar");
-    const btnAll = this.el("button", "btn-sm", "✅ 全选 9 镜头");
-    btnAll.addEventListener("click", () => {
-      for (const ch of MULTI_ANGLE_CHAPTERS) this.selectedMaIds.add(ch.id);
-      this.renderMultiAngleRows(list);
-      this.refreshSuiteTexts();
-    });
-    const btnNone = this.el("button", "btn-sm", "⬜ 清空");
-    btnNone.addEventListener("click", () => {
-      this.selectedMaIds.clear();
-      this.renderMultiAngleRows(list);
-      this.refreshSuiteTexts();
-    });
-    const nsfwLbl = this.el("label", "check-row");
-    const nsfwCb = this.el("input");
-    nsfwCb.type = "checkbox";
-    nsfwCb.checked = this.cfg.enable_multi_angle_nsfw;
-    nsfwCb.addEventListener("change", () => {
-      this.cfg.enable_multi_angle_nsfw = nsfwCb.checked;
-      this.saveCfgAndRefresh();
-    });
-    this.formBindings.set("enable_multi_angle_nsfw", nsfwCb);
-    nsfwLbl.append(nsfwCb, document.createTextNode("🔞 开启套图 NSFW 暴露"));
-    const btnBatch = this.el("button", "btn-sm btn-primary", "🚀 连出已勾选多角度");
-    btnBatch.addEventListener("click", () => {
-      const ids = MULTI_ANGLE_CHAPTERS.filter((c) => this.selectedMaIds.has(c.id)).map((c) => c.id);
-      this.runBatchForIds(ids, "multi_angle");
-    });
-    tb.append(btnAll, btnNone, nsfwLbl, btnBatch);
-    wrap.appendChild(tb);
-
-    const list = this.el("div", "suite-list");
-    list.id = "ma-list-container";
-    this.renderMultiAngleRows(list);
-    wrap.appendChild(list);
-    return wrap;
-  }
-
-  private renderMultiAngleRows(container: HTMLElement): void {
-    container.innerHTML = "";
-    for (const ch of MULTI_ANGLE_CHAPTERS) {
-      const row = this.el("div", `scene-row ${ch.id === this.activeSceneId ? "active" : ""}`);
-      row.dataset.sceneId = ch.id;
-      const cb = this.el("input");
-      cb.type = "checkbox";
-      cb.checked = this.selectedMaIds.has(ch.id);
-      cb.addEventListener("click", (e) => e.stopPropagation());
-      cb.addEventListener("change", () => {
-        if (cb.checked) this.selectedMaIds.add(ch.id);
-        else this.selectedMaIds.delete(ch.id);
-        this.refreshSuiteTexts();
-      });
-      const title = this.el("span", "scene-row-title", ch.title);
-      const genBtn = this.el("button", "btn-sm btn-blue", "🎨 生成");
-      genBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.selectSingleScene(ch.id);
-        this.onGenerateCurrentPreview();
-      });
-      row.addEventListener("click", () => this.selectSingleScene(ch.id));
-      row.append(cb, title, genBtn);
-      container.appendChild(row);
-    }
-  }
-
-  private buildAllPositionsSuitePanel(): HTMLElement {
-    const wrap = this.el("div", "tab-panel flex-col");
-    wrap.style.padding = "0";
-    const tb = this.el("div", "suite-toolbar pos-suite-toolbar");
-
-    this.elPosMalePills.clear();
-    this.elPosStagePills.clear();
-    this.elPosScenePills.clear();
-
-    const maleShortLabel = (fullKey: string, code: string): string => {
-      if (code === "normal") return "👤 正常男方";
-      if (code === "translucent") return "👻 半透明男";
-      if (code === "invisible") return "🫥 隐形男方";
-      if (code === "off") return "🚫 纯单人";
-      return fullKey.split("（")[0];
-    };
-    const stageShortLabel = (fullKey: string, code: string): string => {
-      if (code === "before") return "🔥 1.进行中";
-      if (code === "during") return "💦 2.内射中";
-      if (code === "after_inside") return "🌊 3.结合溢流";
-      if (code === "pull_out") return "🔗 4.拔出拉丝";
-      if (code === "prolapse") return "🌺 5.事后宫脱";
-      return fullKey.split("（")[0];
-    };
-    const sceneShortLabel = (fullKey: string, code: string): string => {
-      if (code === "default_couch") return "🛋️ 室内沙发";
-      if (code === "sunlit_window_bedroom") return "🪟 晨光白床";
-      if (code === "cherry_shallow_water") return "🌸 落樱浅滩";
-      if (code === "jp_dark_alley_trash") return "🗑️ 阴暗小巷";
-      return fullKey.split("（")[0];
-    };
-
-    const searchInp = this.el("input", "pos-search-input");
-    searchInp.type = "text";
-    searchInp.placeholder = "🔍 搜索体位关键词...";
-    searchInp.addEventListener("input", () => {
-      this.posSearchQuery = searchInp.value.trim().toLowerCase();
-      this.renderPosRows(list);
-    });
-
-    const btnAllCat = this.el("button", "btn-sm", "✅ 全选当前类");
-    btnAllCat.addEventListener("click", () => {
-      for (const ch of this.getFilteredPosChapters()) this.selectedPosIds.add(ch.id);
-      this.renderPosRows(list);
-      this.refreshSuiteTexts();
-    });
-    const btnNone = this.el("button", "btn-sm", "⬜ 清空");
-    btnNone.addEventListener("click", () => {
-      for (const ch of this.getFilteredPosChapters()) this.selectedPosIds.delete(ch.id);
-      this.renderPosRows(list);
-      this.refreshSuiteTexts();
-    });
-    const btnBatch = this.el("button", "btn-sm btn-primary", "🚀 连出已勾选体位");
-    btnBatch.addEventListener("click", () => {
-      const ids = this.getFilteredPosChapters()
-        .filter((c) => this.selectedPosIds.has(c.id))
-        .map((c) => c.id);
-      this.runBatchForIds(ids, "all_pos");
-    });
-
-    const primaryRow = this.el("div", "pos-toolbar-primary");
-    const advRow = this.el("div", "pos-toolbar-advanced");
-    const btnFilterToggle = this.el("button", "btn-sm mobile-only", "🎛️ 阶段/场景 ▾");
-    btnFilterToggle.addEventListener("click", () => {
-      this.mobilePosFiltersOpen = !this.mobilePosFiltersOpen;
-      advRow.classList.toggle("open", this.mobilePosFiltersOpen);
-      btnFilterToggle.textContent = this.mobilePosFiltersOpen ? "▴ 收起阶段/场景" : "🎛️ 阶段/场景 ▾";
-    });
-    primaryRow.append(searchInp, btnFilterToggle, btnBatch);
-
-    // Row B: Always-visible in-screen Male Partner & Background Strip
-    const partnerBar = this.el("div", "pos-partner-bar");
-    partnerBar.appendChild(this.el("span", "pos-bar-lbl", "男方:"));
-    for (const [fullKey, code] of Object.entries(POS_MALE_MODE_PRESETS)) {
-      const pill = this.el("button", "btn-sm pill", maleShortLabel(fullKey, code));
-      pill.title = fullKey;
-      pill.dataset.maleMode = fullKey;
-      pill.addEventListener("click", () => {
-        this.cfg.pos_male_mode = fullKey;
-        pill.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-        this.syncPosToolbarPills();
-        this.saveCfgAndRefresh();
-      });
-      this.elPosMalePills.set(fullKey, pill);
-      partnerBar.appendChild(pill);
-    }
-
-    const penisLbl = this.el("label", "check-row pos-inline-chk");
-    penisLbl.title = "显示男方器官（选择「纯单人」时不注入）";
-    const penisCb = this.el("input");
-    penisCb.type = "checkbox";
-    penisCb.checked = this.cfg.pos_show_penis;
-    penisCb.addEventListener("change", () => {
-      this.cfg.pos_show_penis = penisCb.checked;
-      this.saveCfgAndRefresh();
-    });
-    this.formBindings.set("pos_show_penis", penisCb);
-    penisLbl.append(penisCb, document.createTextNode("显器官"));
-    this.elPosPenisLbl = penisLbl;
-
-    const transLbl = this.el("label", "check-row pos-inline-chk");
-    transLbl.title = "开启 V5 原生透明背景（RGBA 抠图模式）";
-    const transCb = this.el("input");
-    transCb.type = "checkbox";
-    transCb.checked = this.cfg.pos_transparent_bg;
-    transCb.addEventListener("change", () => {
-      this.cfg.pos_transparent_bg = transCb.checked;
-      this.syncPosToolbarPills();
-      this.saveCfgAndRefresh();
-    });
-    this.formBindings.set("pos_transparent_bg", transCb);
-    transLbl.append(transCb, document.createTextNode("🫧透明底"));
-    partnerBar.append(penisLbl, transLbl);
-
-    // Row C: Stage & Scene In-DOM Pills (always shown on Desktop, collapsible drawer on Mobile)
-    const stageRow = this.el("div", "pos-pill-row");
-    stageRow.appendChild(this.el("span", "pos-bar-lbl", "阶段:"));
-    for (const [fullKey, code] of Object.entries(POS_STAGE_PRESETS)) {
-      const pill = this.el("button", "btn-sm pill", stageShortLabel(fullKey, code));
-      pill.title = fullKey;
-      pill.dataset.stageMode = fullKey;
-      pill.addEventListener("click", () => {
-        this.cfg.pos_stage = fullKey;
-        pill.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-        this.syncPosToolbarPills();
-        this.saveCfgAndRefresh();
-      });
-      this.elPosStagePills.set(fullKey, pill);
-      stageRow.appendChild(pill);
-    }
-
-    const sceneRow = this.el("div", "pos-pill-row");
-    sceneRow.appendChild(this.el("span", "pos-bar-lbl", "场景:"));
-    for (const [fullKey, info] of Object.entries(POS_SCENE_PRESETS)) {
-      const pill = this.el("button", "btn-sm pill", sceneShortLabel(fullKey, info.code));
-      pill.title = fullKey;
-      pill.dataset.scenePreset = fullKey;
-      pill.addEventListener("click", () => {
-        this.cfg.pos_scene = fullKey;
-        pill.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-        this.syncPosToolbarPills();
-        this.saveCfgAndRefresh();
-      });
-      this.elPosScenePills.set(fullKey, pill);
-      sceneRow.appendChild(pill);
-    }
-    sceneRow.append(btnAllCat, btnNone);
-
-    advRow.append(stageRow, sceneRow);
-    tb.append(primaryRow, partnerBar, advRow);
-    this.syncPosToolbarPills();
-    wrap.appendChild(tb);
-
-    // Category filter bar
-    const catStrip = this.el("div", "cat-strip");
-    for (const cat of POS_CATEGORIES) {
-      const pill = this.el("button", `btn-sm pill ${cat === this.posCategory ? "active" : ""}`, cat);
-      pill.dataset.cat = cat;
-      pill.addEventListener("click", () => {
-        this.posCategory = cat;
-        for (const btn of catStrip.querySelectorAll("button")) {
-          btn.classList.toggle("active", (btn as HTMLElement).dataset.cat === cat);
+        if (err instanceof Error && err.name !== "AbortError") {
+          this.setStatus(`⚠️ 挂载目录取消或失败：${err.message}`, true);
         }
-        pill.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-        this.renderPosRows(list);
-      });
-      catStrip.appendChild(pill);
+      }
+    });
+
+    this.elHeroGenBtn = this.el("button", "btn btn-generate-hero", "🚀 立即生图");
+    this.elHeroGenBtn.addEventListener("click", () => {
+      const targetId = this.actionMode === "free" ? "FREE" : this.activeSceneId;
+      const count = this.apiSettings.batch_count || 1;
+      const queue = Array.from({ length: count }, () => ({
+        sceneId: targetId,
+        useManualPrompt: this.isManualPromptEdited,
+      }));
+      void this.runGenerationQueue(queue);
+    });
+
+    this.elStopGenBtn = this.el("button", "btn btn-danger", "⏹ 停止");
+    this.elStopGenBtn.style.display = "none";
+    this.elStopGenBtn.addEventListener("click", () => {
+      if (this.abortController) {
+        this.abortController.abort();
+      }
+    });
+
+    gRight.append(this.elMcpPill, this.elQuotaPill, this.elMountBtn, this.elHeroGenBtn, this.elStopGenBtn);
+    bar.append(gLeft, gCenter, gRight);
+    return bar;
+  }
+
+  private syncMcpPill(status: McpBridgeStatus): void {
+    if (!this.elMcpPill) return;
+    this.elMcpPill.className = "mcp-pill";
+    this.elMcpPill.innerHTML = "";
+    const dot = this.el("span", "mcp-dot");
+    const resolved = this.mcpBridge.getResolvedEndpoints();
+    let txt = "MCP 待机";
+    if (status === "connected") {
+      this.elMcpPill.classList.add("connected");
+      txt = "MCP 已连";
+    } else if (status === "disabled") {
+      this.elMcpPill.classList.add("disabled");
+      txt = "MCP 已关";
     }
-    wrap.appendChild(catStrip);
+    this.elMcpPill.append(dot, this.el("span", "", txt));
 
-    const list = this.el("div", "suite-list");
-    list.id = "pos-list-container";
-    this.renderPosRows(list);
-    wrap.appendChild(list);
-    return wrap;
-  }
-
-  private getFilteredPosChapters() {
-    return ALL_POSITIONS_CHAPTERS.filter((c) => {
-      if (this.posCategory !== POS_CATEGORIES[0] && c.category !== this.posCategory) return false;
-      if (this.posSearchQuery && !c.title.toLowerCase().includes(this.posSearchQuery)) return false;
-      return true;
-    });
-  }
-
-  private renderPosRows(container: HTMLElement): void {
-    container.innerHTML = "";
-    for (const ch of this.getFilteredPosChapters()) {
-      const row = this.el("div", `scene-row ${ch.id === this.activeSceneId ? "active" : ""}`);
-      row.dataset.sceneId = ch.id;
-      const cb = this.el("input");
-      cb.type = "checkbox";
-      cb.checked = this.selectedPosIds.has(ch.id);
-      cb.addEventListener("click", (e) => e.stopPropagation());
-      cb.addEventListener("change", () => {
-        if (cb.checked) this.selectedPosIds.add(ch.id);
-        else this.selectedPosIds.delete(ch.id);
-        this.refreshSuiteTexts();
-      });
-      const title = this.el("span", "scene-row-title", ch.title);
-      const badge = this.el("span", "scene-row-badge", ch.category.split(" ")[0]);
-      const genBtn = this.el("button", "btn-sm btn-blue", "🎨 生成");
-      genBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.selectSingleScene(ch.id);
-        this.onGenerateCurrentPreview();
-      });
-      row.addEventListener("click", () => this.selectSingleScene(ch.id));
-      row.append(cb, title, badge, genBtn);
-      container.appendChild(row);
+    if (this.elMcpPopSwitch) {
+      const on = this.mcpBridge.isEnabled();
+      this.elMcpPopSwitch.classList.toggle("on", on);
+      this.elMcpPopSwitch.textContent = on ? "已启用 ON" : "已暂停 OFF";
+    }
+    if (this.elMcpPopStatusNote) {
+      this.elMcpPopStatusNote.textContent =
+        status === "connected"
+          ? `🟢 已连接至 ${resolved.wsUrl}`
+          : status === "disabled"
+            ? "⏸️ MCP 远程控制已暂停"
+            : `⚪ 待机重连中：${resolved.wsUrl}`;
     }
   }
 
-  private buildSingleOutPanel(): HTMLElement {
-    const wrap = this.el("div", "tab-panel flex-col active");
-    wrap.dataset.outPanel = "out-single";
-    wrap.style.padding = "8px 10px";
-
-    const tb = this.el("div", "header-group single-out-toolbar");
-    tb.style.marginBottom = "6px";
-
-    this.elSingleSelect = this.el("select", "single-variant-select");
-    this.elSingleSelect.addEventListener("change", () => {
-      this.activeSubVariantIdx = parseInt(this.elSingleSelect.value, 10) || 0;
-      this.isSingleEdited = false;
-      this.renderSinglePromptBox();
-    });
-
-    this.elCanvasBadge = this.el("span", "scene-row-badge", "竖图 832x1216");
-    this.elTokenBadge = this.el("span", "token-badge ok", "T5: 0/512");
-
-    const spacer = this.el("div", "spacer");
-    const btnCopy = this.el("button", "btn-sm", "📋 复制单幕");
-    btnCopy.addEventListener("click", async () => {
-      await navigator.clipboard.writeText(this.elSingleText.value);
-      this.setStatus("✅ 已复制当前单幕提示词到剪贴板");
-    });
-    const btnResetEdit = this.el("button", "btn-sm", "↺ 还原引擎输出");
-    btnResetEdit.addEventListener("click", () => {
-      this.isSingleEdited = false;
-      this.renderSinglePromptBox();
-    });
-    const btnGen = this.el("button", "btn-sm btn-primary", "🎨 单张生成");
-    btnGen.addEventListener("click", () => this.onGenerateCurrentPreview());
-
-    tb.append(this.elSingleSelect, this.elCanvasBadge, this.elTokenBadge, spacer, btnResetEdit, btnCopy, btnGen);
-    wrap.appendChild(tb);
-
-    this.elSingleText = this.el("textarea", "mono");
-    this.elSingleText.style.flex = "1";
-    this.elSingleText.style.width = "100%";
-    this.elSingleText.addEventListener("input", () => {
-      this.isSingleEdited = true;
-      this.updateTokenBadge();
-    });
-    wrap.appendChild(this.elSingleText);
-    return wrap;
+  private getAvailableBuiltinKeys(): string[] {
+    const deleted = loadDeletedPresets();
+    return Object.keys(BUILTIN_CHARACTERS).filter((k) => !deleted.has(k));
   }
 
-  private buildImageGalleryPanel(): HTMLElement {
-    const wrap = this.el("div", "tab-panel flex-col");
-    wrap.dataset.outPanel = "out-image";
-    wrap.style.padding = "8px 10px";
+  private getAllAvailablePresetKeys(): string[] {
+    return [...Object.keys(this.customPresets), ...this.getAvailableBuiltinKeys()];
+  }
 
-    const tb = this.el("div", "header-group gallery-toolbar");
-    tb.style.marginBottom = "6px";
-    this.elPreviewMeta = this.el("span", "hint-text", "尚无生成画面，请在上方点击「🎨 生成」或左侧「🎨 单张生成当前幕」");
-    const spacer = this.el("div", "spacer");
+  private async deletePresetByKey(targetKey: string): Promise<boolean> {
+    const allBefore = this.getAllAvailablePresetKeys();
+    if (!allBefore.includes(targetKey)) return false;
+    if (allBefore.length <= 1) {
+      this.setStatus("⚠️ 至少需保留 1 个预设（Shift+点击 ↺ 可恢复出厂预设列表）", true);
+      return false;
+    }
 
-    const chkGalleryCarousel = this.el("label", "check-row");
-    const cbGalleryCarousel = this.el("input");
-    cbGalleryCarousel.type = "checkbox";
-    cbGalleryCarousel.checked = this.apiSettings.auto_fullscreen_carousel;
-    cbGalleryCarousel.addEventListener("change", () => this.setAutoCarouselEnabled(cbGalleryCarousel.checked));
-    this.autoCarouselCheckboxes.push(cbGalleryCarousel);
-    chkGalleryCarousel.append(cbGalleryCarousel, document.createTextNode("🎬 连出自动全屏轮播"));
+    const prevIdx = allBefore.indexOf(targetKey);
+    if (targetKey in this.customPresets) {
+      delete this.customPresets[targetKey];
+      saveCustomPresets(this.customPresets);
+    }
+    markPresetDeleted(targetKey);
+    this.customPresets = loadCustomPresets();
 
-    const chkGalleryUpscale = this.el("label", "check-row");
-    const cbGalleryUpscale = this.el("input");
-    cbGalleryUpscale.type = "checkbox";
-    cbGalleryUpscale.checked = this.apiSettings.auto_upscale_replace;
-    cbGalleryUpscale.addEventListener("change", () => this.setAutoUpscaleEnabled(cbGalleryUpscale.checked));
-    this.autoUpscaleCheckboxes.push(cbGalleryUpscale);
-    chkGalleryUpscale.append(cbGalleryUpscale, document.createTextNode("🔎 生后即放大替换"));
+    const remaining = this.getAllAvailablePresetKeys();
+    const nextKey = remaining[Math.min(prevIdx, remaining.length - 1)] || remaining[0];
+    this.populatePresetSelect();
+    if (nextKey) {
+      await this.applySelectedCharacterPreset(nextKey);
+    }
+    this.setStatus(`🗑️ 已删除预设「${compactOptionText(targetKey, 28)}」`);
+    return true;
+  }
 
-    const btnFullscreenPlay = this.el("button", "btn-sm btn-primary", "📺 全屏轮播");
-    btnFullscreenPlay.addEventListener("click", () => {
-      const rec = this.gallery[this.activeGalleryIdx];
-      if (!rec) {
-        window.alert("当前预览画廊还没有图片，请先生成至少一张图片。");
+  private restoreFactoryPresets(): void {
+    clearDeletedPresets();
+    this.customPresets = loadCustomPresets();
+    this.populatePresetSelect();
+    this.syncAllControls();
+    this.setStatus("✨ 已恢复全部被删除的出厂角色与特调预设");
+  }
+
+  private populatePresetSelect(): void {
+    if (!this.elPresetSelect) return;
+    this.elPresetSelect.innerHTML = "";
+    const customKeys = Object.keys(this.customPresets);
+    if (customKeys.length > 0) {
+      const grpCustom = document.createElement("optgroup");
+      grpCustom.label = "⭐ 特调 / 自定义角色预设";
+      for (const k of customKeys) {
+        const opt = this.el("option", "", compactOptionText(k, 36));
+        opt.value = k;
+        opt.title = k;
+        grpCustom.appendChild(opt);
+      }
+      this.elPresetSelect.appendChild(grpCustom);
+    }
+
+    const builtinKeys = this.getAvailableBuiltinKeys();
+    if (builtinKeys.length > 0) {
+      const grpBuiltin = document.createElement("optgroup");
+      grpBuiltin.label = "👤 内置角色模板";
+      for (const k of builtinKeys) {
+        const opt = this.el("option", "", compactOptionText(k, 36));
+        opt.value = k;
+        opt.title = k;
+        grpBuiltin.appendChild(opt);
+      }
+      this.elPresetSelect.appendChild(grpBuiltin);
+    }
+
+    const allKeys = [...customKeys, ...builtinKeys];
+    if (allKeys.includes(this.cfg.preset_name)) {
+      this.elPresetSelect.value = this.cfg.preset_name;
+    } else if (allKeys.length > 0) {
+      this.cfg.preset_name = allKeys[0];
+      this.elPresetSelect.value = allKeys[0];
+    }
+    if (this.elDeletePresetBtn) {
+      this.elDeletePresetBtn.disabled = allKeys.length <= 1;
+    }
+  }
+
+  private async injectBundledVibePack(packId: string, switchToV45: boolean): Promise<void> {
+    const pack = BUNDLED_VIBE_PACKS[packId];
+    if (!pack) return;
+    this.vibeItems = cloneBundledVibeItems(packId);
+    await saveStoredVibeItems(this.vibeItems);
+    if (switchToV45) {
+      this.apiSettings.model = MODEL_V4_5_FULL;
+    }
+    this.apiSettings.vibe_transfer_enabled = true;
+    this.apiSettings.vibe_normalize_strength = pack.normalizeStrength;
+    if (this.apiSettings.model === MODEL_V4_5_FULL) {
+      this.apiSettings.scale = pack.recommendedScale;
+      this.apiSettings.cfg_rescale = pack.recommendedRescale;
+    }
+    saveApiSettings(this.apiSettings);
+  }
+
+  private async applySelectedCharacterPreset(key: string): Promise<void> {
+    this.isManualPromptEdited = false;
+    if (key in this.customPresets) {
+      const rawP = this.customPresets[key] as Record<string, unknown>;
+      const base = createDefaultCharacterConfig();
+      const mergedCfg: CharacterConfig = {
+        ...base,
+        ...(rawP as Partial<CharacterConfig>),
+        preset_name: key,
+        wb_v2_migrated: true,
+      };
+      delete (mergedCfg as unknown as Record<string, unknown>).eye_color;
+      delete (mergedCfg as unknown as Record<string, unknown>).hair_tags;
+      this.cfg = mergedCfg;
+      saveActiveConfig(this.cfg);
+
+      const packId =
+        (typeof rawP.bundled_vibe_pack === "string" ? rawP.bundled_vibe_pack : "") ||
+        STYLE_BUNDLED_VIBE_PACK[this.cfg.style_preset] ||
+        "";
+      if (packId && BUNDLED_VIBE_PACKS[packId]) {
+        const pack = BUNDLED_VIBE_PACKS[packId];
+        await this.injectBundledVibePack(packId, true);
+        this.populatePresetSelect();
+        this.syncAllControls();
+        this.refreshSceneAndPrompt();
+        this.setStatus(
+          `🧬 已载入「${compactOptionText(key, 28)}」并自动添加内置 ${this.vibeItems.length} 槽 Vibe (V4.5 · DPM++ 2M · Scale ${pack.recommendedScale})`
+        );
         return;
       }
-      this.batchLightboxDismissed = false;
-      this.openLightbox(rec, "auto");
-    });
 
-    const btnChecker = this.el("button", "btn-sm", "🏁 透明棋盘底");
-    btnChecker.addEventListener("click", () => {
-      this.checkerboardOn = !this.checkerboardOn;
-      this.syncCheckerboard();
-    });
-    const btnUpscale = this.el("button", "btn-sm btn-yellow", "🔎 2x 高清放大 (1 Anlas)");
-    btnUpscale.addEventListener("click", () => this.onUpscaleActiveImage());
-    const btnDownloadOne = this.el("button", "btn-sm btn-blue", "💾 下载当前图");
-    btnDownloadOne.addEventListener("click", () => {
-      const rec = this.gallery[this.activeGalleryIdx];
-      if (!rec) return;
-      triggerBytesDownload(rec.bytes, rec.filename);
-    });
-    const btnZipAll = this.el("button", "btn-sm btn-green", "📦 打包下载全部 (.zip)");
-    btnZipAll.addEventListener("click", () => this.onDownloadAllGalleryZip());
+      this.populatePresetSelect();
+      this.syncAllControls();
+      this.refreshSceneAndPrompt();
+      this.setStatus(`⭐ 已载入角色预设：${compactOptionText(key, 32)}`);
+      return;
+    }
 
-    const actionsWrap = this.el("div", "gallery-actions-row");
-    actionsWrap.append(
-      chkGalleryCarousel,
-      chkGalleryUpscale,
-      btnFullscreenPlay,
-      btnChecker,
-      btnUpscale,
-      btnDownloadOne,
-      btnZipAll
-    );
-    tb.append(this.elPreviewMeta, spacer, actionsWrap);
-    wrap.appendChild(tb);
-
-    this.elPreviewStage = this.el("div", "preview-stage checkerboard");
-    this.elPreviewStage.appendChild(this.el("span", "hint-text", "等待 NovelAI V4.5 / V5 生成图片..."));
-    wrap.appendChild(this.elPreviewStage);
-
-    this.elFilmstrip = this.el("div", "filmstrip");
-    wrap.appendChild(this.elFilmstrip);
-    return wrap;
+    const b = BUILTIN_CHARACTERS[key];
+    if (b) {
+      this.cfg.preset_name = key;
+      this.cfg.char_tag = b.char_tag || "";
+      this.cfg.eng_name = b.eng_name || "the girl";
+      this.cfg.extra_char_tags = "";
+      this.cfg.canon_neg_tags = b.canon_neg_tags || "";
+      if (b.body_preset) this.cfg.body_preset = b.body_preset;
+      if (b.bust_preset) this.cfg.bust_preset = b.bust_preset;
+      saveActiveConfig(this.cfg);
+      this.populatePresetSelect();
+      this.syncAllControls();
+      this.refreshSceneAndPrompt();
+      this.setStatus(`👤 已切换角色：${key}`);
+    }
   }
 
-  private buildFullTextPanel(track: PerspectiveMode): HTMLElement {
-    const wrap = this.el("div", "tab-panel flex-col");
-    wrap.dataset.outPanel = track === "pov" ? "out-pov" : "out-3rd";
-    wrap.style.padding = "8px 10px";
+  // ===========================================================================
+  // LEFT COLUMN: SINGLE-STREAM INSPECTOR (5 CLEAN ACCORDION CARDS)
+  // ===========================================================================
+  private createInspectorCard(options: {
+    title: string;
+    collapsed?: boolean;
+    onToggleSwitch?: () => void;
+    extraHeaderEl?: HTMLElement;
+  }): {
+    card: HTMLElement;
+    body: HTMLElement;
+    titleEl: HTMLElement;
+    summaryEl: HTMLElement;
+    switchBtn?: HTMLButtonElement;
+  } {
+    const card = this.el("section", `insp-card${options.collapsed ? " collapsed" : ""}`);
+    const head = this.el("div", "insp-head");
+    const titleWrap = this.el("div", "insp-title-wrap");
+    const caret = this.el("span", "insp-caret", "▾");
+    const titleEl = this.el("span", "insp-title", options.title);
+    const summaryEl = this.el("span", "insp-summary", "");
+    titleWrap.append(caret, titleEl, summaryEl);
 
-    const tb = this.el("div", "header-group");
-    tb.style.marginBottom = "6px";
-    const btnCopyAll = this.el("button", "btn-sm btn-blue", "📋 复制本卷全套提示词");
-    btnCopyAll.addEventListener("click", async () => {
-      const box = track === "pov" ? this.elPovText : this.elTrdText;
-      await navigator.clipboard.writeText(box.value);
-      this.setStatus(`✅ 已复制 ${track.toUpperCase()} 全卷提示词`);
-    });
-    const btnExportMd = this.el("button", "btn-sm", "💾 导出为 .md 文件");
-    btnExportMd.addEventListener("click", () => {
-      const box = track === "pov" ? this.elPovText : this.elTrdText;
-      triggerTextDownload(box.value, `novelai_${track}_suite_${formatDateYYYYMMDD()}.md`, "text/markdown;charset=utf-8");
-    });
-    const btnExportLines = this.el("button", "btn-sm", "📄 导出纯批量行 (.txt)");
-    btnExportLines.addEventListener("click", () => {
-      const ids = this.getActiveSuiteSelectedIds();
-      const lines = generateFullSuite(this.cfg, ids, true, false);
-      triggerTextDownload(lines, `novelai_${track}_batch_${formatDateYYYYMMDD()}.txt`);
-    });
-    tb.append(btnCopyAll, btnExportMd, btnExportLines);
-    wrap.appendChild(tb);
+    const actions = this.el("div", "insp-head-actions");
+    if (options.extraHeaderEl) {
+      actions.appendChild(options.extraHeaderEl);
+    }
+    let switchBtn: HTMLButtonElement | undefined;
+    if (options.onToggleSwitch) {
+      switchBtn = this.el("button", "switch-pill on", "ON");
+      switchBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        options.onToggleSwitch!();
+      });
+      actions.appendChild(switchBtn);
+    }
 
-    const ta = this.el("textarea", "mono");
-    ta.style.flex = "1";
-    ta.style.width = "100%";
-    ta.readOnly = true;
-    if (track === "pov") this.elPovText = ta;
-    else this.elTrdText = ta;
-    wrap.appendChild(ta);
-    return wrap;
+    head.append(titleWrap, actions);
+    head.addEventListener("click", () => {
+      card.classList.toggle("collapsed");
+    });
+
+    const body = this.el("div", "insp-body");
+    card.append(head, body);
+    return { card, body, titleEl, summaryEl, switchBtn };
   }
 
-  // Helper factories
-  private makeInputRow(key: keyof CharacterConfig, labelText: string, placeholder: string): HTMLElement {
+  private bindCfgText(
+    label: string,
+    key: keyof CharacterConfig,
+    placeholder = ""
+  ): HTMLElement {
     const row = this.el("div", "field-row");
-    row.appendChild(this.el("label", "lbl", labelText));
-    const inp = this.el("input");
+    row.appendChild(this.el("label", "", label));
+    const inp = this.el("input") as HTMLInputElement;
     inp.type = "text";
     inp.placeholder = placeholder;
     inp.addEventListener("input", () => {
-      (this.cfg as unknown as Record<string, string>)[key] = inp.value;
-      this.saveCfgAndRefresh();
+      (this.cfg[key] as unknown as string) = inp.value;
+      this.onCfgChanged();
     });
-    this.formBindings.set(key, inp);
+    this.syncHooks.push(() => {
+      const v = String(this.cfg[key] ?? "");
+      if (inp.value !== v) inp.value = v;
+    });
     row.appendChild(inp);
     return row;
   }
 
-  private makeSelectRow(
+  private bindCfgSelect(
+    label: string,
     key: keyof CharacterConfig,
-    labelText: string,
     options: string[],
-    extraOnChange?: () => void
+    onAfterChange?: () => void
   ): HTMLElement {
     const row = this.el("div", "field-row");
-    row.appendChild(this.el("label", "lbl", labelText));
+    row.appendChild(this.el("label", "", label));
     const sel = this.el("select");
-    for (const optText of options) {
-      const opt = this.el("option", "", optText);
-      opt.value = optText;
+    for (const optKey of options) {
+      const opt = this.el("option", "", compactOptionText(optKey, 40));
+      opt.value = optKey;
+      opt.title = optKey;
       sel.appendChild(opt);
     }
     sel.addEventListener("change", () => {
-      (this.cfg as unknown as Record<string, string>)[key] = sel.value;
-      if (extraOnChange) extraOnChange();
-      this.saveCfgAndRefresh();
+      (this.cfg[key] as unknown as string) = sel.value;
+      onAfterChange?.();
+      this.onCfgChanged();
     });
-    this.formBindings.set(key, sel);
+    this.syncHooks.push(() => {
+      const cur = String(this.cfg[key] ?? "");
+      if (options.includes(cur)) {
+        sel.value = cur;
+      }
+      sel.title = cur;
+    });
     row.appendChild(sel);
     return row;
   }
 
-  private makeCheckboxRow(key: keyof CharacterConfig, labelText: string): HTMLElement {
-    const row = this.el("label", "check-row");
-    row.style.marginBottom = "4px";
-    const cb = this.el("input");
-    cb.type = "checkbox";
-    cb.addEventListener("change", () => {
-      (this.cfg as unknown as Record<string, boolean>)[key] = cb.checked;
-      this.syncControlsFromConfig();
-      this.saveCfgAndRefresh();
-    });
-    this.formBindings.set(key, cb);
-    row.append(cb, document.createTextNode(labelText));
-    return row;
-  }
+  private buildLeftColumn(): HTMLElement {
+    const col = this.el("aside", "studio-col col-left");
 
-  private populatePresetDropdown(): void {
-    this.elPresetSelect.innerHTML = "";
-    const allNames = [
-      ...Object.keys(BUILTIN_CHARACTERS),
-      ...Object.keys(this.customPresets),
+    // --- CARD 1: CHARACTER IDENTITY & BODY (Always collapsed on open) ---
+    const c1 = this.createInspectorCard({
+      title: "👤 人设与体型",
+      collapsed: true,
+      onToggleSwitch: () => {
+        const next = !this.cfg.enable_identity;
+        this.cfg.enable_identity = next;
+        this.cfg.enable_body = next;
+        this.onCfgChanged();
+      },
+    });
+    this.elIdentityCard = c1.card;
+    this.elIdentitySwitch = c1.switchBtn!;
+    this.elIdentitySummary = c1.summaryEl;
+
+    const idGrid = this.el("div", "grid-2");
+    idGrid.append(
+      this.bindCfgText("角色 Tag", "char_tag", "如 javelin (azur lane)"),
+      this.bindCfgText("英文名 (T5句主语)", "eng_name", "如 Javelin")
+    );
+    c1.body.append(
+      idGrid,
+      this.bindCfgText(
+        "额外常驻人物 Tag (自定义瞳色/发型/头饰/特征)",
+        "extra_char_tags",
+        "如 aqua eyes, short purple hair, mole under eye..."
+      ),
+      this.bindCfgSelect("体型骨架", "body_preset", Object.keys(BODY_PRESETS))
+    );
+
+    const bodyGrid = this.el("div", "grid-2");
+    bodyGrid.append(
+      this.bindCfgSelect("胸围尺寸", "bust_preset", Object.keys(BUST_PRESETS)),
+      this.bindCfgSelect("肤质光泽", "skin_preset", Object.keys(SKIN_PRESETS))
+    );
+    c1.body.appendChild(bodyGrid);
+
+    const subMoreChar = this.el("details", "sub-drawer");
+    subMoreChar.appendChild(this.el("summary", "", "▸ 萌点配饰胶囊 & 原设服装屏蔽词"));
+    const subMoreBody = this.el("div", "sub-drawer-body");
+    const accWrap = this.el("div", "chip-wrap");
+    const accDefs: Array<[keyof CharacterConfig, string]> = [
+      ["add_cat_ears", "🐱 猫耳猫尾"],
+      ["add_horns_tail", "😈 恶魔角尾"],
+      ["add_glasses", "👓 眼镜"],
+      ["add_choker", "🖤 颈环"],
+      ["add_extra_sweat", "💦 微汗蒸汽"],
     ];
-    for (const name of allNames) {
-      const opt = this.el("option", "", name);
-      opt.value = name;
-      if (name === this.cfg.preset_name) opt.selected = true;
-      this.elPresetSelect.appendChild(opt);
+    for (const [k, lbl] of accDefs) {
+      const chip = this.el("button", "chip-btn", lbl);
+      chip.addEventListener("click", () => {
+        (this.cfg[k] as unknown as boolean) = !this.cfg[k];
+        this.onCfgChanged();
+      });
+      this.syncHooks.push(() => {
+        chip.classList.toggle("active", Boolean(this.cfg[k]));
+      });
+      accWrap.appendChild(chip);
     }
-  }
+    subMoreBody.append(
+      accWrap,
+      this.bindCfgText("屏蔽原设服饰词 (防串服)", "canon_neg_tags", "如 serafuku, plaid, gloves")
+    );
+    subMoreChar.appendChild(subMoreBody);
+    c1.body.appendChild(subMoreChar);
+    col.appendChild(c1.card);
 
-  private syncControlsFromConfig(): void {
-    for (const [key, ctrl] of this.formBindings.entries()) {
-      const val = (this.cfg as unknown as Record<string, unknown>)[key];
-      if (ctrl instanceof HTMLInputElement && ctrl.type === "checkbox") {
-        ctrl.checked = Boolean(val);
-      } else {
-        ctrl.value = String(val ?? "");
-      }
-    }
-    for (const [key, cb] of this.moduleBindings.entries()) {
-      cb.checked = Boolean((this.cfg as unknown as Record<string, unknown>)[key]);
-    }
-    // Sync header perspective radios & multi_panel_mode
-    const radios = this.root.querySelectorAll<HTMLInputElement>('input[name="persp_mode"]');
-    radios.forEach((r) => {
-      r.checked = r.value === this.cfg.perspective_mode;
+    // --- CARD 2: OUTFIT & CLOTHING STATE (Always collapsed on open) ---
+    const btnQuickNude = this.el("button", "btn btn-xs", "⚡全裸");
+    btnQuickNude.title = "一键切换为全裸不穿衣预设";
+    btnQuickNude.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.cfg.enable_outfit = true;
+      this.cfg.outfit_preset = "全裸无衣（nude · 全程无遮挡）";
+      this.onCfgChanged();
     });
-    this.elPresetSelect.value = this.cfg.preset_name;
-    this.syncPosToolbarPills();
-    this.syncExpressionDisplays();
-    this.syncCameraDisplays();
-    this.syncMobileUi();
-  }
 
-  private syncPosToolbarPills(): void {
-    for (const [k, btn] of this.elPosMalePills.entries()) {
-      btn.classList.toggle("active", k === this.cfg.pos_male_mode);
-    }
-    for (const [k, btn] of this.elPosStagePills.entries()) {
-      btn.classList.toggle("active", k === this.cfg.pos_stage);
-    }
-    for (const [k, btn] of this.elPosScenePills.entries()) {
-      btn.classList.toggle("active", k === this.cfg.pos_scene);
-    }
-    if (this.elPosPenisLbl) {
-      const isOff = POS_MALE_MODE_PRESETS[this.cfg.pos_male_mode] === "off";
-      this.elPosPenisLbl.style.opacity = isOff ? "0.45" : "1";
-    }
-  }
+    const c2 = this.createInspectorCard({
+      title: "👗 穿搭与衣态",
+      collapsed: true,
+      extraHeaderEl: btnQuickNude,
+      onToggleSwitch: () => {
+        this.cfg.enable_outfit = !this.cfg.enable_outfit;
+        this.cfg.enable_legwear = this.cfg.enable_outfit;
+        this.onCfgChanged();
+      },
+    });
+    this.elOutfitCard = c2.card;
+    this.elOutfitSwitch = c2.switchBtn!;
+    this.elOutfitSummary = c2.summaryEl;
 
-  private syncApiInputs(): void {
-    const isV45 = this.apiSettings.model === MODEL_V4_5_FULL;
-    const modelSel = document.getElementById("api-model-select") as HTMLSelectElement | null;
-    if (modelSel) modelSel.value = this.apiSettings.model;
-
-    const paramsTitle = document.getElementById("api-params-card-title");
-    if (paramsTitle) {
-      paramsTitle.textContent = isV45
-        ? `⚙️ AI Settings · V4.5 Full (${this.apiSettings.steps} 步 · 支持精密参照)`
-        : "⚙️ AI Settings · V5 Full Medium (14 步固定 · 512词)";
-    }
-
-    const stepsLbl = document.getElementById("api-steps-lbl");
-    const stepsNum = document.getElementById("api-steps-num") as HTMLInputElement | null;
-    const stepsRange = document.getElementById("api-steps-range") as HTMLInputElement | null;
-    const dispSteps = isV45 ? this.apiSettings.steps : 14;
-    if (stepsLbl) {
-      stepsLbl.textContent = isV45
-        ? `Steps: ${dispSteps}${dispSteps <= 28 ? " (Opus 标准免底图点)" : " (>28步计点数)"}`
-        : "Steps: 14 (V5 Full Medium 固定步数)";
-    }
-    if (stepsNum) {
-      stepsNum.value = String(dispSteps);
-      stepsNum.disabled = !isV45;
-    }
-    if (stepsRange) {
-      stepsRange.value = String(dispSteps);
-      stepsRange.disabled = !isV45;
-    }
-
-    const scaleInp = document.getElementById("api-scale-input") as HTMLInputElement | null;
-    const scaleNum = document.getElementById("api-scale-num") as HTMLInputElement | null;
-    const scaleLbl = document.getElementById("api-scale-lbl");
-    const rescaleInp = document.getElementById("api-rescale-input") as HTMLInputElement | null;
-    const rescaleNum = document.getElementById("api-rescale-num") as HTMLInputElement | null;
-    const rescaleLbl = document.getElementById("api-rescale-lbl");
-    if (scaleInp) scaleInp.value = String(this.apiSettings.scale);
-    if (scaleNum) scaleNum.value = String(Number(this.apiSettings.scale.toFixed(1)));
-    if (scaleLbl) scaleLbl.textContent = `Prompt Guidance: ${this.apiSettings.scale.toFixed(1)}`;
-    if (rescaleInp) rescaleInp.value = String(this.apiSettings.cfg_rescale);
-    if (rescaleNum) rescaleNum.value = String(Number(this.apiSettings.cfg_rescale.toFixed(2)));
-    if (rescaleLbl) rescaleLbl.textContent = `Guidance Rescale: ${this.apiSettings.cfg_rescale.toFixed(2)}`;
-
-    const strNum = document.getElementById("api-ref-strength-num") as HTMLInputElement | null;
-    const strRange = document.getElementById("api-ref-strength-range") as HTMLInputElement | null;
-    const fidNum = document.getElementById("api-ref-fidelity-num") as HTMLInputElement | null;
-    const fidRange = document.getElementById("api-ref-fidelity-range") as HTMLInputElement | null;
-    if (strNum) strNum.value = String(Number(this.apiSettings.precise_ref_strength.toFixed(2)));
-    if (strRange) strRange.value = String(this.apiSettings.precise_ref_strength);
-    if (fidNum) fidNum.value = String(Number(this.apiSettings.precise_ref_fidelity.toFixed(2)));
-    if (fidRange) fidRange.value = String(this.apiSettings.precise_ref_fidelity);
-
-    const styleStrNum = document.getElementById("api-style-ref-strength-num") as HTMLInputElement | null;
-    const styleStrRange = document.getElementById("api-style-ref-strength-range") as HTMLInputElement | null;
-    const styleFidNum = document.getElementById("api-style-ref-fidelity-num") as HTMLInputElement | null;
-    const styleFidRange = document.getElementById("api-style-ref-fidelity-range") as HTMLInputElement | null;
-    if (styleStrNum) styleStrNum.value = String(Number(this.apiSettings.precise_style_strength.toFixed(2)));
-    if (styleStrRange) styleStrRange.value = String(this.apiSettings.precise_style_strength);
-    if (styleFidNum) styleFidNum.value = String(Number(this.apiSettings.precise_style_fidelity.toFixed(2)));
-    if (styleFidRange) styleFidRange.value = String(this.apiSettings.precise_style_fidelity);
-
-    const ucPresetSel = document.getElementById("api-uc-preset-select") as HTMLSelectElement | null;
-    const ucPresetLbl = document.getElementById("api-uc-preset-lbl");
-    if (ucPresetSel) {
-      ucPresetSel.value = isV45 ? this.apiSettings.uc_preset_mode : "heavy";
-      ucPresetSel.disabled = !isV45;
-    }
-    if (ucPresetLbl) {
-      ucPresetLbl.textContent = isV45
-        ? "V4.5 全局负向预设 (Undesired Content Preset)"
-        : "全局负向预设 (V5 Full Medium 固定为官方 Heavy)";
-    }
-    const cbInlineNeg = document.getElementById("api-keep-inline-neg-cb") as HTMLInputElement | null;
-    if (cbInlineNeg) {
-      cbInlineNeg.checked = this.apiSettings.keep_inline_negatives;
-    }
-  }
-
-  private bindGlobalPasteForPreciseRef(): void {
-    if (this.pasteListenerBound) return;
-    this.pasteListenerBound = true;
-    window.addEventListener("paste", (e: ClipboardEvent) => {
-      if (this.activeLeftTab !== "tab-api" && this.activeLeftTab !== "tab-modules") return;
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (let i = 0; i < items.length; i++) {
-        const it = items[i];
-        if (it.type.startsWith("image/")) {
-          const f = it.getAsFile();
-          if (f) {
-            e.preventDefault();
-            const targetSlot: "char" | "style" =
-              this.apiSettings.precise_ref_workflow === "style_plus_chara"
-                ? this.activePasteSlot
-                : "char";
-            void this.handleUploadPreciseRefFile(targetSlot, f);
-            break;
-          }
+    c2.body.appendChild(
+      this.bindCfgSelect("服装款式", "outfit_preset", Object.keys(OUTFIT_PRESETS), () => {
+        if (this.cfg.outfit_preset.includes("自定义穿搭")) {
+          this.showCustomOutfitExtra = true;
         }
+      })
+    );
+
+    this.elCustomOutfitWrap = this.el("div", "field-row");
+    const customOutLbl = this.el("label", "", "自定义 / 附加穿搭 Tag");
+    const customOutInp = this.el("input") as HTMLInputElement;
+    customOutInp.type = "text";
+    customOutInp.placeholder = "如 reverse bunnysuit, white collar, highleg...";
+    customOutInp.addEventListener("input", () => {
+      this.cfg.custom_outfit_tags = customOutInp.value;
+      this.onCfgChanged();
+    });
+    this.syncHooks.push(() => {
+      if (customOutInp.value !== this.cfg.custom_outfit_tags) {
+        customOutInp.value = this.cfg.custom_outfit_tags;
+      }
+      const isCustomKind = this.cfg.outfit_preset.includes("自定义穿搭");
+      this.elCustomOutfitWrap.style.display =
+        isCustomKind || this.showCustomOutfitExtra || Boolean(this.cfg.custom_outfit_tags.trim())
+          ? "flex"
+          : "none";
+    });
+    this.elCustomOutfitWrap.append(customOutLbl, customOutInp);
+    c2.body.appendChild(this.elCustomOutfitWrap);
+
+    const outGrid = this.el("div", "grid-2");
+    outGrid.append(
+      this.bindCfgSelect("互动穿脱衣态", "outfit_state_mode", Object.keys(OUTFIT_STATE_PRESETS)),
+      this.bindCfgSelect("腿袜与鞋履", "legwear_preset", Object.keys(LEGWEAR_PRESETS))
+    );
+    c2.body.appendChild(outGrid);
+
+    const outChips = this.el("div", "chip-wrap");
+    const btnToggleExtraOut = this.el("button", "chip-btn", "➕ 附加自定义服饰词");
+    btnToggleExtraOut.addEventListener("click", () => {
+      this.showCustomOutfitExtra = !this.showCustomOutfitExtra;
+      this.syncAllControls();
+    });
+    const btnKeepCanon = this.el("button", "chip-btn", "👑 保留角色原设头饰配件");
+    btnKeepCanon.addEventListener("click", () => {
+      this.cfg.keep_canon_elements = !this.cfg.keep_canon_elements;
+      this.onCfgChanged();
+    });
+    this.syncHooks.push(() => {
+      btnToggleExtraOut.classList.toggle(
+        "active",
+        this.showCustomOutfitExtra || Boolean(this.cfg.custom_outfit_tags.trim())
+      );
+      btnKeepCanon.classList.toggle("active", Boolean(this.cfg.keep_canon_elements));
+    });
+    outChips.append(btnToggleExtraOut, btnKeepCanon);
+    c2.body.appendChild(outChips);
+    col.appendChild(c2.card);
+
+    // --- CARD 3: 4D ANATOMY (Collapsed by default with clear live summary!) ---
+    const c3 = this.createInspectorCard({
+      title: "🌸 下半身解剖",
+      collapsed: true,
+      onToggleSwitch: () => {
+        this.cfg.enable_anatomy = !this.cfg.enable_anatomy;
+        this.onCfgChanged();
+      },
+    });
+    this.elAnatomyCard = c3.card;
+    this.elAnatomySwitch = c3.switchBtn!;
+    this.elAnatomySummary = c3.summaryEl;
+
+    c3.body.append(
+      this.bindCfgSelect("1. 形态类型 (Morph)", "morph_preset", Object.keys(MORPH_PRESETS)),
+      this.bindCfgSelect("2. 阴毛样式 (Pubic)", "pubic_preset", Object.keys(PUBIC_PRESETS)),
+      this.bindCfgSelect("3. 色素色泽 (Pigment)", "pigment_preset", Object.keys(PIGMENT_PRESETS))
+    );
+
+    const fluidSlider = this.el("div", "slider-row");
+    const fluidHead = this.el("div", "slider-head");
+    const fluidValLbl = this.el("span", "", "1.0x");
+    fluidHead.append(this.el("span", "", "💦 体液表现强度倍率"), fluidValLbl);
+    const fluidCtrl = this.el("div", "slider-controls");
+    const fluidRange = this.el("input") as HTMLInputElement;
+    fluidRange.type = "range";
+    fluidRange.min = "0.5";
+    fluidRange.max = "1.8";
+    fluidRange.step = "0.1";
+    fluidRange.addEventListener("input", () => {
+      this.cfg.fluid_scale = parseFloat(fluidRange.value) || 1.0;
+      fluidValLbl.textContent = `${this.cfg.fluid_scale.toFixed(1)}x`;
+      this.onCfgChanged();
+    });
+    this.syncHooks.push(() => {
+      fluidRange.value = String(this.cfg.fluid_scale);
+      fluidValLbl.textContent = `${this.cfg.fluid_scale.toFixed(1)}x`;
+    });
+    fluidCtrl.appendChild(fluidRange);
+    fluidSlider.append(fluidHead, fluidCtrl);
+    c3.body.appendChild(fluidSlider);
+    col.appendChild(c3.card);
+
+    // --- CARD 4: UNIFIED STYLE + LIGHTING + VIBE + GUIDANCE (Always collapsed on open) ---
+    const c4 = this.createInspectorCard({
+      title: "🎨 画风 · 光影 · Vibe",
+      collapsed: true,
+      onToggleSwitch: () => {
+        this.cfg.enable_style = !this.cfg.enable_style;
+        this.onCfgChanged();
+      },
+    });
+    this.elStyleCard = c4.card;
+    this.elStyleCardTitle = c4.titleEl;
+    this.elStyleSwitch = c4.switchBtn!;
+    this.elStyleSummary = c4.summaryEl;
+
+    c4.body.append(
+      this.bindCfgSelect("主力画风串", "style_preset", Object.keys(STYLE_PRESETS), () => {
+        // Automatically sync corresponding global lighting override for selected style
+        this.cfg.lighting_preset = resolveLightingForStyle(this.cfg.style_preset);
+        // Automatically populate bundled Vibe slots whenever a Vibe-tuned style is chosen
+        const styleVibePack = STYLE_BUNDLED_VIBE_PACK[this.cfg.style_preset];
+        if (styleVibePack && BUNDLED_VIBE_PACKS[styleVibePack]) {
+          void this.injectBundledVibePack(styleVibePack, false).then(() => {
+            this.syncAllControls();
+            this.refreshSceneAndPrompt();
+            if (this.apiSettings.model === MODEL_V4_5_FULL) {
+              this.setStatus(
+                `🧬 已同步打光并自动载入内置 ${this.vibeItems.length} 槽 Vibe (DPM++ 2M · Scale ${this.apiSettings.scale})`
+              );
+            }
+          });
+        }
+      }),
+      this.bindCfgSelect("全局打光覆写", "lighting_preset", Object.keys(LIGHTING_PRESETS))
+    );
+
+    this.elCustomStyleWrap = this.el("div", "field-row");
+    this.elCustomStyleWrap.style.gap = "5px";
+    this.elCustomStyleWrap.append(
+      this.bindCfgText("自定义画风正向词", "custom_style_pos", "artist:..., watercolor..."),
+      this.bindCfgText("自定义画风负向词", "custom_style_neg", "3d, photorealistic...")
+    );
+    this.syncHooks.push(() => {
+      this.elCustomStyleWrap.style.display = this.cfg.style_preset.includes("自定义画风")
+        ? "flex"
+        : "none";
+    });
+    c4.body.appendChild(this.elCustomStyleWrap);
+
+    // Embedded Vibe Transfer Panel inside Style Card (Hidden on V5 models!)
+    const vibePanel = this.el("div", "vibe-panel");
+    this.elVibePanel = vibePanel;
+    const vibeHead = this.el("div", "vibe-head");
+    const vibeLeft = this.el("div", "topbar-group");
+    vibeLeft.appendChild(this.el("strong", "", "🧬 Vibe 参照"));
+    this.elVibeSwitch = this.el("button", "switch-pill on", "ON");
+    this.elVibeSwitch.title = "启用/暂挂 Vibe Transfer（支持 .naiv4vibebundle / .naiv4vibe / NAI 原图拖拽）";
+    this.elVibeSwitch.addEventListener("click", () => {
+      this.apiSettings.vibe_transfer_enabled = !this.apiSettings.vibe_transfer_enabled;
+      saveApiSettings(this.apiSettings);
+      this.syncVibeUI();
+      this.refreshSceneAndPrompt();
+    });
+    vibeLeft.appendChild(this.elVibeSwitch);
+
+    const vibeBtns = this.el("div", "topbar-group");
+    const fileInputReplace = document.createElement("input");
+    fileInputReplace.type = "file";
+    fileInputReplace.multiple = true;
+    fileInputReplace.accept = ".naiv4vibebundle,.naiv4vibe,.json,.png,.webp,.jpg,.jpeg";
+    fileInputReplace.style.display = "none";
+    fileInputReplace.addEventListener("change", () => {
+      if (fileInputReplace.files?.length) {
+        void this.handleVibeFilesImport(fileInputReplace.files, false);
+        fileInputReplace.value = "";
       }
     });
+
+    const fileInputAppend = document.createElement("input");
+    fileInputAppend.type = "file";
+    fileInputAppend.multiple = true;
+    fileInputAppend.accept = ".naiv4vibebundle,.naiv4vibe,.json,.png,.webp,.jpg,.jpeg";
+    fileInputAppend.style.display = "none";
+    fileInputAppend.addEventListener("change", () => {
+      if (fileInputAppend.files?.length) {
+        void this.handleVibeFilesImport(fileInputAppend.files, true);
+        fileInputAppend.value = "";
+      }
+    });
+
+    const btnImportVibe = this.el("button", "btn btn-xs btn-primary", "📂 导入");
+    btnImportVibe.title = "导入 .naiv4vibebundle / .naiv4vibe / 含Vibe的NAI原图（覆盖当前列表）";
+    btnImportVibe.addEventListener("click", () => fileInputReplace.click());
+
+    const btnAppendVibe = this.el("button", "btn btn-xs", "➕ 追加");
+    btnAppendVibe.title = "追加新的 Vibe 槽位（最多 16 槽）";
+    btnAppendVibe.addEventListener("click", () => fileInputAppend.click());
+
+    const btnClearVibe = this.el("button", "btn btn-xs", "清空");
+    btnClearVibe.addEventListener("click", async () => {
+      this.vibeItems = [];
+      await clearStoredVibeItems();
+      this.syncVibeUI();
+      this.refreshSceneAndPrompt();
+      this.setStatus("🧹 已清空全部 Vibe 槽位");
+    });
+
+    vibeBtns.append(fileInputReplace, fileInputAppend, btnImportVibe, btnAppendVibe, btnClearVibe);
+    vibeHead.append(vibeLeft, vibeBtns);
+
+    vibePanel.addEventListener("dragover", (ev) => {
+      ev.preventDefault();
+      vibePanel.classList.add("drag-over");
+    });
+    vibePanel.addEventListener("dragleave", () => vibePanel.classList.remove("drag-over"));
+    vibePanel.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      vibePanel.classList.remove("drag-over");
+      if (ev.dataTransfer?.files?.length) {
+        void this.handleVibeFilesImport(ev.dataTransfer.files, ev.shiftKey);
+      }
+    });
+
+    this.elVibeSlotList = this.el("div", "vibe-slot-list");
+    this.elVibeNormWrap = this.el("label", "vibe-note");
+    this.elVibeNormWrap.style.display = "flex";
+    this.elVibeNormWrap.style.alignItems = "center";
+    this.elVibeNormWrap.style.gap = "5px";
+    this.elVibeNormChk = this.el("input") as HTMLInputElement;
+    this.elVibeNormChk.type = "checkbox";
+    this.elVibeNormChk.addEventListener("change", () => {
+      this.apiSettings.vibe_normalize_strength = this.elVibeNormChk.checked;
+      saveApiSettings(this.apiSettings);
+    });
+    this.elVibeNormWrap.append(
+      this.elVibeNormChk,
+      this.el("span", "", "多槽位自动归一化强度 (Normalize Reference Strength)")
+    );
+
+    this.elVibeStatusNote = this.el("div", "vibe-note");
+    vibePanel.append(vibeHead, this.elVibeSlotList, this.elVibeNormWrap, this.elVibeStatusNote);
+    c4.body.appendChild(vibePanel);
+
+    // Style-Coupled Guidance & CFG Rescale Sliders right under Vibe!
+    const scaleRow = this.el("div", "slider-row");
+    const scaleHead = this.el("div", "slider-head");
+    const btnResetScale = this.el("button", "btn btn-xs", "↺ 推荐值");
+    btnResetScale.title = "恢复当前模型的官方默认 Scale 与 Rescale";
+    btnResetScale.addEventListener("click", () => {
+      this.apiSettings.scale = this.apiSettings.model === MODEL_V5_FULL_MEDIUM ? 6.0 : 7.0;
+      this.apiSettings.cfg_rescale = 0.0;
+      saveApiSettings(this.apiSettings);
+      this.syncApiControls();
+    });
+    scaleHead.append(this.el("span", "", "🎯 Guidance (Scale 相关性)"), btnResetScale);
+    const scaleCtrl = this.el("div", "slider-controls");
+    this.elScaleRange = this.el("input") as HTMLInputElement;
+    this.elScaleRange.type = "range";
+    this.elScaleRange.min = "1";
+    this.elScaleRange.max = "10";
+    this.elScaleRange.step = "0.1";
+    this.elScaleNum = this.el("input") as HTMLInputElement;
+    this.elScaleNum.type = "number";
+    this.elScaleNum.min = "1";
+    this.elScaleNum.max = "10";
+    this.elScaleNum.step = "0.1";
+    const onScaleInput = (valStr: string) => {
+      const v = Math.max(1, Math.min(10, Number(parseFloat(valStr).toFixed(1)) || 7.0));
+      this.apiSettings.scale = v;
+      this.elScaleRange.value = String(v);
+      this.elScaleNum.value = v.toFixed(1);
+      saveApiSettings(this.apiSettings);
+    };
+    this.elScaleRange.addEventListener("input", () => onScaleInput(this.elScaleRange.value));
+    this.elScaleNum.addEventListener("change", () => onScaleInput(this.elScaleNum.value));
+    scaleCtrl.append(this.elScaleRange, this.elScaleNum);
+    scaleRow.append(scaleHead, scaleCtrl);
+
+    const rescaleRow = this.el("div", "slider-row");
+    const rescaleHead = this.el("div", "slider-head");
+    rescaleHead.appendChild(this.el("span", "", "⚖️ Prompt Guidance Rescale (防过曝)"));
+    const rescaleCtrl = this.el("div", "slider-controls");
+    this.elRescaleRange = this.el("input") as HTMLInputElement;
+    this.elRescaleRange.type = "range";
+    this.elRescaleRange.min = "0";
+    this.elRescaleRange.max = "1";
+    this.elRescaleRange.step = "0.02";
+    this.elRescaleNum = this.el("input") as HTMLInputElement;
+    this.elRescaleNum.type = "number";
+    this.elRescaleNum.min = "0";
+    this.elRescaleNum.max = "1";
+    this.elRescaleNum.step = "0.02";
+    const onRescaleInput = (valStr: string) => {
+      const v = Math.max(0, Math.min(1, Number((parseFloat(valStr) || 0).toFixed(2))));
+      this.apiSettings.cfg_rescale = v;
+      this.elRescaleRange.value = String(v);
+      this.elRescaleNum.value = v.toFixed(2);
+      saveApiSettings(this.apiSettings);
+    };
+    this.elRescaleRange.addEventListener("input", () => onRescaleInput(this.elRescaleRange.value));
+    this.elRescaleNum.addEventListener("change", () => onRescaleInput(this.elRescaleNum.value));
+    rescaleCtrl.append(this.elRescaleRange, this.elRescaleNum);
+    rescaleRow.append(rescaleHead, rescaleCtrl);
+
+    c4.body.append(scaleRow, rescaleRow);
+    col.appendChild(c4.card);
+
+    // --- CARD 5: API TOKEN & ADVANCED SAMPLING (Always collapsed on open) ---
+    const c5 = this.createInspectorCard({
+      title: "🔑 API 令牌与高级采样",
+      collapsed: true,
+    });
+    this.elApiCard = c5.card;
+    this.elApiSummary = c5.summaryEl;
+
+    const tokRow = this.el("div", "field-row");
+    tokRow.appendChild(this.el("label", "", "Persistent API Token (pst-...)"));
+    const tokBar = this.el("div", "pose-search-row");
+    const tokInp = this.el("input") as HTMLInputElement;
+    tokInp.type = "password";
+    tokInp.placeholder = "粘贴 pst-... 永久令牌";
+    tokInp.value = this.apiSettings.api_token;
+    tokInp.addEventListener("change", () => {
+      this.apiSettings.api_token = tokInp.value.trim();
+      saveApiSettings(this.apiSettings);
+      this.updateQuotaPill();
+      if (this.apiSettings.api_token) {
+        void this.refreshSubscription(false);
+      }
+    });
+    const btnShowTok = this.el("button", "btn btn-xs btn-icon", "👁️");
+    btnShowTok.addEventListener("click", () => {
+      tokInp.type = tokInp.type === "password" ? "text" : "password";
+    });
+    const btnCheckSub = this.el("button", "btn btn-xs btn-primary", "查余额");
+    btnCheckSub.addEventListener("click", () => void this.refreshSubscription(false));
+    tokBar.append(tokInp, btnShowTok, btnCheckSub);
+    tokRow.appendChild(tokBar);
+
+    const stepsRow = this.el("div", "slider-row");
+    const stepsHead = this.el("div", "slider-head");
+    this.elStepsHint = this.el("span", "", "Steps: 28 (Opus ≤28步免点)");
+    stepsHead.appendChild(this.elStepsHint);
+    const stepsCtrl = this.el("div", "slider-controls");
+    this.elStepsRange = this.el("input") as HTMLInputElement;
+    this.elStepsRange.type = "range";
+    this.elStepsRange.min = "1";
+    this.elStepsRange.max = "50";
+    this.elStepsRange.step = "1";
+    this.elStepsNum = this.el("input") as HTMLInputElement;
+    this.elStepsNum.type = "number";
+    this.elStepsNum.min = "1";
+    this.elStepsNum.max = "50";
+    const onStepsChange = (valStr: string) => {
+      const s = Math.max(1, Math.min(50, Math.round(parseInt(valStr, 10) || 28)));
+      this.apiSettings.steps = s;
+      this.elStepsRange.value = String(s);
+      this.elStepsNum.value = String(s);
+      saveApiSettings(this.apiSettings);
+      this.syncApiControls();
+      this.updateQuotaPill();
+    };
+    this.elStepsRange.addEventListener("input", () => onStepsChange(this.elStepsRange.value));
+    this.elStepsNum.addEventListener("change", () => onStepsChange(this.elStepsNum.value));
+    stepsCtrl.append(this.elStepsRange, this.elStepsNum);
+    stepsRow.append(stepsHead, stepsCtrl);
+
+    const ucRow = this.el("div", "field-row");
+    ucRow.appendChild(this.el("label", "", "官方负向预设档位 (UC Preset)"));
+    this.elUcModeSelect = this.el("select");
+    const ucOpts: Array<[NaiUcPresetMode, string]> = [
+      ["heavy", "Heavy (重度防崩 · 默认推荐)"],
+      ["human_focus", "Human Focus (人物五官解剖强化 · V4.5佳)"],
+      ["light", "Light (轻量精简)"],
+      ["none", "None (不加官方预设底词)"],
+    ];
+    for (const [val, txt] of ucOpts) {
+      const o = this.el("option", "", txt);
+      o.value = val;
+      this.elUcModeSelect.appendChild(o);
+    }
+    this.elUcModeSelect.addEventListener("change", () => {
+      this.apiSettings.uc_preset_mode = this.elUcModeSelect.value as NaiUcPresetMode;
+      saveApiSettings(this.apiSettings);
+      this.refreshSceneAndPrompt();
+    });
+    ucRow.appendChild(this.elUcModeSelect);
+
+    const extraUcRow = this.el("div", "field-row");
+    extraUcRow.appendChild(this.el("label", "", "全局附加负向词 (Extra UC)"));
+    const extraUcInp = this.el("input") as HTMLInputElement;
+    extraUcInp.type = "text";
+    extraUcInp.placeholder = "如 watermark, signature, extra digits...";
+    extraUcInp.value = this.apiSettings.extra_uc;
+    extraUcInp.addEventListener("input", () => {
+      this.apiSettings.extra_uc = extraUcInp.value;
+      saveApiSettings(this.apiSettings);
+      this.refreshSceneAndPrompt();
+    });
+    extraUcRow.appendChild(extraUcInp);
+
+    const advChips = this.el("div", "chip-wrap");
+    const chipQt = this.el("button", "chip-btn", "✨ 官方画质尾缀");
+    chipQt.addEventListener("click", () => {
+      this.apiSettings.append_v5_quality = !this.apiSettings.append_v5_quality;
+      saveApiSettings(this.apiSettings);
+      this.syncApiControls();
+      this.refreshSceneAndPrompt();
+    });
+    const chipProse = this.el("button", "chip-btn", "📖 T5 自然语言尾句");
+    chipProse.addEventListener("click", () => {
+      this.cfg.enable_t5_prose = !this.cfg.enable_t5_prose;
+      this.onCfgChanged();
+    });
+    const chipAutoDl = this.el("button", "chip-btn", "⬇️ 出图自动浏览器下载");
+    chipAutoDl.addEventListener("click", () => {
+      this.apiSettings.auto_download = !this.apiSettings.auto_download;
+      saveApiSettings(this.apiSettings);
+      this.syncApiControls();
+    });
+    this.syncHooks.push(() => {
+      chipQt.classList.toggle("active", Boolean(this.apiSettings.append_v5_quality));
+      chipProse.classList.toggle("active", Boolean(this.cfg.enable_t5_prose));
+      chipAutoDl.classList.toggle("active", Boolean(this.apiSettings.auto_download));
+    });
+    advChips.append(chipQt, chipProse, chipAutoDl);
+
+    c5.body.append(tokRow, stepsRow, ucRow, extraUcRow, advChips);
+    col.appendChild(c5.card);
+
+    return col;
   }
 
-  private setActivePasteSlot(slot: "char" | "style"): void {
-    this.activePasteSlot = slot;
-    const isDual = this.apiSettings.precise_ref_workflow === "style_plus_chara";
-    if (this.elPreciseCharSlot) {
-      this.elPreciseCharSlot.classList.toggle("paste-target", isDual && slot === "char");
-    }
-    if (this.elPreciseStyleSlot) {
-      this.elPreciseStyleSlot.classList.toggle("paste-target", isDual && slot === "style");
-    }
-  }
+  // ===========================================================================
+  // CENTER COLUMN: HERO STAGE + FILMSTRIP + COLLAPSIBLE PROMPT DRAWER
+  // ===========================================================================
+  private buildCenterColumn(): HTMLElement {
+    const col = this.el("main", "studio-col col-center");
 
-  private setPreciseRefWorkflow(wf: PreciseRefWorkflowMode): void {
-    this.apiSettings.precise_ref_workflow = wf;
-    if (wf !== "style_plus_chara") {
-      this.activePasteSlot = "char";
-    } else if (this.preciseRef && !this.preciseStyleRef) {
-      this.activePasteSlot = "style";
-    }
-    saveApiSettings(this.apiSettings);
-    this.syncPreciseRefDisplays();
-    this.updateCostHint();
+    // 1. Stage Top Toolbar
+    const toolbar = this.el("div", "stage-toolbar");
+    this.elStageMeta = this.el("div", "stage-meta", "就绪 · 选择右侧动作或点击顶部「🚀 立即生图」");
 
-    if (wf === "style_plus_chara") {
-      this.setStatus(
-        "🎨+👤 已切至「Style+Chara 混合」双槽模式：可同时附带人物基图 + 画风基图独立调节 Strength/Fidelity"
-      );
-    } else if (wf === "chara_only") {
-      const styleKeep = this.preciseStyleRef
-        ? `（已缓存画风图 ${this.preciseStyleRef.filename} 暂挂保留，随时可一键切回混合）`
-        : "";
-      this.setStatus(
-        `👤 已切至「Chara 单独」模式：仅发送 Character 人物参照 (+5 Anlas)，可自由混合本台文字画风词条${styleKeep}`
-      );
-    } else {
-      this.setStatus(
-        "👤&🎨 已切至「单图 Chara&Style」模式：单张图片同时锁定人物与画风 (base_caption=character&style, +5 Anlas)"
-      );
-    }
-  }
+    const actions = this.el("div", "stage-actions");
+    this.elAutoUpscaleBtn = this.el("button", "chip-btn", "🔍 生后即2x替换");
+    this.elAutoUpscaleBtn.title =
+      "开启后：每次生图自动完成官方 2x 高清放大后再推入画廊与全屏灯箱（不推临时1x小图）";
+    this.elAutoUpscaleBtn.addEventListener("click", () => {
+      this.apiSettings.auto_upscale_replace = !this.apiSettings.auto_upscale_replace;
+      saveApiSettings(this.apiSettings);
+      this.syncStageToolbar();
+    });
 
-  private setPreciseRefMemory(slot: "char" | "style", item: StoredPreciseRefImage | null): void {
-    if (slot === "char") {
-      if (this.preciseRefThumbUrl) {
-        URL.revokeObjectURL(this.preciseRefThumbUrl);
-        this.preciseRefThumbUrl = null;
-      }
-      this.preciseRef = item;
-      if (item) {
-        const previewBytes = item.rawBytes.length > 0 ? item.rawBytes : item.preparedPngBytes;
-        const copy = new Uint8Array(previewBytes.byteLength);
-        copy.set(previewBytes);
-        this.preciseRefThumbUrl = URL.createObjectURL(new Blob([copy]));
-      }
-    } else {
-      if (this.preciseStyleRefThumbUrl) {
-        URL.revokeObjectURL(this.preciseStyleRefThumbUrl);
-        this.preciseStyleRefThumbUrl = null;
-      }
-      this.preciseStyleRef = item;
-      if (item) {
-        const previewBytes = item.rawBytes.length > 0 ? item.rawBytes : item.preparedPngBytes;
-        const copy = new Uint8Array(previewBytes.byteLength);
-        copy.set(previewBytes);
-        this.preciseStyleRefThumbUrl = URL.createObjectURL(new Blob([copy]));
-      }
-    }
-  }
+    this.elAutoCarouselBtn = this.el("button", "chip-btn", "🎬 连出全屏轮播");
+    this.elAutoCarouselBtn.title = "连续生成多张图片时自动弹出全屏灯箱跟随展示最新成图";
+    this.elAutoCarouselBtn.addEventListener("click", () => {
+      this.apiSettings.auto_fullscreen_carousel = !this.apiSettings.auto_fullscreen_carousel;
+      saveApiSettings(this.apiSettings);
+      this.syncStageToolbar();
+    });
 
-  private async maybeUpgradeCachedPreciseRef(
-    slot: "char" | "style",
-    item: StoredPreciseRefImage
-  ): Promise<StoredPreciseRefImage> {
-    if ((item.prepVersion ?? 1) >= 2) {
-      return item;
-    }
-    // If the original high-res rawBytes are still stored in IndexedDB, re-run progressive multi-step halving once
-    if (item.rawBytes && item.rawBytes.byteLength > 0 && item.rawBytes !== item.preparedPngBytes) {
-      try {
-        const norm = await preparePreciseReferencePng(item.rawBytes);
-        const upgraded: StoredPreciseRefImage = {
-          ...item,
-          preparedPngBytes: norm.preparedPngBytes,
-          origWidth: norm.origWidth,
-          origHeight: norm.origHeight,
-          normWidth: norm.normWidth,
-          normHeight: norm.normHeight,
-          prepVersion: 2,
-          updatedAt: Date.now(),
-        };
-        if (slot === "char") {
-          await savePreciseRefImage(upgraded);
-        } else {
-          await savePreciseStyleRefImage(upgraded);
-        }
-        this.appendLog(
-          `✨ 已自动使用渐进超采样重生成缓存${slot === "char" ? "人物" : "画风"}参照图：${item.filename} (${norm.origWidth}×${norm.origHeight} ➔ ${norm.normWidth}×${norm.normHeight})`
-        );
-        return upgraded;
-      } catch {
-        return item;
-      }
-    }
-    return item;
-  }
+    const btnChecker = this.el("button", "btn btn-xs", "🏁 棋盘底");
+    btnChecker.addEventListener("click", () => {
+      this.checkerboardBg = !this.checkerboardBg;
+      this.elHeroViewport.classList.toggle("checkerboard", this.checkerboardBg);
+      btnChecker.classList.toggle("btn-primary", this.checkerboardBg);
+    });
 
-  private async handleUploadPreciseRefFile(slot: "char" | "style", file: File): Promise<void> {
-    const slotLabel = slot === "char" ? "Character 人物参照" : "Style 画风参照";
-    try {
-      this.setStatus(`🪪 正在处理 ${slotLabel}图 ${file.name}...`);
-      const rawBytes = new Uint8Array(await file.arrayBuffer());
-      const norm = await preparePreciseReferencePng(rawBytes);
-      const stored: StoredPreciseRefImage = {
-        filename: file.name || (slot === "char" ? "character_ref.png" : "style_ref.png"),
-        rawBytes,
-        preparedPngBytes: norm.preparedPngBytes,
-        origWidth: norm.origWidth,
-        origHeight: norm.origHeight,
-        normWidth: norm.normWidth,
-        normHeight: norm.normHeight,
-        prepVersion: 2,
-        updatedAt: Date.now(),
-      };
-
-      if (slot === "char") {
-        await savePreciseRefImage(stored);
-        this.setPreciseRefMemory("char", stored);
-        this.apiSettings.precise_ref_enabled = true;
-        if (
-          this.apiSettings.precise_ref_workflow === "style_plus_chara" &&
-          !this.preciseStyleRef
-        ) {
-          this.activePasteSlot = "style";
-        }
-      } else {
-        await savePreciseStyleRefImage(stored);
-        this.setPreciseRefMemory("style", stored);
-        this.apiSettings.precise_style_enabled = true;
-        if (this.apiSettings.precise_ref_workflow !== "style_plus_chara") {
-          this.apiSettings.precise_ref_workflow = "style_plus_chara";
-        }
-      }
-
-      let switchedNote = "";
-      if (this.apiSettings.model !== MODEL_V4_5_FULL) {
-        this.setModel(MODEL_V4_5_FULL, true, true);
-        switchedNote = " · 已自动切换至 V4.5 Full";
-      } else {
-        saveApiSettings(this.apiSettings);
-        this.syncApiInputs();
-        this.syncPreciseRefDisplays();
-        this.updateCostHint();
-      }
-
-      const msg =
-        `🪪 已载入 ${slotLabel}：${stored.filename} (${stored.origWidth}×${stored.origHeight} ➔ 标准画布 ${stored.normWidth}×${stored.normHeight})${switchedNote}`;
-      this.appendLog(msg);
-      this.setStatus(msg);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.appendLog(`❌ 载入 ${slotLabel}图失败: ${msg}`);
-      this.setStatus(`❌ 载入 ${slotLabel}图失败：${msg}`);
-      window.alert(`载入 ${slotLabel}图失败：${msg}`);
-    }
-  }
-
-  private async onClearPreciseRef(slot: "char" | "style"): Promise<void> {
-    if (slot === "char") {
-      if (!this.preciseRef) return;
-      const oldName = this.preciseRef.filename;
-      await clearPreciseRefImage();
-      this.setPreciseRefMemory("char", null);
-      this.syncPreciseRefDisplays();
-      this.updateCostHint();
-      this.appendLog(`🗑️ 已移除 Character 人物参照图：${oldName}`);
-      this.setStatus(`🗑️ 已移除 Character 人物参照图：${oldName}`);
-    } else {
-      if (!this.preciseStyleRef) return;
-      const oldName = this.preciseStyleRef.filename;
-      await clearPreciseStyleRefImage();
-      this.setPreciseRefMemory("style", null);
-      this.syncPreciseRefDisplays();
-      this.updateCostHint();
-      this.appendLog(`🗑️ 已移除 Style 画风参照图：${oldName}`);
-      this.setStatus(`🗑️ 已移除 Style 画风参照图：${oldName}`);
-    }
-  }
-
-  private togglePreciseRefSlot(slot: "char" | "style"): void {
-    if (slot === "char") {
-      if (!this.preciseRef) return;
-      this.apiSettings.precise_ref_enabled = !this.apiSettings.precise_ref_enabled;
-      if (this.apiSettings.precise_ref_enabled && this.apiSettings.model !== MODEL_V4_5_FULL) {
-        this.setModel(MODEL_V4_5_FULL, true, true);
-        this.setStatus(`🪪 已启用 Character 人物参照 (${this.preciseRef.filename})，并自动切换模型至 V4.5 Full`);
+    const btnOpenLightbox = this.el("button", "btn btn-xs", "📺 全屏灯箱");
+    btnOpenLightbox.addEventListener("click", () => {
+      if (this.gallery.length === 0) {
+        this.setStatus("⚠️ 画廊暂无图片，请先生图", true);
         return;
       }
-      saveApiSettings(this.apiSettings);
-      this.syncPreciseRefDisplays();
-      this.updateCostHint();
-      this.setStatus(
-        this.apiSettings.precise_ref_enabled
-          ? `✅ 已启用 Character 人物参照 (${this.preciseRef.filename})`
-          : `⏸️ 已暂停 Character 人物参照 (${this.preciseRef.filename})`
-      );
+      this.openLightbox(Math.max(0, this.selectedGalleryIdx));
+    });
+
+    this.elUpscaleBtn = this.el("button", "btn btn-xs btn-primary", "✨ 2x高清放大");
+    this.elUpscaleBtn.title = "对当前预览图片调用官方 2x Upscale 高清放大并原位替换";
+    this.elUpscaleBtn.addEventListener("click", () => void this.upscaleSelectedGalleryImage());
+
+    const btnDownloadCur = this.el("button", "btn btn-xs", "💾 下载");
+    btnDownloadCur.addEventListener("click", () => {
+      const rec = this.gallery[this.selectedGalleryIdx];
+      if (!rec) return;
+      triggerBytesDownload(rec.bytes, rec.filename);
+    });
+
+    const btnZipAll = this.el("button", "btn btn-xs btn-success", "📦 打包ZIP");
+    btnZipAll.addEventListener("click", () => this.exportGalleryZip());
+
+    actions.append(
+      this.elAutoUpscaleBtn,
+      this.elAutoCarouselBtn,
+      btnChecker,
+      btnOpenLightbox,
+      this.elUpscaleBtn,
+      btnDownloadCur,
+      btnZipAll
+    );
+    toolbar.append(this.elStageMeta, actions);
+
+    // 2. Hero Image Viewport
+    this.elHeroViewport = this.el("div", "hero-viewport");
+    this.elProgressBanner = this.el("div", "gen-progress-banner");
+    this.elProgressBanner.style.display = "none";
+    this.elProgressText = this.el("span", "", "正在生成...");
+    this.elProgressBanner.append(this.el("span", "spinner-dot"), this.elProgressText);
+    this.renderHeroViewport();
+
+    // 3. Horizontal Filmstrip
+    this.elFilmstripBar = this.el("div", "filmstrip-bar hidden");
+    this.elFilmstripScroll = this.el("div", "filmstrip-scroll");
+    const filmActions = this.el("div", "topbar-group");
+    const btnClearGallery = this.el("button", "btn btn-xs", "清空画廊");
+    btnClearGallery.addEventListener("click", () => {
+      for (const g of this.gallery) URL.revokeObjectURL(g.objectUrl);
+      this.gallery = [];
+      this.checkedGalleryIds.clear();
+      this.selectedGalleryIdx = -1;
+      this.renderHeroViewport();
+      this.renderFilmstrip();
+      this.setStatus("🧹 已清空当前会话画廊缓存");
+    });
+    filmActions.appendChild(btnClearGallery);
+    this.elFilmstripBar.append(this.elFilmstripScroll, filmActions);
+
+    // 4. Collapsible Bottom Live Prompt Drawer
+    this.elPromptDrawer = this.el("section", "prompt-drawer collapsed");
+    const pBar = this.el("div", "prompt-drawer-bar");
+    const pLeft = this.el("div", "prompt-bar-left");
+
+    this.elDrawerToggleBtn = this.el("button", "btn btn-xs", "▸ 展开词条微调");
+    this.elDrawerToggleBtn.addEventListener("click", () => {
+      this.promptDrawerExpanded = !this.promptDrawerExpanded;
+      this.elPromptDrawer.classList.toggle("collapsed", !this.promptDrawerExpanded);
+      this.elDrawerToggleBtn.textContent = this.promptDrawerExpanded
+        ? "▾ 收起词条面板"
+        : "▸ 展开词条微调";
+    });
+
+    this.elPromptSceneLbl = this.el("span", "prompt-scene-lbl", "");
+    this.elTokenPill = this.el("span", "token-pill", "0 / 502 tok");
+    this.elManualLockPill = this.el("span", "manual-lock-pill", "✏️ 手改生效中");
+    this.elManualLockPill.style.display = "none";
+    const btnResetManual = this.el("button", "btn btn-xs", "↺ 恢复引擎词条");
+    btnResetManual.style.marginLeft = "4px";
+    btnResetManual.addEventListener("click", () => {
+      this.isManualPromptEdited = false;
+      this.refreshSceneAndPrompt();
+    });
+    this.elManualLockPill.appendChild(btnResetManual);
+
+    pLeft.append(
+      this.elDrawerToggleBtn,
+      this.elPromptSceneLbl,
+      this.elTokenPill,
+      this.elManualLockPill
+    );
+
+    const pRight = this.el("div", "topbar-group");
+    const btnCopyPos = this.el("button", "btn btn-xs", "📋 复制正向");
+    btnCopyPos.addEventListener("click", () => {
+      void navigator.clipboard.writeText(this.elPosTextarea.value.trim());
+      this.setStatus("📋 已复制正向 Prompt 到剪贴板");
+    });
+    const btnCopyNeg = this.el("button", "btn btn-xs", "📋 复制负向");
+    btnCopyNeg.addEventListener("click", () => {
+      const fullNeg = buildFullNegativeString({
+        posPrompt: this.elPosTextarea.value.trim(),
+        sceneNegPrompt: this.elNegTextarea.value.trim(),
+        ucPresetMode:
+          this.apiSettings.model === MODEL_V5_FULL_MEDIUM
+            ? "heavy"
+            : this.apiSettings.uc_preset_mode,
+        extraUc: this.apiSettings.extra_uc,
+      });
+      void navigator.clipboard.writeText(fullNeg);
+      this.setStatus("📋 已复制完整负向 UC 到剪贴板");
+    });
+    const btnCopyInline = this.el("button", "btn btn-xs", "📋 单框内联");
+    btnCopyInline.title = "复制把负向包裹为 -2::...:: 的单框合并文本（适合 V5 Medium 网页粘贴）";
+    btnCopyInline.addEventListener("click", () => {
+      const merged = mergePosAndNegToInline(this.elPosTextarea.value, this.elNegTextarea.value);
+      void navigator.clipboard.writeText(merged);
+      this.setStatus("📋 已复制单框内联格式 (-2::...::) 到剪贴板");
+    });
+    pRight.append(btnCopyPos, btnCopyNeg, btnCopyInline);
+    pBar.append(pLeft, pRight);
+
+    const pBody = this.el("div", "prompt-drawer-body");
+    const posCol = this.el("div", "prompt-box-col");
+    const posHead = this.el("div", "prompt-box-head");
+    posHead.appendChild(this.el("span", "", "✨ Positive Prompt (可直接手改并锁定生图)"));
+    this.elPosTextarea = this.el("textarea") as HTMLTextAreaElement;
+    this.elPosTextarea.spellcheck = false;
+    this.elPosTextarea.addEventListener("input", () => {
+      this.isManualPromptEdited = true;
+      this.elManualLockPill.style.display = "inline-flex";
+      this.updateTokenBadgeFromBoxes();
+    });
+    posCol.append(posHead, this.elPosTextarea);
+
+    const negCol = this.el("div", "prompt-box-col");
+    const negHead = this.el("div", "prompt-box-head");
+    negHead.appendChild(this.el("span", "", "🛡️ Negative UC (场景附加负向词 · V4.5/V5独立通道)"));
+    this.elNegTextarea = this.el("textarea") as HTMLTextAreaElement;
+    this.elNegTextarea.spellcheck = false;
+    this.elNegTextarea.addEventListener("input", () => {
+      this.isManualPromptEdited = true;
+      this.elManualLockPill.style.display = "inline-flex";
+      this.updateTokenBadgeFromBoxes();
+    });
+    negCol.append(negHead, this.elNegTextarea);
+
+    pBody.append(posCol, negCol);
+    this.elPromptDrawer.append(pBar, pBody);
+
+    col.append(toolbar, this.elHeroViewport, this.elFilmstripBar, this.elPromptDrawer);
+    return col;
+  }
+
+  // ===========================================================================
+  // RIGHT COLUMN: 3-MODE ACTION & CAMERA MATRIX (STORYLINE-FREE)
+  // ===========================================================================
+  private buildRightColumn(): HTMLElement {
+    const col = this.el("aside", "studio-col col-right");
+
+    // 1. 3-Mode Switcher
+    const modeBar = this.el("div", "action-mode-bar");
+    const seg = this.el("div", "seg-group");
+    const modes: Array<[ActionMode, string]> = [
+      ["positions", "🔞 51式体位库"],
+      ["multi_angle", "✨ 多角度日常"],
+      ["free", "✍️ 自由手写动作"],
+    ];
+    this.elActionModeBtns.clear();
+    for (const [m, lbl] of modes) {
+      const b = this.el("button", `seg-btn${this.actionMode === m ? " active" : ""}`, lbl);
+      b.addEventListener("click", () => {
+        this.actionMode = m;
+        this.isManualPromptEdited = false;
+        if (m === "positions" && !this.activeSceneId.startsWith("P")) {
+          this.activeSceneId = "P01";
+        } else if (m === "multi_angle" && !this.activeSceneId.startsWith("MA")) {
+          this.activeSceneId = "MA1";
+        }
+        this.renderRightModeView();
+        this.refreshSceneAndPrompt();
+      });
+      this.elActionModeBtns.set(m, b);
+      seg.appendChild(b);
+    }
+    modeBar.appendChild(seg);
+
+    // 2. Dynamic Context Control Box
+    this.elContextCtrlBox = this.el("div", "context-ctrl-box");
+
+    // 3. Compact Override Strip (Expression Popover + 3D Camera Popover)
+    const overrideStrip = this.el("div", "override-strip");
+    this.elExprTrigger = this.el("button", "override-trigger");
+    this.elExprTrigger.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.togglePopover(this.elExprPopover, this.elExprTrigger);
+    });
+
+    this.elCamTrigger = this.el("button", "override-trigger");
+    this.elCamTrigger.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.togglePopover(this.elCamPopover, this.elCamTrigger);
+      this.radarWidget?.render();
+    });
+    overrideStrip.append(this.elExprTrigger, this.elCamTrigger);
+
+    // 4. Pose Search & Category Filter Bar
+    this.elPoseFilterBar = this.el("div", "pose-filter-bar");
+
+    // 5. Scrollable Pose / Multi-Angle List
+    this.elPoseListWrap = this.el("div", "pose-list-scroll");
+
+    // 6. Dedicated Free Action Panel
+    this.elFreeActionWrap = this.buildFreeActionPanel();
+
+    col.append(
+      modeBar,
+      this.elContextCtrlBox,
+      overrideStrip,
+      this.elPoseFilterBar,
+      this.elPoseListWrap,
+      this.elFreeActionWrap
+    );
+
+    this.renderRightModeView();
+    return col;
+  }
+
+  private renderRightModeView(): void {
+    for (const [m, b] of this.elActionModeBtns.entries()) {
+      b.classList.toggle("active", m === this.actionMode);
+    }
+
+    this.elContextCtrlBox.innerHTML = "";
+    this.elPoseFilterBar.innerHTML = "";
+
+    if (this.actionMode === "positions") {
+      this.buildPositionsContextControls();
+      this.buildPoseFilterControls();
+      this.elPoseFilterBar.style.display = "flex";
+      this.elPoseListWrap.style.display = "flex";
+      this.elFreeActionWrap.style.display = "none";
+      this.renderPoseCards();
+    } else if (this.actionMode === "multi_angle") {
+      this.buildMultiAngleContextControls();
+      this.buildMultiAngleFilterControls();
+      this.elPoseFilterBar.style.display = "flex";
+      this.elPoseListWrap.style.display = "flex";
+      this.elFreeActionWrap.style.display = "none";
+      this.renderPoseCards();
     } else {
-      if (!this.preciseStyleRef) return;
-      this.apiSettings.precise_style_enabled = !this.apiSettings.precise_style_enabled;
-      if (this.apiSettings.precise_style_enabled && this.apiSettings.model !== MODEL_V4_5_FULL) {
-        this.setModel(MODEL_V4_5_FULL, true, true);
-        this.setStatus(`🎨 已启用 Style 画风参照 (${this.preciseStyleRef.filename})，并自动切换模型至 V4.5 Full`);
-        return;
-      }
-      saveApiSettings(this.apiSettings);
-      this.syncPreciseRefDisplays();
-      this.updateCostHint();
-      this.setStatus(
-        this.apiSettings.precise_style_enabled
-          ? `✅ 已启用 Style 画风参照 (${this.preciseStyleRef.filename})`
-          : `⏸️ 已暂停 Style 画风参照 (${this.preciseStyleRef.filename})`
-      );
+      this.buildFreeContextControls();
+      this.elPoseFilterBar.style.display = "none";
+      this.elPoseListWrap.style.display = "none";
+      this.elFreeActionWrap.style.display = "flex";
     }
   }
 
-  private togglePreciseRefEnabled(): void {
-    const wf = this.apiSettings.precise_ref_workflow;
-    const hasChar = Boolean(this.preciseRef);
-    const hasStyle = Boolean(this.preciseStyleRef);
+  private buildPositionsContextControls(): void {
+    // Row 1: POV / 3rd + Male 4-State Pills
+    const r1 = this.el("div", "ctrl-inline-row");
+    const povSeg = this.el("div", "seg-group");
+    for (const [pMode, lbl] of [
+      ["pov", "👁️ POV"],
+      ["3rd", "🎥 3rd"],
+    ] as const) {
+      const b = this.el(
+        "button",
+        `seg-btn${this.cfg.perspective_mode === pMode ? " active" : ""}`,
+        lbl
+      );
+      b.addEventListener("click", () => {
+        this.cfg.perspective_mode = pMode;
+        this.onCfgChanged();
+        this.renderRightModeView();
+      });
+      povSeg.appendChild(b);
+    }
+    r1.appendChild(povSeg);
 
-    if (!hasChar && !(wf === "style_plus_chara" && hasStyle)) {
-      this.switchMobilePane("config");
-      this.switchLeftTab("tab-api");
-      this.setStatus("🪪 请先在「Precise Reference」面板上传人物或画风参照图");
+    const maleCodeLabels: Record<string, string> = {
+      normal: "👤正常",
+      translucent: "👻半透",
+      invisible: "🫥隐形",
+      off: "🚫单人",
+    };
+    for (const [fullKey, code] of Object.entries(POS_MALE_MODE_PRESETS)) {
+      const shortLbl = maleCodeLabels[code] || compactOptionText(fullKey, 8);
+      const c = this.el(
+        "button",
+        `chip-btn${this.cfg.pos_male_mode === fullKey ? " active" : ""}`,
+        shortLbl
+      );
+      c.title = fullKey;
+      c.addEventListener("click", () => {
+        this.cfg.pos_male_mode = fullKey;
+        this.onCfgChanged();
+        this.renderRightModeView();
+      });
+      r1.appendChild(c);
+    }
+
+    // Row 2: 5-Stage Progression Pills
+    const r2 = this.el("div", "ctrl-inline-row");
+    r2.appendChild(this.el("span", "ctrl-tag-lbl", "阶段"));
+    const stageCodeLabels: Record<string, string> = {
+      before: "🔥1.进行",
+      during: "💦2.内射",
+      after_inside: "🌊3.溢流",
+      pull_out: "🔗4.拔出",
+      prolapse: "🌺5.宫脱",
+    };
+    for (const [fullKey, code] of Object.entries(POS_STAGE_PRESETS)) {
+      const shortLbl = stageCodeLabels[code] || compactOptionText(fullKey, 10);
+      const c = this.el(
+        "button",
+        `chip-btn${this.cfg.pos_stage === fullKey ? " active" : ""}`,
+        shortLbl
+      );
+      c.title = fullKey;
+      c.addEventListener("click", () => {
+        this.cfg.pos_stage = fullKey;
+        this.onCfgChanged();
+        this.renderRightModeView();
+      });
+      r2.appendChild(c);
+    }
+
+    // Row 3: Aux Toggles (Show Penis / Condom / Uterus X-Ray / Transparent BG)
+    const r3 = this.el("div", "ctrl-inline-row");
+    r3.appendChild(this.el("span", "ctrl-tag-lbl", "叠加"));
+    const isSoloMaleOff = (POS_MALE_MODE_PRESETS[this.cfg.pos_male_mode] ?? "normal") === "off";
+    const auxItems: Array<[string, boolean, () => void, boolean?]> = [
+      [
+        "🍆 显器官",
+        this.cfg.pos_show_penis && !isSoloMaleOff,
+        () => {
+          this.cfg.pos_show_penis = !this.cfg.pos_show_penis;
+          this.onCfgChanged();
+          this.renderRightModeView();
+        },
+        isSoloMaleOff,
+      ],
+      [
+        "🎈 戴套",
+        this.cfg.enable_condom,
+        () => {
+          this.cfg.enable_condom = !this.cfg.enable_condom;
+          this.onCfgChanged();
+          this.renderRightModeView();
+        },
+      ],
+      [
+        "🔬 子宫透视",
+        this.cfg.enable_uterus_xray,
+        () => {
+          this.cfg.enable_uterus_xray = !this.cfg.enable_uterus_xray;
+          this.onCfgChanged();
+          this.renderRightModeView();
+        },
+      ],
+      [
+        "🏁 透明底",
+        this.cfg.pos_transparent_bg,
+        () => {
+          this.cfg.pos_transparent_bg = !this.cfg.pos_transparent_bg;
+          this.onCfgChanged();
+          this.renderRightModeView();
+        },
+      ],
+    ];
+    for (const [lbl, active, onClick, disabled] of auxItems) {
+      const b = this.el("button", `chip-btn${active ? " active" : ""}`, lbl);
+      if (disabled) b.disabled = true;
+      b.addEventListener("click", onClick);
+      r3.appendChild(b);
+    }
+
+    // Row 4: Scene Environment Bar with inline Enable Switch
+    const r4 = this.buildPosSceneRow();
+    this.elContextCtrlBox.append(r1, r2, r3, r4);
+  }
+
+  private buildPosSceneRow(): HTMLElement {
+    const r = this.el("div", "ctrl-inline-row");
+    const envSw = this.el(
+      "button",
+      `switch-pill${this.cfg.enable_background ? " on" : ""}`,
+      this.cfg.enable_background ? "环境ON" : "环境OFF"
+    );
+    envSw.title = "开关背景环境词条";
+    envSw.addEventListener("click", () => {
+      this.cfg.enable_background = !this.cfg.enable_background;
+      this.onCfgChanged();
+      this.renderRightModeView();
+    });
+    r.appendChild(envSw);
+
+    const sceneShort: Array<[string, string]> = [
+      ["🛋️ 默认暖光室内沙发（indoors, couch, lamp）", "🛋️沙发"],
+      ["🪟 晨光纱帘白床明亮卧室（bright window, curtains, sunlit bedroom, white bedsheet）", "🪟白床"],
+      ["🌸 落樱浅滩水波·粉霞晴空焦散（shallow water, cherry blossoms, caustics, pink sky）", "🌸浅滩"],
+      ["🗑️ 日式城市阴暗小巷·垃圾箱旁（alley, backstreet, trash can, garbage bag）", "🗑️后巷"],
+      ["🪴 落地窗日光绿植 · 绒毛米色地毯木地板（furry beige rug, floor-to-ceiling window, potted plant）", "🪴绒毯"],
+    ];
+    for (const [fullKey, shortLbl] of sceneShort) {
+      const b = this.el(
+        "button",
+        `chip-btn${this.cfg.enable_background && !this.cfg.pos_transparent_bg && this.cfg.pos_scene === fullKey ? " active" : ""}`,
+        shortLbl
+      );
+      b.title = fullKey;
+      b.disabled = !this.cfg.enable_background || this.cfg.pos_transparent_bg;
+      b.addEventListener("click", () => {
+        this.cfg.pos_scene = fullKey;
+        this.onCfgChanged();
+        this.renderRightModeView();
+      });
+      r.appendChild(b);
+    }
+    return r;
+  }
+
+  private buildMultiAngleContextControls(): void {
+    const r1 = this.el("div", "ctrl-inline-row");
+    const btnNsfw = this.el(
+      "button",
+      `chip-btn${this.cfg.enable_multi_angle_nsfw ? " active" : ""}`,
+      "🔞 开启 R-18 解剖 / MA7掰穴差分"
+    );
+    btnNsfw.addEventListener("click", () => {
+      this.cfg.enable_multi_angle_nsfw = !this.cfg.enable_multi_angle_nsfw;
+      this.onCfgChanged();
+      this.renderRightModeView();
+    });
+
+    const btnXray = this.el(
+      "button",
+      `chip-btn${this.cfg.enable_multi_angle_nsfw && this.cfg.enable_uterus_xray ? " active" : ""}`,
+      "🔬 子宫透视"
+    );
+    btnXray.disabled = !this.cfg.enable_multi_angle_nsfw;
+    btnXray.addEventListener("click", () => {
+      this.cfg.enable_uterus_xray = !this.cfg.enable_uterus_xray;
+      this.onCfgChanged();
+      this.renderRightModeView();
+    });
+    r1.append(btnNsfw, btnXray);
+
+    const r2 = this.el("div", "ctrl-inline-row");
+    const envSw = this.el(
+      "button",
+      `switch-pill${this.cfg.enable_background ? " on" : ""}`,
+      this.cfg.enable_background ? "环境ON" : "环境OFF"
+    );
+    envSw.addEventListener("click", () => {
+      this.cfg.enable_background = !this.cfg.enable_background;
+      this.onCfgChanged();
+      this.renderRightModeView();
+    });
+    r2.appendChild(envSw);
+
+    const envShort: Array<[string, string]> = [
+      ["🔄 随本幕/体位工具栏默认环境", "🔄随本幕"],
+      ["🪟 晨光纱帘白床明亮卧室（bright window, curtains, sunlit bedroom, white bedsheet）", "🪟白床"],
+      ["🌸 落樱浅滩水波·粉霞晴空焦散（shallow water, cherry blossoms, caustics, pink sky）", "🌸浅滩"],
+      ["🗑️ 日式城市阴暗小巷·垃圾箱旁（alley, backstreet, trash can, garbage bag）", "🗑️后巷"],
+      ["🪴 落地窗日光绿植 · 绒毛米色地毯木地板（furry beige rug, floor-to-ceiling window, potted plant）", "🪴绒毯"],
+    ];
+    for (const [fullKey, shortLbl] of envShort) {
+      const b = this.el(
+        "button",
+        `chip-btn${this.cfg.enable_background && this.cfg.env_preset === fullKey ? " active" : ""}`,
+        shortLbl
+      );
+      b.disabled = !this.cfg.enable_background;
+      b.addEventListener("click", () => {
+        this.cfg.env_preset = fullKey;
+        this.onCfgChanged();
+        this.renderRightModeView();
+      });
+      r2.appendChild(b);
+    }
+
+    this.elContextCtrlBox.append(r1, r2);
+  }
+
+  private buildFreeContextControls(): void {
+    const r1 = this.el("div", "ctrl-inline-row");
+    const btnFreeNsfw = this.el(
+      "button",
+      `chip-btn${this.cfg.free_action_nsfw ? " active" : ""}`,
+      "🔞 注入 R-18 与下半身解剖词条"
+    );
+    btnFreeNsfw.addEventListener("click", () => {
+      this.cfg.free_action_nsfw = !this.cfg.free_action_nsfw;
+      this.onCfgChanged();
+      this.renderRightModeView();
+    });
+
+    const btnFreeXray = this.el(
+      "button",
+      `chip-btn${this.cfg.free_action_nsfw && this.cfg.enable_uterus_xray ? " active" : ""}`,
+      "🔬 子宫透视"
+    );
+    btnFreeXray.disabled = !this.cfg.free_action_nsfw;
+    btnFreeXray.addEventListener("click", () => {
+      this.cfg.enable_uterus_xray = !this.cfg.enable_uterus_xray;
+      this.onCfgChanged();
+      this.renderRightModeView();
+    });
+
+    const btnTrans = this.el(
+      "button",
+      `chip-btn${this.cfg.pos_transparent_bg ? " active" : ""}`,
+      "🏁 透明底"
+    );
+    btnTrans.addEventListener("click", () => {
+      this.cfg.pos_transparent_bg = !this.cfg.pos_transparent_bg;
+      this.onCfgChanged();
+      this.renderRightModeView();
+    });
+    r1.append(btnFreeNsfw, btnFreeXray, btnTrans);
+    this.elContextCtrlBox.append(r1, this.buildPosSceneRow());
+  }
+
+  private buildPoseFilterControls(): void {
+    const searchRow = this.el("div", "pose-search-row");
+    const searchInp = this.el("input") as HTMLInputElement;
+    searchInp.type = "text";
+    searchInp.placeholder = "🔍 搜索体位编号或关键词 (如 P22 / 蛙式 / 骑乘)...";
+    searchInp.value = this.posSearchQuery;
+    searchInp.addEventListener("input", () => {
+      this.posSearchQuery = searchInp.value.trim();
+      this.renderPoseCards();
+    });
+
+    const btnCheckCat = this.el("button", "btn btn-xs", "☑️全选");
+    btnCheckCat.title = "勾选当前筛选下的全部体位以便批量连出";
+    btnCheckCat.addEventListener("click", () => {
+      for (const ch of this.getFilteredPositionChapters()) {
+        this.checkedPositionIds.add(ch.id);
+      }
+      this.renderPoseCards();
+    });
+
+    const btnClearChk = this.el("button", "btn btn-xs", "清空");
+    btnClearChk.addEventListener("click", () => {
+      this.checkedPositionIds.clear();
+      this.renderPoseCards();
+    });
+
+    this.elBatchCheckedBtn = this.el("button", "btn btn-xs btn-primary", "🚀 连出勾选");
+    this.elBatchCheckedBtn.addEventListener("click", () => this.runCheckedBatch());
+
+    searchRow.append(searchInp, btnCheckCat, btnClearChk, this.elBatchCheckedBtn);
+
+    const catScroll = this.el("div", "cat-pills-scroll");
+    const shortCatLabel = (c: string) =>
+      c === "全部体位 (All)" ? "全部 (51)" : c.split("·")[0]?.trim() || c;
+    for (const cat of POS_CATEGORIES) {
+      const b = this.el(
+        "button",
+        `chip-btn${this.activePosCategory === cat ? " active" : ""}`,
+        shortCatLabel(cat)
+      );
+      b.style.flexShrink = "0";
+      b.title = cat;
+      b.addEventListener("click", () => {
+        this.activePosCategory = cat;
+        this.buildPoseFilterControlsReset();
+        this.renderPoseCards();
+      });
+      catScroll.appendChild(b);
+    }
+
+    this.elPoseFilterBar.append(searchRow, catScroll);
+    this.updateBatchCheckedButton();
+  }
+
+  private buildPoseFilterControlsReset(): void {
+    this.elPoseFilterBar.innerHTML = "";
+    this.buildPoseFilterControls();
+  }
+
+  private buildMultiAngleFilterControls(): void {
+    const row = this.el("div", "pose-search-row");
+    row.appendChild(this.el("span", "insp-summary", "MA0 三视图设定表 + MA1~MA10 多机位日常立绘"));
+    const spacer = this.el("div");
+    spacer.style.flex = "1";
+    const btnAll = this.el("button", "btn btn-xs", "☑️全选");
+    btnAll.addEventListener("click", () => {
+      for (const ch of MULTI_ANGLE_CHAPTERS) this.checkedMultiAngleIds.add(ch.id);
+      this.renderPoseCards();
+    });
+    const btnClr = this.el("button", "btn btn-xs", "清空");
+    btnClr.addEventListener("click", () => {
+      this.checkedMultiAngleIds.clear();
+      this.renderPoseCards();
+    });
+    this.elBatchCheckedBtn = this.el("button", "btn btn-xs btn-primary", "🚀 连出勾选");
+    this.elBatchCheckedBtn.addEventListener("click", () => this.runCheckedBatch());
+    row.append(spacer, btnAll, btnClr, this.elBatchCheckedBtn);
+    this.elPoseFilterBar.appendChild(row);
+    this.updateBatchCheckedButton();
+  }
+
+  private getFilteredPositionChapters() {
+    const q = this.posSearchQuery.toLowerCase();
+    return ALL_POSITIONS_CHAPTERS.filter((ch) => {
+      const catOk =
+        this.activePosCategory === "全部体位 (All)" || ch.category === this.activePosCategory;
+      if (!catOk) return false;
+      if (!q) return true;
+      return ch.id.toLowerCase().includes(q) || ch.title.toLowerCase().includes(q);
+    });
+  }
+
+  private renderPoseCards(): void {
+    this.elPoseListWrap.innerHTML = "";
+    const isPos = this.actionMode === "positions";
+    const items = isPos ? this.getFilteredPositionChapters() : MULTI_ANGLE_CHAPTERS;
+    const checkedSet = isPos ? this.checkedPositionIds : this.checkedMultiAngleIds;
+
+    if (items.length === 0) {
+      this.elPoseListWrap.appendChild(
+        this.el("div", "vibe-note", "未找到匹配的动作词条，请尝试其他关键词或切换分类。")
+      );
+      this.updateBatchCheckedButton();
       return;
     }
 
-    const activeNow = this.getActivePreciseRefSlots().length > 0;
-    if (activeNow) {
-      if (hasChar) this.apiSettings.precise_ref_enabled = false;
-      if (wf === "style_plus_chara" && hasStyle) this.apiSettings.precise_style_enabled = false;
-      saveApiSettings(this.apiSettings);
-      this.syncPreciseRefDisplays();
-      this.updateCostHint();
-      this.setStatus("⏸️ 已快捷暂停精密参照");
-    } else {
-      if (hasChar) this.apiSettings.precise_ref_enabled = true;
-      if (wf === "style_plus_chara" && hasStyle) this.apiSettings.precise_style_enabled = true;
-      if (this.apiSettings.model !== MODEL_V4_5_FULL) {
-        this.setModel(MODEL_V4_5_FULL, true, true);
-        this.setStatus("🪪 已快捷恢复精密参照，并自动切换模型至 V4.5 Full");
-        return;
+    for (const ch of items) {
+      const card = this.el(
+        "div",
+        `pose-card${this.activeSceneId === ch.id ? " selected" : ""}`
+      );
+
+      const chk = this.el("input") as HTMLInputElement;
+      chk.type = "checkbox";
+      chk.checked = checkedSet.has(ch.id);
+      chk.addEventListener("click", (ev) => ev.stopPropagation());
+      chk.addEventListener("change", () => {
+        if (chk.checked) checkedSet.add(ch.id);
+        else checkedSet.delete(ch.id);
+        this.updateBatchCheckedButton();
+      });
+
+      const idBadge = this.el("span", "pose-id-badge", ch.id);
+      const { main, sub } = splitPoseTitle(ch.title);
+      const titleCol = this.el("div", "pose-title-col");
+      titleCol.appendChild(this.el("span", "pose-main-title", main));
+      if (sub) {
+        titleCol.appendChild(this.el("span", "pose-sub-title", sub));
       }
+
+      const rowActs = this.el("div", "pose-row-actions");
+      const btnRandRun = this.el("button", "btn btn-xs btn-icon", "🎲");
+      btnRandRun.title = "强制使用新随机 Seed 生成此动作";
+      btnRandRun.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this.selectScene(ch.id);
+        const count = this.apiSettings.batch_count || 1;
+        void this.runGenerationQueue(
+          Array.from({ length: count }, () => ({
+            sceneId: ch.id,
+            forceRandomSeed: true,
+          }))
+        );
+      });
+
+      const btnRun = this.el("button", "btn btn-xs btn-primary", "⚡生图");
+      btnRun.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this.selectScene(ch.id);
+        const count = this.apiSettings.batch_count || 1;
+        void this.runGenerationQueue(
+          Array.from({ length: count }, () => ({
+            sceneId: ch.id,
+          }))
+        );
+      });
+      rowActs.append(btnRandRun, btnRun);
+
+      card.addEventListener("click", () => {
+        this.selectScene(ch.id);
+      });
+
+      card.append(chk, idBadge, titleCol, rowActs);
+      this.elPoseListWrap.appendChild(card);
+    }
+
+    this.updateBatchCheckedButton();
+  }
+
+  private selectScene(sceneId: string): void {
+    this.activeSceneId = sceneId;
+    this.isManualPromptEdited = false;
+    for (const card of Array.from(this.elPoseListWrap.children)) {
+      const badge = card.querySelector(".pose-id-badge");
+      card.classList.toggle("selected", badge?.textContent === sceneId);
+    }
+    this.refreshSceneAndPrompt();
+  }
+
+  private updateBatchCheckedButton(): void {
+    if (!this.elBatchCheckedBtn) return;
+    const set =
+      this.actionMode === "positions" ? this.checkedPositionIds : this.checkedMultiAngleIds;
+    const n = set.size;
+    this.elBatchCheckedBtn.textContent = `🚀 连出勾选 (${n})`;
+    this.elBatchCheckedBtn.disabled = n === 0 || this.isGenerating;
+  }
+
+  private runCheckedBatch(): void {
+    const orderedIds =
+      this.actionMode === "positions"
+        ? ALL_POSITIONS_CHAPTERS.filter((c) => this.checkedPositionIds.has(c.id)).map((c) => c.id)
+        : MULTI_ANGLE_CHAPTERS.filter((c) => this.checkedMultiAngleIds.has(c.id)).map((c) => c.id);
+    if (orderedIds.length === 0) return;
+    const repeats = this.apiSettings.batch_count || 1;
+    const queue: Array<{ sceneId: string }> = [];
+    for (const id of orderedIds) {
+      for (let r = 0; r < repeats; r++) {
+        queue.push({ sceneId: id });
+      }
+    }
+    void this.runGenerationQueue(queue);
+  }
+
+  private buildFreeActionPanel(): HTMLElement {
+    const wrap = this.el("div", "free-action-panel");
+
+    const starterBox = this.el("div", "field-row");
+    starterBox.appendChild(this.el("label", "", "⚡ 一键填入起手动作模板（自动继承左侧人设+穿搭+画风+Vibe）"));
+    const chips = this.el("div", "chip-wrap");
+    for (const st of FREE_ACTION_STARTERS) {
+      const c = this.el("button", "chip-btn", st.label);
+      c.addEventListener("click", () => {
+        this.cfg.free_action_tags = st.tags;
+        this.cfg.free_action_prose = st.prose;
+        if (st.nsfw !== undefined) {
+          this.cfg.free_action_nsfw = st.nsfw;
+        }
+        this.isManualPromptEdited = false;
+        this.syncAllControls();
+        this.renderRightModeView();
+        this.refreshSceneAndPrompt();
+      });
+      chips.appendChild(c);
+    }
+    starterBox.appendChild(chips);
+
+    const tagRow = this.el("div", "field-row");
+    tagRow.appendChild(
+      this.el("label", "", "✍️ 自由动作与构图 Danbooru Tags（无需重复写角色/服装/画风）")
+    );
+    const tagArea = this.el("textarea") as HTMLTextAreaElement;
+    tagArea.placeholder =
+      "例如: cowboy shot, sitting on chair, crossed legs, holding teacup, gentle smile, looking at viewer";
+    tagArea.addEventListener("input", () => {
+      this.cfg.free_action_tags = tagArea.value;
+      this.isManualPromptEdited = false;
+      this.onCfgChanged();
+    });
+    this.syncHooks.push(() => {
+      if (tagArea.value !== this.cfg.free_action_tags) {
+        tagArea.value = this.cfg.free_action_tags;
+      }
+    });
+    tagRow.appendChild(tagArea);
+
+    const proseRow = this.el("div", "field-row");
+    proseRow.appendChild(this.el("label", "", "📖 可选 T5 自然语言动作补充句（留空自动生成简短角色场景句）"));
+    const proseInp = this.el("input") as HTMLInputElement;
+    proseInp.type = "text";
+    proseInp.placeholder = "例如: sitting gracefully while holding a warm teacup...";
+    proseInp.addEventListener("input", () => {
+      this.cfg.free_action_prose = proseInp.value;
+      this.isManualPromptEdited = false;
+      this.onCfgChanged();
+    });
+    this.syncHooks.push(() => {
+      if (proseInp.value !== this.cfg.free_action_prose) {
+        proseInp.value = this.cfg.free_action_prose;
+      }
+    });
+    proseRow.appendChild(proseInp);
+
+    const btnRunFree = this.el("button", "btn btn-generate-hero", "🚀 用当前自由手写动作生图");
+    btnRunFree.style.width = "100%";
+    btnRunFree.addEventListener("click", () => {
+      const count = this.apiSettings.batch_count || 1;
+      void this.runGenerationQueue(
+        Array.from({ length: count }, () => ({
+          sceneId: "FREE",
+          useManualPrompt: this.isManualPromptEdited,
+        }))
+      );
+    });
+
+    wrap.append(starterBox, tagRow, proseRow, btnRunFree);
+    return wrap;
+  }
+
+  // ===========================================================================
+  // FLOATING POPOVERS: SAVE PRESET / EXPRESSION / 3D CAMERA RADAR
+  // ===========================================================================
+  private closeAllPopovers(): void {
+    this.elMcpPopover?.classList.add("hidden");
+    this.elSavePresetPopover?.classList.add("hidden");
+    this.elExprPopover?.classList.add("hidden");
+    this.elCamPopover?.classList.add("hidden");
+  }
+
+  private buildMcpPopover(): HTMLElement {
+    const pop = this.el("div", "floating-popover hidden");
+    pop.style.width = "360px";
+    pop.addEventListener("click", (ev) => ev.stopPropagation());
+
+    const head = this.el("div", "popover-head");
+    head.appendChild(this.el("span", "", "🔌 MCP 实时控制与局域网/远程连接"));
+    const rightActs = this.el("div", "topbar-group");
+    this.elMcpPopSwitch = this.el("button", "switch-pill on", "已启用 ON");
+    this.elMcpPopSwitch.addEventListener("click", () => {
+      const next = !this.mcpBridge.isEnabled();
+      saveMcpBridgeEnabled(next);
+      this.mcpBridge.setEnabled(next);
+      this.syncMcpPill(this.mcpBridge.getStatus());
+    });
+    const btnClose = this.el("button", "btn btn-xs btn-icon", "✕");
+    btnClose.addEventListener("click", () => pop.classList.add("hidden"));
+    rightActs.append(this.elMcpPopSwitch, btnClose);
+    head.appendChild(rightActs);
+
+    this.elMcpPopStatusNote = this.el("div", "vibe-note", "");
+
+    const epRow = this.el("div", "field-row");
+    epRow.appendChild(
+      this.el("label", "", "MCP 服务地址（支持局域网 IP:17890 / ws:// / wss://，留空自动识别）")
+    );
+    this.elMcpEndpointInput = this.el("input") as HTMLInputElement;
+    this.elMcpEndpointInput.type = "text";
+    this.elMcpEndpointInput.placeholder = "留空自动 (http直开跟随当前IP，本地file默认127.0.0.1:17890)";
+    epRow.appendChild(this.elMcpEndpointInput);
+
+    const applyEndpoint = (val: string) => {
+      saveMcpBridgeEndpoint(val);
+      if (!this.mcpBridge.isEnabled()) {
+        saveMcpBridgeEnabled(true);
+        this.mcpBridge.setEnabled(true);
+      }
+      this.mcpBridge.setCustomEndpoint(val);
+      this.syncMcpPill(this.mcpBridge.getStatus());
+      const resolved = this.mcpBridge.getResolvedEndpoints();
+      this.setStatus(`🔌 MCP 目标地址已设为：${resolved.wsUrl}`);
+    };
+
+    this.elMcpEndpointInput.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") applyEndpoint(this.elMcpEndpointInput.value);
+    });
+
+    const btnRow = this.el("div", "topbar-group");
+    const btnApply = this.el("button", "btn btn-xs btn-primary", "💾 保存并重连");
+    btnApply.style.flex = "1";
+    btnApply.addEventListener("click", () => applyEndpoint(this.elMcpEndpointInput.value));
+
+    const btnAuto = this.el("button", "btn btn-xs", "↺ 恢复自动识别");
+    btnAuto.addEventListener("click", () => {
+      this.elMcpEndpointInput.value = "";
+      applyEndpoint("");
+    });
+    btnRow.append(btnApply, btnAuto);
+
+    const tip = this.el(
+      "div",
+      "vibe-note",
+      "提示：手机/平板或其他电脑可直接浏览器访问 http://<本机局域网IP>:17890 打开工作台并自动连上 MCP；若用本地 HTML 文件跨设备打开，在此填入电脑 IP:17890 即可。"
+    );
+
+    pop.append(head, this.elMcpPopStatusNote, epRow, btnRow, tip);
+    return pop;
+  }
+
+  private togglePopover(pop: HTMLElement, anchor: HTMLElement): void {
+    const wasHidden = pop.classList.contains("hidden");
+    this.closeAllPopovers();
+    if (!wasHidden) return;
+    pop.classList.remove("hidden");
+    const rect = anchor.getBoundingClientRect();
+    const popW = Math.min(420, window.innerWidth - 20);
+    const left = Math.max(10, Math.min(rect.left, window.innerWidth - popW - 10));
+    const top = Math.min(rect.bottom + 6, window.innerHeight - 360);
+    pop.style.left = `${left}px`;
+    pop.style.top = `${Math.max(54, top)}px`;
+  }
+
+  private buildSavePresetPopover(): HTMLElement {
+    const pop = this.el("div", "floating-popover hidden");
+    pop.style.width = "320px";
+    pop.addEventListener("click", (ev) => ev.stopPropagation());
+
+    const head = this.el("div", "popover-head");
+    head.appendChild(this.el("span", "", "💾 保存为自定义角色预设"));
+    const btnClose = this.el("button", "btn btn-xs btn-icon", "✕");
+    btnClose.addEventListener("click", () => pop.classList.add("hidden"));
+    head.appendChild(btnClose);
+
+    const row = this.el("div", "field-row");
+    row.appendChild(this.el("label", "", "预设名称（保存当前人设、体型、穿搭与画风配置）"));
+    this.elSavePresetInput = this.el("input") as HTMLInputElement;
+    this.elSavePresetInput.type = "text";
+    this.elSavePresetInput.placeholder = "输入预设名...";
+    row.appendChild(this.elSavePresetInput);
+
+    const doSave = () => {
+      const rawName = this.elSavePresetInput.value.trim();
+      if (!rawName) return;
+      const finalName = rawName.startsWith("⭐") ? rawName : `⭐ ${rawName}`;
+      unmarkPresetDeleted(finalName);
+      this.cfg.preset_name = finalName;
+      this.customPresets[finalName] = { ...this.cfg };
+      saveCustomPresets(this.customPresets);
+      saveActiveConfig(this.cfg);
+      this.populatePresetSelect();
+      pop.classList.add("hidden");
+      this.setStatus(`💾 已保存预设「${finalName}」`);
+    };
+
+    this.elSavePresetInput.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") doSave();
+    });
+
+    const btnConfirm = this.el("button", "btn btn-primary", "💾 确认保存");
+    btnConfirm.addEventListener("click", doSave);
+
+    pop.append(head, row, btnConfirm);
+    return pop;
+  }
+
+  private buildExpressionPopover(): HTMLElement {
+    const pop = this.el("div", "floating-popover hidden");
+    pop.addEventListener("click", (ev) => ev.stopPropagation());
+
+    const head = this.el("div", "popover-head");
+    head.appendChild(this.el("span", "", "😊 全局表情覆写与五官微调"));
+    const rightActs = this.el("div", "topbar-group");
+    const btnResetExpr = this.el("button", "btn btn-xs", "↺ 恢复默认");
+    btnResetExpr.addEventListener("click", () => {
+      this.cfg.expr_preset = "🔄 随本幕剧情默认（保留原幕微表情与熟睡/半醒节奏）";
+      this.cfg.expr_eye_state = "随表情预设默认";
+      this.cfg.expr_mouth_state = "随表情预设默认";
+      this.cfg.expr_brow_blush = "随表情预设默认";
+      this.cfg.expr_heart_eyes = false;
+      this.cfg.expr_empty_eyes = false;
+      this.cfg.expr_tears = false;
+      this.cfg.custom_expression_tags = "";
+      this.onCfgChanged();
+    });
+    const btnClose = this.el("button", "btn btn-xs btn-icon", "✕");
+    btnClose.addEventListener("click", () => pop.classList.add("hidden"));
+    rightActs.append(btnResetExpr, btnClose);
+    head.appendChild(rightActs);
+
+    // Quick Emotion Chips
+    const quickChips = this.el("div", "chip-wrap");
+    for (const [fullKey, info] of Object.entries(EXPRESSION_PRESETS)) {
+      const label = info.code === "auto" ? "🔄 随动作默认" : info.short || compactOptionText(fullKey, 14);
+      const b = this.el("button", "chip-btn", label);
+      b.title = fullKey;
+      b.addEventListener("click", () => {
+        this.cfg.expr_preset = fullKey;
+        this.onCfgChanged();
+      });
+      this.syncHooks.push(() => {
+        b.classList.toggle("active", this.cfg.expr_preset === fullKey);
+      });
+      quickChips.appendChild(b);
+    }
+
+    const detailGrid = this.el("div", "grid-2");
+    detailGrid.append(
+      this.bindCfgSelect("眼部覆写", "expr_eye_state", Object.keys(EXPRESSION_EYE_PRESETS)),
+      this.bindCfgSelect("嘴型覆写", "expr_mouth_state", Object.keys(EXPRESSION_MOUTH_PRESETS))
+    );
+
+    const blushRow = this.bindCfgSelect(
+      "眉眼红晕",
+      "expr_brow_blush",
+      Object.keys(EXPRESSION_BLUSH_PRESETS)
+    );
+
+    const pupilChips = this.el("div", "chip-wrap");
+    const pDefs: Array<[keyof CharacterConfig, string]> = [
+      ["expr_heart_eyes", "💖 爱心瞳"],
+      ["expr_empty_eyes", "🖤 空洞失神瞳"],
+      ["expr_tears", "😭 眼角带泪"],
+    ];
+    for (const [k, lbl] of pDefs) {
+      const c = this.el("button", "chip-btn", lbl);
+      c.addEventListener("click", () => {
+        (this.cfg[k] as unknown as boolean) = !this.cfg[k];
+        this.onCfgChanged();
+      });
+      this.syncHooks.push(() => {
+        c.classList.toggle("active", Boolean(this.cfg[k]));
+      });
+      pupilChips.appendChild(c);
+    }
+
+    pop.append(
+      head,
+      quickChips,
+      detailGrid,
+      blushRow,
+      pupilChips,
+      this.bindCfgText("附加表情 Tag", "custom_expression_tags", "如 tongue out, drooling...")
+    );
+    return pop;
+  }
+
+  private buildCameraPopover(): HTMLElement {
+    const pop = this.el("div", "floating-popover hidden");
+    pop.style.width = "436px";
+    pop.addEventListener("click", (ev) => ev.stopPropagation());
+
+    const head = this.el("div", "popover-head");
+    head.appendChild(this.el("span", "", "🧭 3D 机位球面雷达与景别覆写"));
+    const rightActs = this.el("div", "topbar-group");
+    const swCam = this.el("button", "switch-pill", "OFF");
+    swCam.addEventListener("click", () => {
+      this.cfg.cam_enable_override = !this.cfg.cam_enable_override;
+      this.onCfgChanged();
+    });
+    const btnResetCam = this.el("button", "btn btn-xs", "↺ 复位");
+    btnResetCam.addEventListener("click", () => {
+      this.cfg.cam_enable_override = false;
+      this.cfg.cam_azimuth = 0;
+      this.cfg.cam_elevation = 12;
+      this.cfg.cam_shot_preset = "随原幕景别";
+      this.cfg.cam_wide_lens = false;
+      this.cfg.cam_dutch_angle = false;
+      this.onCfgChanged();
+    });
+    const btnClose = this.el("button", "btn btn-xs btn-icon", "✕");
+    btnClose.addEventListener("click", () => pop.classList.add("hidden"));
+    rightActs.append(swCam, btnResetCam, btnClose);
+    head.appendChild(rightActs);
+
+    // Quick Camera Angle Pills
+    const quickWrap = this.el("div", "chip-wrap");
+    for (const [label, az, el, shotOpt, wideOpt] of CAMERA_QUICK_PRESETS) {
+      const c = this.el("button", "chip-btn", label);
+      c.addEventListener("click", () => {
+        this.cfg.cam_enable_override = true;
+        this.cfg.cam_azimuth = az;
+        this.cfg.cam_elevation = el;
+        if (shotOpt) {
+          const foundShot = Object.entries(CAMERA_SHOT_PRESETS).find(([, code]) => code === shotOpt);
+          if (foundShot) this.cfg.cam_shot_preset = foundShot[0];
+        }
+        this.cfg.cam_wide_lens = wideOpt;
+        this.onCfgChanged();
+      });
+      quickWrap.appendChild(c);
+    }
+
+    const radarWrap = this.el("div", "radar-canvas-wrap");
+    const canvas = document.createElement("canvas");
+    radarWrap.appendChild(canvas);
+    this.radarWidget = new CameraRadarCanvas(
+      canvas,
+      (next) => {
+        this.cfg.cam_enable_override = next.enabled;
+        this.cfg.cam_azimuth = next.azimuth;
+        this.cfg.cam_elevation = next.elevation;
+        this.onCfgChanged();
+      },
+      () => {
+        this.cfg.cam_enable_override = false;
+        this.cfg.cam_azimuth = 0;
+        this.cfg.cam_elevation = 12;
+        this.onCfgChanged();
+      }
+    );
+
+    const shotGrid = this.el("div", "grid-2");
+    shotGrid.append(
+      this.bindCfgSelect("景别远近", "cam_shot_preset", Object.keys(CAMERA_SHOT_PRESETS), () => {
+        this.cfg.cam_enable_override = true;
+      }),
+      this.bindCfgSelect("视线朝向", "cam_gaze_preset", Object.keys(CAMERA_GAZE_PRESETS), () => {
+        this.cfg.cam_enable_override = true;
+      })
+    );
+
+    const lensChips = this.el("div", "chip-wrap");
+    const btnWide = this.el("button", "chip-btn", "🔭 广角透视夸张 (Wide-Angle)");
+    btnWide.addEventListener("click", () => {
+      this.cfg.cam_enable_override = true;
+      this.cfg.cam_wide_lens = !this.cfg.cam_wide_lens;
+      this.onCfgChanged();
+    });
+    const btnDutch = this.el("button", "chip-btn", "📐 倾斜构图 (Dutch Angle)");
+    btnDutch.addEventListener("click", () => {
+      this.cfg.cam_enable_override = true;
+      this.cfg.cam_dutch_angle = !this.cfg.cam_dutch_angle;
+      this.onCfgChanged();
+    });
+    lensChips.append(btnWide, btnDutch);
+
+    this.syncHooks.push(() => {
+      swCam.classList.toggle("on", this.cfg.cam_enable_override);
+      swCam.textContent = this.cfg.cam_enable_override ? "覆写ON" : "OFF";
+      btnWide.classList.toggle("active", this.cfg.cam_wide_lens);
+      btnDutch.classList.toggle("active", this.cfg.cam_dutch_angle);
+      this.radarWidget?.setState({
+        enabled: this.cfg.cam_enable_override,
+        azimuth: this.cfg.cam_azimuth,
+        elevation: this.cfg.cam_elevation,
+      });
+    });
+
+    pop.append(head, quickWrap, radarWrap, shotGrid, lensChips);
+    return pop;
+  }
+
+  // ===========================================================================
+  // FULLSCREEN CAROUSEL LIGHTBOX (Mutually Exclusive Modes + Auto-2x Invariant)
+  // ===========================================================================
+  private buildLightbox(): HTMLElement {
+    const overlay = this.el("div", "lightbox-overlay hidden");
+    const top = this.el("div", "lightbox-topbar");
+    this.elLightboxMeta = this.el("div", "stage-meta", "");
+
+    const ctrls = this.el("div", "topbar-group");
+    const modeSeg = this.el("div", "seg-group");
+    const cModes: Array<[CarouselMode, string]> = [
+      ["manual", "✋ 手动翻页"],
+      ["follow_latest", "⚡ 跟随最新出图"],
+      ["timed", "⏱️ 定时轮播"],
+    ];
+    this.elLightboxModeBtns.clear();
+    for (const [cm, lbl] of cModes) {
+      const b = this.el("button", "seg-btn", lbl);
+      b.addEventListener("click", () => this.setCarouselMode(cm));
+      this.elLightboxModeBtns.set(cm, b);
+      modeSeg.appendChild(b);
+    }
+
+    const intSel = this.el("select", "batch-select");
+    for (const sec of [2, 3, 4, 6, 8]) {
+      const o = this.el("option", "", `${sec}秒/张`);
+      o.value = String(sec);
+      intSel.appendChild(o);
+    }
+    intSel.value = String(this.apiSettings.carousel_interval_sec || 4);
+    intSel.addEventListener("change", () => {
+      this.apiSettings.carousel_interval_sec = parseInt(intSel.value, 10) || 4;
       saveApiSettings(this.apiSettings);
-      this.syncPreciseRefDisplays();
-      this.updateCostHint();
-      this.setStatus("✅ 已快捷恢复启用精密参照");
+      if (this.carouselMode === "timed") this.restartCarouselTimer();
+    });
+
+    const btnLbUpscale = this.el("button", "btn btn-xs btn-primary", "✨ 2x放大");
+    btnLbUpscale.addEventListener("click", () => {
+      this.selectedGalleryIdx = this.lightboxIdx;
+      void this.upscaleSelectedGalleryImage();
+    });
+
+    const btnLbDl = this.el("button", "btn btn-xs", "💾 下载");
+    btnLbDl.addEventListener("click", () => {
+      const rec = this.gallery[this.lightboxIdx];
+      if (rec) triggerBytesDownload(rec.bytes, rec.filename);
+    });
+
+    const btnLbClose = this.el("button", "btn btn-xs btn-danger", "✕ 退出全屏 (Esc)");
+    btnLbClose.addEventListener("click", () => this.closeLightbox());
+
+    ctrls.append(modeSeg, intSel, btnLbUpscale, btnLbDl, btnLbClose);
+    top.append(this.elLightboxMeta, ctrls);
+
+    const stage = this.el("div", "lightbox-stage");
+    const btnPrev = this.el("button", "lightbox-nav-btn prev", "‹");
+    btnPrev.addEventListener("click", () => this.stepLightbox(-1, true));
+    this.elLightboxImg = document.createElement("img");
+    const btnNext = this.el("button", "lightbox-nav-btn next", "›");
+    btnNext.addEventListener("click", () => this.stepLightbox(1, true));
+    stage.append(btnPrev, this.elLightboxImg, btnNext);
+
+    overlay.append(top, stage);
+    return overlay;
+  }
+
+  private setCarouselMode(mode: CarouselMode): void {
+    this.carouselMode = mode;
+    if (mode === "follow_latest" || mode === "timed") {
+      this.apiSettings.carousel_auto_mode = mode;
+      saveApiSettings(this.apiSettings);
+    }
+    for (const [m, b] of this.elLightboxModeBtns.entries()) {
+      b.classList.toggle("active", m === mode);
+    }
+    this.restartCarouselTimer();
+  }
+
+  private restartCarouselTimer(): void {
+    if (this.carouselTimer !== null) {
+      window.clearInterval(this.carouselTimer);
+      this.carouselTimer = null;
+    }
+    if (this.lightboxOpen && this.carouselMode === "timed" && this.gallery.length > 1) {
+      const ms = (this.apiSettings.carousel_interval_sec || 4) * 1000;
+      this.carouselTimer = window.setInterval(() => {
+        this.stepLightbox(1, false);
+      }, ms);
     }
   }
 
-  private setModel(nextModel: NaiModelId, adjustDefaultScale = true, silentStatus = false): void {
-    const prevModel = this.apiSettings.model;
+  private openLightbox(idx: number, autoMode?: CarouselMode): void {
+    if (this.gallery.length === 0) return;
+    this.lightboxOpen = true;
+    this.lightboxIdx = Math.max(0, Math.min(this.gallery.length - 1, idx));
+    this.elLightbox.classList.remove("hidden");
+    this.setCarouselMode(autoMode ?? this.carouselMode);
+    this.renderLightboxFrame();
+  }
+
+  private closeLightbox(): void {
+    this.lightboxOpen = false;
+    this.elLightbox.classList.add("hidden");
+    if (this.carouselTimer !== null) {
+      window.clearInterval(this.carouselTimer);
+      this.carouselTimer = null;
+    }
+  }
+
+  private stepLightbox(delta: number, isManualUserClick: boolean): void {
+    if (this.gallery.length === 0) return;
+    if (isManualUserClick && this.carouselMode !== "manual") {
+      this.setCarouselMode("manual");
+    }
+    this.lightboxIdx = (this.lightboxIdx + delta + this.gallery.length) % this.gallery.length;
+    this.renderLightboxFrame();
+  }
+
+  private renderLightboxFrame(): void {
+    if (!this.lightboxOpen || this.gallery.length === 0) return;
+    const rec = this.gallery[this.lightboxIdx];
+    if (!rec) return;
+    this.elLightboxImg.src = rec.objectUrl;
+    this.elLightboxMeta.textContent = `[${this.lightboxIdx + 1}/${this.gallery.length}] ${rec.scene_id} · ${rec.width}×${rec.height}${rec.is_upscaled ? " (2x HD)" : ""} · Seed ${rec.seed}`;
+  }
+
+  // ===========================================================================
+  // STATE SYNCHRONIZATION & PROMPT ENGINE REFRESH
+  // ===========================================================================
+  private onCfgChanged(): void {
+    this.isManualPromptEdited = false;
+    saveActiveConfig(this.cfg);
+    this.syncAllControls();
+    this.refreshSceneAndPrompt();
+  }
+
+  private syncAllControls(): void {
+    for (const fn of this.syncHooks) fn();
+    this.syncCardSummariesAndSwitches();
+    this.syncApiControls();
+    this.syncVibeUI();
+    this.syncOverrideTriggers();
+    this.syncStageToolbar();
+    this.syncMountButton();
+    this.updateQuotaPill();
+  }
+
+  private syncCardSummariesAndSwitches(): void {
+    const idOn = Boolean(this.cfg.enable_identity);
+    this.elIdentityCard.classList.toggle("muted", !idOn);
+    this.elIdentitySwitch.classList.toggle("on", idOn);
+    this.elIdentitySwitch.textContent = idOn ? "ON" : "OFF";
+    this.elIdentitySummary.textContent = idOn
+      ? `${this.cfg.eng_name || this.cfg.char_tag}`
+      : "已关闭人物词";
+
+    const outOn = Boolean(this.cfg.enable_outfit);
+    this.elOutfitCard.classList.toggle("muted", !outOn);
+    this.elOutfitSwitch.classList.toggle("on", outOn);
+    this.elOutfitSwitch.textContent = outOn ? "ON" : "OFF";
+    this.elOutfitSummary.textContent = outOn
+      ? compactOptionText(this.cfg.outfit_preset, 16)
+      : "不加服装词";
+
+    const anatOn = Boolean(this.cfg.enable_anatomy);
+    this.elAnatomyCard.classList.toggle("muted", !anatOn);
+    this.elAnatomySwitch.classList.toggle("on", anatOn);
+    this.elAnatomySwitch.textContent = anatOn ? "ON" : "OFF";
+    this.elAnatomySummary.textContent = anatOn
+      ? `${this.cfg.morph_preset.slice(0, 8)} · ${this.cfg.pigment_preset.slice(0, 6)}`
+      : "基础默认";
+
+    const styleOn = Boolean(this.cfg.enable_style);
+    const isV45 = this.apiSettings.model === MODEL_V4_5_FULL;
+    this.elStyleCard.classList.toggle("muted", !styleOn);
+    this.elStyleCardTitle.textContent = isV45 ? "🎨 画风 · 光影 · Vibe" : "🎨 画风与光影";
+    const mobileLeftBtn = this.elMobileBtns.get("left");
+    if (mobileLeftBtn) {
+      mobileLeftBtn.textContent = isV45 ? "👤 人设·画风·Vibe" : "👤 人设·画风";
+    }
+    this.elStyleSwitch.classList.toggle("on", styleOn);
+    this.elStyleSwitch.textContent = styleOn ? "ON" : "OFF";
+    const activeVibeCount = isV45 ? this.getActiveVibeSlots().length : 0;
+    this.elStyleSummary.textContent =
+      activeVibeCount > 0 ? `+${activeVibeCount}槽Vibe` : compactOptionText(this.cfg.style_preset, 14);
+  }
+
+  private syncApiControls(): void {
+    const m = this.apiSettings.model;
+    for (const [mId, b] of this.elModelBtns.entries()) {
+      b.classList.toggle("active", mId === m);
+    }
+    this.elCanvasSelect.value = this.apiSettings.canvas_preset;
+    this.elSeedInput.value = String(this.apiSettings.seed);
+    this.elBatchSelect.value = String(this.apiSettings.batch_count || 1);
+
+    const isV5Med = m === MODEL_V5_FULL_MEDIUM;
+    const effSteps = isV5Med ? 14 : this.apiSettings.steps;
+    this.elStepsRange.value = String(effSteps);
+    this.elStepsNum.value = String(effSteps);
+    this.elStepsRange.disabled = isV5Med;
+    this.elStepsNum.disabled = isV5Med;
+    this.elStepsHint.textContent = isV5Med
+      ? "Steps: 14 (V5 Medium 固定蒸馏步数)"
+      : m === MODEL_V4_5_FULL
+        ? `Steps: ${effSteps}${effSteps <= 28 ? " (Opus 真无限 0 点)" : " (>28步计费)"}`
+        : `Steps: ${effSteps}${effSteps <= 28 ? " (Opus 走恢复池)" : " (>28步计费)"}`;
+
+    this.elScaleRange.value = String(this.apiSettings.scale);
+    this.elScaleNum.value = this.apiSettings.scale.toFixed(1);
+    this.elRescaleRange.value = String(this.apiSettings.cfg_rescale);
+    this.elRescaleNum.value = this.apiSettings.cfg_rescale.toFixed(2);
+    this.elRescaleRange.disabled = isV5Med;
+    this.elRescaleNum.disabled = isV5Med;
+
+    this.elUcModeSelect.value = isV5Med ? "heavy" : this.apiSettings.uc_preset_mode;
+    this.elUcModeSelect.disabled = isV5Med;
+
+    this.elApiSummary.textContent = this.apiSettings.api_token.trim()
+      ? `${effSteps}步 · UC:${this.elUcModeSelect.value}`
+      : "⚠️ 待填Token";
+  }
+
+  private syncOverrideTriggers(): void {
+    const exprActive = isExpressionOverrideActive(this.cfg);
+    const exprShort = describeExpressionShort(this.cfg);
+    this.elExprTrigger.classList.toggle("active", exprActive);
+    this.elExprTrigger.innerHTML = "";
+    this.elExprTrigger.append(
+      this.el("span", "", `😊 表情: ${exprActive ? exprShort : "随动作默认"}`),
+      this.el("span", "", "▾")
+    );
+
+    const camActive = Boolean(this.cfg.cam_enable_override);
+    const shotCode = CAMERA_SHOT_PRESETS[this.cfg.cam_shot_preset] ?? "auto";
+    const camShort = camActive
+      ? describeCameraShort(
+          true,
+          this.cfg.cam_azimuth,
+          this.cfg.cam_elevation,
+          shotCode,
+          this.cfg.cam_wide_lens,
+          this.cfg.cam_dutch_angle
+        )
+      : "随动作默认";
+    this.elCamTrigger.classList.toggle("active", camActive);
+    this.elCamTrigger.innerHTML = "";
+    this.elCamTrigger.append(
+      this.el("span", "", `🧭 机位: ${camShort}`),
+      this.el("span", "", "▾")
+    );
+  }
+
+  private syncStageToolbar(): void {
+    this.elAutoUpscaleBtn.classList.toggle("active", Boolean(this.apiSettings.auto_upscale_replace));
+    this.elAutoCarouselBtn.classList.toggle(
+      "active",
+      Boolean(this.apiSettings.auto_fullscreen_carousel)
+    );
+    const rec = this.gallery[this.selectedGalleryIdx];
+    this.elUpscaleBtn.disabled = !rec || Boolean(rec.is_upscaled) || this.isGenerating;
+  }
+
+  private syncMountButton(): void {
+    const name = getMountedDirName();
+    if (name) {
+      this.elMountBtn.textContent = `📂 ${name} ✓`;
+      this.elMountBtn.classList.add("btn-success");
+    } else {
+      this.elMountBtn.textContent = "📂 挂载目录";
+      this.elMountBtn.classList.remove("btn-success");
+    }
+  }
+
+  private setModel(nextModel: NaiModelId): void {
+    const prev = this.apiSettings.model;
     this.apiSettings.model = nextModel;
-    if (adjustDefaultScale && prevModel !== nextModel) {
+    if (prev !== nextModel) {
       const curScale = Number(this.apiSettings.scale.toFixed(1));
-      if (nextModel === MODEL_V4_5_FULL && curScale === 6.0) {
+      if ((nextModel === MODEL_V4_5_FULL || nextModel === MODEL_V5_FULL) && curScale === 6.0) {
         this.apiSettings.scale = 7.0;
       } else if (nextModel === MODEL_V5_FULL_MEDIUM && curScale === 7.0) {
         this.apiSettings.scale = 6.0;
       }
     }
     saveApiSettings(this.apiSettings);
-    this.syncApiInputs();
-    this.syncPreciseRefDisplays();
-    this.updateCostHint();
-    if (!silentStatus) {
+    this.syncAllControls();
+    this.refreshSceneAndPrompt();
+  }
+
+  // ===========================================================================
+  // VIBE TRANSFER MANAGEMENT
+  // ===========================================================================
+  private getActiveVibeSlots(): VibeTransferSlotInput[] {
+    return buildActiveVibeSlotsForModel(
+      this.vibeItems,
+      this.apiSettings.model,
+      this.apiSettings.vibe_transfer_enabled
+    );
+  }
+
+  private syncVibeUI(): void {
+    const isV45 = this.apiSettings.model === MODEL_V4_5_FULL;
+    if (this.elVibePanel) {
+      this.elVibePanel.style.display = isV45 ? "flex" : "none";
+    }
+    if (!isV45) {
+      this.syncCardSummariesAndSwitches();
+      this.updateQuotaPill();
+      return;
+    }
+
+    const masterOn = Boolean(this.apiSettings.vibe_transfer_enabled);
+    this.elVibeSwitch.classList.toggle("on", masterOn);
+    this.elVibeSwitch.textContent = masterOn ? "ON" : "暂停";
+    this.elVibeNormChk.checked = Boolean(this.apiSettings.vibe_normalize_strength);
+    this.elVibeNormWrap.style.display = this.vibeItems.length >= 2 ? "flex" : "none";
+
+    this.elVibeSlotList.innerHTML = "";
+    for (const item of this.vibeItems) {
+      const resolved = resolveVibeEncodingForModel(item, this.apiSettings.model);
+      const row = this.el("div", `vibe-slot-item${!item.enabled || !masterOn ? " off" : ""}`);
+
+      const thumb = document.createElement("img");
+      thumb.className = "vibe-thumb";
+      if (item.thumbnailDataUrl) {
+        thumb.src = item.thumbnailDataUrl;
+      } else if (item.rawImageBase64) {
+        thumb.src = `data:image/png;base64,${item.rawImageBase64}`;
+      }
+
+      const main = this.el("div", "vibe-slot-main");
+      const titleLbl = this.el(
+        "div",
+        "vibe-slot-name",
+        `${item.name} · IE ${(resolved?.informationExtracted ?? item.informationExtracted).toFixed(2)}`
+      );
+      const sRow = this.el("div", "vibe-slot-slider");
+      const sRange = this.el("input") as HTMLInputElement;
+      sRange.type = "range";
+      sRange.min = "-1";
+      sRange.max = "1";
+      sRange.step = "0.01";
+      sRange.value = String(item.strength);
+      const sNum = this.el("input") as HTMLInputElement;
+      sNum.type = "number";
+      sNum.min = "-1";
+      sNum.max = "1";
+      sNum.step = "0.01";
+      sNum.value = item.strength.toFixed(2);
+
+      const updateStrength = (rawVal: string) => {
+        const clean = Math.max(-1, Math.min(1, Number((parseFloat(rawVal) || 0).toFixed(2))));
+        item.strength = clean;
+        sRange.value = String(clean);
+        sNum.value = clean.toFixed(2);
+        void saveStoredVibeItems(this.vibeItems);
+      };
+      sRange.addEventListener("input", () => updateStrength(sRange.value));
+      sNum.addEventListener("change", () => updateStrength(sNum.value));
+      sRow.append(sRange, sNum);
+      main.append(titleLbl, sRow);
+
+      const rightBox = this.el("div", "topbar-group");
+      const chk = this.el("input") as HTMLInputElement;
+      chk.type = "checkbox";
+      chk.checked = item.enabled;
+      chk.title = "启用/禁用此 Vibe 槽位";
+      chk.addEventListener("change", () => {
+        item.enabled = chk.checked;
+        void saveStoredVibeItems(this.vibeItems);
+        this.syncVibeUI();
+        this.refreshSceneAndPrompt();
+      });
+      const btnDel = this.el("button", "btn btn-xs btn-icon", "✕");
+      btnDel.addEventListener("click", () => {
+        this.vibeItems = this.vibeItems.filter((x) => x.id !== item.id);
+        void saveStoredVibeItems(this.vibeItems);
+        this.syncVibeUI();
+        this.refreshSceneAndPrompt();
+      });
+      rightBox.append(chk, btnDel);
+
+      row.append(thumb, main, rightBox);
+      this.elVibeSlotList.appendChild(row);
+    }
+
+    const activeSlots = this.getActiveVibeSlots();
+    this.elVibeStatusNote.className = "vibe-note";
+    this.elVibeStatusNote.innerHTML = "";
+    if (this.vibeItems.length === 0) {
+      this.elVibeStatusNote.textContent =
+        "提示：可直接拖拽 .naiv4vibebundle / .naiv4vibe 或带 Vibe 元数据的 NAI 原图到此处。";
+    } else if (!masterOn) {
+      this.elVibeStatusNote.textContent = `⏸️ Vibe 已暂挂（${this.vibeItems.length} 个槽位保留中）。`;
+    } else if (
+      activeSlots.length === 0 &&
+      this.apiSettings.model !== MODEL_V4_5_FULL &&
+      this.vibeItems.some((it) => Boolean(it.encodings["v4-5full"]))
+    ) {
+      this.elVibeStatusNote.classList.add("warn");
+      const warnTxt = this.el(
+        "span",
+        "",
+        `⚠️ 当前载入的 ${this.vibeItems.length} 个槽位为 V4.5 Vibe 编码，需在 V4.5 Full 下生效：`
+      );
+      const btnSw = this.el("button", "btn btn-xs btn-primary", "切至 V4.5 Full");
+      btnSw.style.marginLeft = "5px";
+      btnSw.addEventListener("click", () => this.setModel(MODEL_V4_5_FULL));
+      this.elVibeStatusNote.append(warnTxt, btnSw);
+    } else {
+      const safeLimit = computeSafePosTokenLimit({
+        isV45: this.apiSettings.model === MODEL_V4_5_FULL,
+        activeVibeCount: activeSlots.length,
+      });
+      this.elVibeStatusNote.textContent = `✅ 已激活 ${activeSlots.length} 槽 Vibe · 采样器自动联动 DPM++ 2M · 正向安全上限 ${safeLimit} tok`;
+    }
+
+    this.syncCardSummariesAndSwitches();
+    this.updateQuotaPill();
+  }
+
+  private async handleVibeFilesImport(files: FileList | File[], append: boolean): Promise<void> {
+    try {
+      const fileArr = Array.from(files);
+      const nextItems: StoredVibeItem[] = [];
+      const unencodedImages: Array<{ name: string; bytes: Uint8Array }> = [];
+      const warnings: string[] = [];
+
+      for (const f of fileArr) {
+        const bytes = new Uint8Array(await f.arrayBuffer());
+        const isRaster = /\.(png|webp|jpe?g)$/i.test(f.name);
+        try {
+          const items = parseVibeFileBytes(bytes, f.name);
+          for (const it of items) {
+            nextItems.push(await compactVibeThumbnailInBrowser(it));
+          }
+        } catch (err) {
+          if (isRaster) {
+            unencodedImages.push({ name: f.name, bytes });
+          } else {
+            warnings.push(err instanceof Error ? err.message : String(err));
+          }
+        }
+      }
+
+      // Online encode fallback if user dropped plain images without embedded Vibe vectors
+      if (unencodedImages.length > 0) {
+        if (!this.apiSettings.api_token.trim()) {
+          warnings.push(
+            "普通图片无内置 Vibe 编码，需先填写 API Token 才能在线编码（或直接导入 .naiv4vibebundle）"
+          );
+        } else {
+          for (const rawImg of unencodedImages) {
+            this.setStatus(`⏳ 正在为图片「${rawImg.name}」请求在线 Vibe 编码 (2 Anlas)...`);
+            const enc = await encodeVibeImageNai({
+              apiToken: this.apiSettings.api_token,
+              imageBytes: rawImg.bytes,
+              informationExtracted: 1.0,
+              model: MODEL_V4_5_FULL,
+            });
+            const rawB64 = uint8ArrayToBase64(enc.preparedPngBytes);
+            const rawItem: StoredVibeItem = {
+              id: `vibe_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              name: rawImg.name.replace(/\.[^.]+$/, ""),
+              enabled: true,
+              strength: 0.4,
+              selectedModelKey: enc.modelKey,
+              selectedHashKey: "ie_1.00",
+              informationExtracted: enc.informationExtracted,
+              encodings: {
+                [enc.modelKey]: [
+                  {
+                    hashKey: "ie_1.00",
+                    encoding: enc.encodingBase64,
+                    informationExtracted: enc.informationExtracted,
+                  },
+                ],
+              },
+              rawImageBase64: rawB64,
+              createdAt: Date.now(),
+            };
+            nextItems.push(await compactVibeThumbnailInBrowser(rawItem));
+          }
+        }
+      }
+
+      if (nextItems.length === 0) {
+        if (warnings.length > 0) {
+          this.setStatus(`⚠️ ${warnings.join("；")}`, true);
+        }
+        return;
+      }
+
+      this.vibeItems = append
+        ? [...this.vibeItems, ...nextItems].slice(0, MAX_VIBE_SLOTS)
+        : nextItems.slice(0, MAX_VIBE_SLOTS);
+      this.apiSettings.vibe_transfer_enabled = true;
+      if (
+        this.apiSettings.model !== MODEL_V4_5_FULL &&
+        this.vibeItems.some((it) => Boolean(it.encodings["v4-5full"]))
+      ) {
+        this.apiSettings.model = MODEL_V4_5_FULL;
+      }
+      saveApiSettings(this.apiSettings);
+      await saveStoredVibeItems(this.vibeItems);
+      this.syncAllControls();
+      this.refreshSceneAndPrompt();
+      this.setStatus(`🧬 已载入 ${this.vibeItems.length} 个 Vibe 槽位（默认启用 DPM++ 2M）`);
+    } catch (err) {
       this.setStatus(
-        nextModel === MODEL_V4_5_FULL
-          ? `🪪 已切换至 NovelAI Diffusion V4.5 Full (Steps=${this.apiSettings.steps}, Guidance=${this.apiSettings.scale})`
-          : `⚡ 已切换至 NovelAI Diffusion V5 Full Medium (固定 14 步, Guidance=${this.apiSettings.scale})`
+        `❌ 导入 Vibe 失败：${err instanceof Error ? err.message : String(err)}`,
+        true
       );
     }
   }
 
-  private getActivePreciseRefSlots(): PreciseRefSlotInput[] {
-    if (this.apiSettings.model !== MODEL_V4_5_FULL) return [];
-    const wf = this.apiSettings.precise_ref_workflow;
-    const out: PreciseRefSlotInput[] = [];
+  // ===========================================================================
+  // PROMPT COMPUTATION & LIVE TOKEN GUARD
+  // ===========================================================================
+  private refreshSceneAndPrompt(): void {
+    const activeVibes = this.getActiveVibeSlots();
+    const safeLimit = computeSafePosTokenLimit({
+      isV45: this.apiSettings.model === MODEL_V4_5_FULL,
+      activeVibeCount: activeVibes.length,
+    });
+    this.cfg.pos_token_limit = safeLimit;
 
-    const hasChar = Boolean(
-      this.apiSettings.precise_ref_enabled &&
-        this.preciseRef &&
-        this.preciseRef.preparedPngBytes.length > 0
-    );
-    const hasStyle = Boolean(
-      this.apiSettings.precise_style_enabled &&
-        this.preciseStyleRef &&
-        this.preciseStyleRef.preparedPngBytes.length > 0
-    );
+    const targetSceneId = this.actionMode === "free" ? "FREE" : this.activeSceneId;
+    this.currentSceneItems = generateScenePrompts(targetSceneId, this.cfg);
+    const first = this.currentSceneItems[0] ?? {
+      subTitle: "【空场景】",
+      canvas: "竖图 832x1216",
+      prompt: "",
+    };
 
-    if (wf === "chara_only") {
-      if (hasChar && this.preciseRef) {
-        out.push({
-          mode: "character",
-          pngBytes: this.preciseRef.preparedPngBytes,
-          strength: this.apiSettings.precise_ref_strength,
-          fidelity: this.apiSettings.precise_ref_fidelity,
-        });
-      }
-    } else if (wf === "single_char_and_style") {
-      if (hasChar && this.preciseRef) {
-        out.push({
-          mode: "character&style",
-          pngBytes: this.preciseRef.preparedPngBytes,
-          strength: this.apiSettings.precise_ref_strength,
-          fidelity: this.apiSettings.precise_ref_fidelity,
-        });
-      }
-    } else {
-      // "style_plus_chara"
-      if (hasChar && this.preciseRef) {
-        out.push({
-          mode: "character",
-          pngBytes: this.preciseRef.preparedPngBytes,
-          strength: this.apiSettings.precise_ref_strength,
-          fidelity: this.apiSettings.precise_ref_fidelity,
-        });
-      }
-      if (hasStyle && this.preciseStyleRef) {
-        out.push({
-          mode: "style",
-          pngBytes: this.preciseStyleRef.preparedPngBytes,
-          strength: this.apiSettings.precise_style_strength,
-          fidelity: this.apiSettings.precise_style_fidelity,
-        });
-      }
+    this.elPromptSceneLbl.textContent = first.subTitle.replace(/^【|】$/g, "");
+
+    if (!this.isManualPromptEdited) {
+      this.elManualLockPill.style.display = "none";
+      const { posPrompt, negPrompt } = splitPromptPosAndNeg(first.prompt);
+      this.elPosTextarea.value = posPrompt;
+      this.elNegTextarea.value = negPrompt;
     }
-    return out;
+
+    this.updateTokenBadgeFromBoxes();
+    if (this.gallery.length === 0) {
+      this.renderHeroViewport();
+    }
   }
 
-  private getActiveModelShortLabel(): string {
-    if (this.apiSettings.model === MODEL_V4_5_FULL) {
-      const slots = this.getActivePreciseRefSlots();
-      if (slots.length === 2) return "V4.5 Full + Style+Chara双参照";
-      if (slots.length === 1) {
-        const m = slots[0].mode;
-        if (m === "character&style") return "V4.5 Full + Chara&Style参照";
-        if (m === "style") return "V4.5 Full + Style参照";
-        return "V4.5 Full + Chara参照";
-      }
-      return "V4.5 Full";
+  private updateTokenBadgeFromBoxes(): void {
+    const activeVibes = this.getActiveVibeSlots();
+    const safeLimit = computeSafePosTokenLimit({
+      isV45: this.apiSettings.model === MODEL_V4_5_FULL,
+      activeVibeCount: activeVibes.length,
+    });
+    const posStr = this.elPosTextarea.value.trim();
+    const sceneNeg = this.elNegTextarea.value.trim();
+    const counts = countSeparatedT5Tokens({
+      posPrompt: posStr,
+      sceneNegPrompt: sceneNeg,
+      ucPresetMode:
+        this.apiSettings.model === MODEL_V5_FULL_MEDIUM
+          ? "heavy"
+          : this.apiSettings.uc_preset_mode,
+      extraUc: this.apiSettings.extra_uc,
+      appendQuality: this.apiSettings.append_v5_quality,
+    });
+    const isMed = this.apiSettings.model === MODEL_V5_FULL_MEDIUM;
+    const usedPos = isMed ? counts.posTokens + counts.sceneNegTokens : counts.posTokens;
+    const limit = isMed ? 512 : safeLimit;
+
+    const vibeTag =
+      this.apiSettings.model === MODEL_V4_5_FULL && activeVibes.length > 0
+        ? ` · 含${activeVibes.length}Vibe`
+        : "";
+    this.elTokenPill.textContent = isMed
+      ? `内联 ${usedPos} / 512 tok`
+      : `正向 ${usedPos} / ${limit} tok${vibeTag} · 负向 ${counts.negTokens}`;
+
+    this.elTokenPill.className = "token-pill";
+    if (usedPos > limit) {
+      this.elTokenPill.classList.add("danger");
+    } else if (usedPos > limit - 28) {
+      this.elTokenPill.classList.add("warn");
     }
-    return "V5 Full Medium";
   }
 
+  // ===========================================================================
+  // QUOTA / SUBSCRIPTION & IMAGE GENERATION PIPELINE
+  // ===========================================================================
   private isOpusFreeActive(): boolean {
     return Boolean(
       this.subInfo &&
@@ -2867,1473 +3176,829 @@ export class WorkbenchApp {
     );
   }
 
-  private syncPreciseRefDisplays(): void {
-    const wf = this.apiSettings.precise_ref_workflow;
-    const isDualWf = wf === "style_plus_chara";
-    const isV45 = this.apiSettings.model === MODEL_V4_5_FULL;
-
-    const hasCharImg = Boolean(this.preciseRef && this.preciseRefThumbUrl);
-    const charEnabled = this.apiSettings.precise_ref_enabled;
-    const charS = Number(this.apiSettings.precise_ref_strength.toFixed(2));
-    const charF = Number(this.apiSettings.precise_ref_fidelity.toFixed(2));
-
-    const hasStyleImg = Boolean(this.preciseStyleRef && this.preciseStyleRefThumbUrl);
-    const styleEnabled = this.apiSettings.precise_style_enabled;
-    const styleS = Number(this.apiSettings.precise_style_strength.toFixed(2));
-    const styleF = Number(this.apiSettings.precise_style_fidelity.toFixed(2));
-
-    for (const [wfId, btn] of this.elPreciseWorkflowBtns.entries()) {
-      btn.classList.toggle("active", wfId === wf);
-    }
-
-    if (this.elPreciseStyleSlot) {
-      this.elPreciseStyleSlot.classList.toggle("hidden-slot", !isDualWf);
-      this.elPreciseStyleSlot.classList.toggle(
-        "paste-target",
-        isDualWf && this.activePasteSlot === "style"
-      );
-    }
-    if (this.elPreciseCharSlot) {
-      this.elPreciseCharSlot.classList.toggle(
-        "paste-target",
-        isDualWf && this.activePasteSlot === "char"
-      );
-    }
-    if (this.elPreciseCharModeLbl) {
-      this.elPreciseCharModeLbl.textContent =
-        wf === "single_char_and_style"
-          ? "👤&🎨 Character & Style (单图同锁)"
-          : "👤 Character (人物基图)";
-    }
-
-    const activeSlots = this.getActivePreciseRefSlots();
-    const anyUploadedInWf = hasCharImg || (isDualWf && hasStyleImg);
-
-    if (this.elRefCapsule) {
-      if (activeSlots.length === 2) {
-        this.elRefCapsule.textContent = `🪪 参照: Style+Chara (${charS}/${styleS})`;
-        this.elRefCapsule.classList.add("active");
-      } else if (activeSlots.length === 1) {
-        const s0 = activeSlots[0];
-        if (s0.mode === "character&style") {
-          this.elRefCapsule.textContent = `🪪 参照: Chara&Style ${charS}/${charF}`;
-        } else if (s0.mode === "style") {
-          this.elRefCapsule.textContent = `🪪 参照: Style ${styleS}/${styleF}`;
-        } else {
-          this.elRefCapsule.textContent = `🪪 参照: Chara ${charS}/${charF}`;
-        }
-        this.elRefCapsule.classList.add("active");
-      } else if (anyUploadedInWf && !isV45) {
-        this.elRefCapsule.textContent = "🪪 参照: 待切V4.5";
-        this.elRefCapsule.classList.remove("active");
-      } else if (anyUploadedInWf) {
-        this.elRefCapsule.textContent = "🪪 参照: 已暂停";
-        this.elRefCapsule.classList.remove("active");
-      } else {
-        this.elRefCapsule.textContent = "🪪 参照: 未启用";
-        this.elRefCapsule.classList.remove("active");
-      }
-    }
-
-    // Slot 1: Character (or Single Chara&Style)
-    if (this.elPreciseRefThumb) {
-      this.elPreciseRefThumb.innerHTML = "";
-      this.elPreciseRefThumb.classList.toggle("has-img", hasCharImg);
-      this.elPreciseRefThumb.classList.toggle("paused", hasCharImg && (!charEnabled || !isV45));
-      if (hasCharImg && this.preciseRefThumbUrl && this.preciseRef) {
-        const img = this.el("img");
-        img.src = this.preciseRefThumbUrl;
-        img.alt = this.preciseRef.filename;
-        this.elPreciseRefThumb.appendChild(img);
-      } else {
-        const ph = this.el(
-          "span",
-          "hint-text",
-          wf === "single_char_and_style" ? "📤 点击或拖入\n单张同锁参考图" : "📤 点击或拖入\n人物参考图"
-        );
-        ph.style.whiteSpace = "pre-line";
-        this.elPreciseRefThumb.appendChild(ph);
-      }
-    }
-    if (this.elPreciseRefClearBtn) {
-      this.elPreciseRefClearBtn.disabled = !hasCharImg;
-    }
-    if (this.elPreciseRefToggleBtn) {
-      this.elPreciseRefToggleBtn.disabled = !hasCharImg;
-      this.elPreciseRefToggleBtn.classList.toggle("precise-ref-toggle-on", hasCharImg && charEnabled);
-      this.elPreciseRefToggleBtn.textContent = charEnabled ? "✓" : "⏸";
-    }
-
-    // Slot 2: Style
-    if (this.elPreciseStyleThumb) {
-      this.elPreciseStyleThumb.innerHTML = "";
-      this.elPreciseStyleThumb.classList.toggle("has-img", hasStyleImg);
-      this.elPreciseStyleThumb.classList.toggle("paused", hasStyleImg && (!styleEnabled || !isV45));
-      if (hasStyleImg && this.preciseStyleRefThumbUrl && this.preciseStyleRef) {
-        const img = this.el("img");
-        img.src = this.preciseStyleRefThumbUrl;
-        img.alt = this.preciseStyleRef.filename;
-        this.elPreciseStyleThumb.appendChild(img);
-      } else {
-        const ph = this.el("span", "hint-text", "🎨 点击或拖入\n画风参考图");
-        ph.style.whiteSpace = "pre-line";
-        this.elPreciseStyleThumb.appendChild(ph);
-      }
-    }
-    if (this.elPreciseStyleClearBtn) {
-      this.elPreciseStyleClearBtn.disabled = !hasStyleImg;
-    }
-    if (this.elPreciseStyleToggleBtn) {
-      this.elPreciseStyleToggleBtn.disabled = !hasStyleImg;
-      this.elPreciseStyleToggleBtn.classList.toggle(
-        "precise-ref-toggle-on",
-        hasStyleImg && styleEnabled
-      );
-      this.elPreciseStyleToggleBtn.textContent = styleEnabled ? "✓" : "⏸";
-    }
-
-    if (this.elPreciseRefStatus) {
-      this.elPreciseRefStatus.innerHTML = "";
-      if (!anyUploadedInWf) {
-        this.elPreciseRefStatus.className = "precise-ref-status";
-        this.elPreciseRefStatus.textContent = isDualWf
-          ? "当前为「Style+Chara 混合」模式：请拖入或粘贴 👤人物基图 与 🎨画风基图（选中槽位后按 Ctrl+V 可分别粘贴，上传后自动切 V4.5 Full）。"
-          : wf === "single_char_and_style"
-            ? "当前为「单图 Chara&Style」模式：请上传单张参考图同时锁定人物与画风 (+5 Anlas)。"
-            : hasStyleImg && this.preciseStyleRef
-              ? `当前为「Chara 单独」模式：尚未上传人物参照图（已缓存画风图 ${this.preciseStyleRef.filename} 暂挂保留中）。`
-              : "尚未上传角色参照图（支持点击上传 / 拖拽图片 / 在本页 Ctrl+V 粘贴；上传后自动切 V4.5 Full）。";
-      } else if (!isV45) {
-        this.elPreciseRefStatus.className = "precise-ref-status warn";
-        const span = this.el(
-          "span",
-          "",
-          "⚠️ 已载入精密参照图，但当前模型为 V5 Medium（不支持精密参照，生图时不会附带）。 "
-        );
-        const btnSw = this.el("button", "btn-sm btn-primary", "切换至 V4.5 Full 激活");
-        btnSw.style.marginLeft = "4px";
-        btnSw.addEventListener("click", () => this.setModel(MODEL_V4_5_FULL, true));
-        this.elPreciseRefStatus.append(span, btnSw);
-      } else if (activeSlots.length === 0) {
-        this.elPreciseRefStatus.className = "precise-ref-status";
-        this.elPreciseRefStatus.textContent =
-          "⏸️ 当前模式下的参照槽已暂停（点击缩略图下方按钮即可恢复启用）。";
-      } else if (activeSlots.length === 2 && this.preciseRef && this.preciseStyleRef) {
-        this.elPreciseRefStatus.className = "precise-ref-status active";
-        this.elPreciseRefStatus.textContent =
-          `✅ Style+Chara 双图混合已激活：👤${this.preciseRef.filename} (S=${charS}/F=${charF}) + 🎨${this.preciseStyleRef.filename} (S=${styleS}/F=${styleF}) · 共 +10 Anlas`;
-      } else {
-        const s0 = activeSlots[0];
-        this.elPreciseRefStatus.className = "precise-ref-status active";
-        if (s0.mode === "style" && this.preciseStyleRef) {
-          const hintChar = hasCharImg ? "（人物槽已暂停）" : "（人物槽未传图，仅锁画风）";
-          this.elPreciseRefStatus.textContent =
-            `✅ Style 画风参照已激活：🎨${this.preciseStyleRef.filename} (S=${styleS}/F=${styleF} · +5 Anlas) ${hintChar}`;
-        } else if (s0.mode === "character&style" && this.preciseRef) {
-          this.elPreciseRefStatus.textContent =
-            `✅ 单图 Chara&Style 已激活：👤&🎨${this.preciseRef.filename} (S=${charS}/F=${charF} · +5 Anlas)`;
-        } else if (this.preciseRef) {
-          const standbyStyle =
-            wf === "chara_only" && hasStyleImg && this.preciseStyleRef
-              ? ` · 画风槽 (${this.preciseStyleRef.filename}) 已暂挂不计费`
-              : isDualWf && !hasStyleImg
-                ? " · 画风槽待上传（当前仅人物生效）"
-                : "";
-          this.elPreciseRefStatus.textContent =
-            `✅ Character 单独参照已激活：👤${this.preciseRef.filename} (S=${charS}/F=${charF} · +5 Anlas)${standbyStyle}`;
-        }
-      }
-    }
-
-    if (this.elModTabRefBanner) {
-      if (activeSlots.length === 2 && this.preciseRef && this.preciseStyleRef) {
-        this.elModTabRefBanner.textContent =
-          `✅ 当前已激活 Style+Chara 双参照 (👤${this.preciseRef.filename} + 🎨${this.preciseStyleRef.filename})。建议点击下方「🎯 精密参照：人物+画风」关闭文字画风与原设身份词条，避免打架！`;
-        this.elModTabRefBanner.style.color = "var(--green)";
-      } else if (activeSlots.length === 1) {
-        const mode = activeSlots[0].mode;
-        this.elModTabRefBanner.textContent =
-          mode === "character"
-            ? `✅ 当前已激活 Chara 单独参照 (S=${charS}, F=${charF})。建议点击下方「👤 精密参照：仅锁人物」保留本台文字画风词条并与角色参照混合！`
-            : `✅ 当前已激活 ${mode} 精密参照。建议按需切换下方模块开关避免文字标签冲突。`;
-        this.elModTabRefBanner.style.color = "var(--green)";
-      } else if (hasCharImg || hasStyleImg) {
-        this.elModTabRefBanner.textContent =
-          "⏸️ 已缓存精密参照图（当前未激活，可在「⚡ NAI生图」切至 V4.5 Full 或开启槽位激活）。";
-        this.elModTabRefBanner.style.color = "";
-      } else {
-        this.elModTabRefBanner.textContent =
-          "当前尚未载入精密参照图。可在「⚡ NAI生图」上传 Style+Chara 双图或 Chara 单图，并配合下方预设剔除冲突词。";
-        this.elModTabRefBanner.style.color = "";
-      }
-    }
-  }
-
-  private syncCameraDisplays(): void {
-    const shotCode = CAMERA_SHOT_PRESETS[this.cfg.cam_shot_preset] ?? "auto";
-    const desc = describeCameraShort(
-      this.cfg.cam_enable_override,
-      this.cfg.cam_azimuth,
-      this.cfg.cam_elevation,
-      shotCode,
-      this.cfg.cam_wide_lens,
-      this.cfg.cam_dutch_angle
-    );
-    this.elCamCapsule.textContent = `🎥 机位: ${desc}`;
-    this.elCamCapsule.classList.toggle("active", this.cfg.cam_enable_override);
-    if (this.radarCtrl) {
-      this.radarCtrl.setState({
-        enabled: this.cfg.cam_enable_override,
-        azimuth: this.cfg.cam_azimuth,
-        elevation: this.cfg.cam_elevation,
-      });
-    }
-  }
-
-  private resetCameraOverride(): void {
-    this.cfg.cam_enable_override = false;
-    this.syncControlsFromConfig();
-    this.saveCfgAndRefresh();
-    this.setStatus("🔄 已复位相机角度为「随本幕默认」");
-  }
-
-  private syncExpressionDisplays(): void {
-    const active = isExpressionOverrideActive(this.cfg);
-    const shortDesc = describeExpressionShort(this.cfg);
-    this.elExprCapsule.textContent = `😊 表情: ${shortDesc}`;
-    this.elExprCapsule.classList.toggle("active", active);
-    for (const [key, pill] of this.elExprPresetPills.entries()) {
-      pill.classList.toggle("active", this.cfg.expr_preset === key);
-    }
-    if (this.elExprPreviewBox) {
-      if (!this.cfg.enable_expression) {
-        this.elExprPreviewBox.textContent = "🚫 「9. 微表情与脸红 (Expr)」模块已在「🎛️ 模块」关闭，本面板不注入表情词条。";
-      } else if (!active) {
-        this.elExprPreviewBox.textContent = "🔄 当前跟随各幕次原设微表情节奏（未启用全局表情覆盖）。";
-      } else {
-        const compiled = compileExpressionOverride(this.cfg, this.activeSceneId);
-        const rawCompiled = compileExpressionOverride(this.cfg, "");
-        const lines: string[] = [];
-        if (!compiled.active && (this.activeSceneId === "S06" || this.activeSceneId === "S07")) {
-          lines.push(`😴 当前预览幕 [${this.activeSceneId}] 为熟睡闭眼保护幕（如需覆盖请勾选上方「强制覆盖 S06/S07」）。`);
-        }
-        lines.push(`正向词条: ${rawCompiled.pos_tags_str || "(无)"}`);
-        lines.push(`睁/闭眼状态: ${rawCompiled.eyes_open ? "👁️ 睁眼（保留瞳色，自动解锁看着镜头）" : "😴 闭眼（自动隐藏瞳色，屏蔽睁眼防冲突）"}`);
-        if (rawCompiled.neg_unblock.size > 0) {
-          lines.push(`自动解除负向屏蔽: ${Array.from(rawCompiled.neg_unblock).join(", ")}`);
-        }
-        if (rawCompiled.neg_add.length > 0) {
-          lines.push(`自动追加防串负向: ${rawCompiled.neg_add.join(", ")}`);
-        }
-        if (rawCompiled.prose_clause) {
-          lines.push(`T5 自然语言句: ${rawCompiled.prose_clause}`);
-        }
-        this.elExprPreviewBox.textContent = lines.join("\n");
-      }
-    }
-  }
-
-  private resetExpressionOverride(): void {
-    const defaults = createDefaultCharacterConfig();
-    this.cfg.expr_preset = defaults.expr_preset;
-    this.cfg.expr_eye_state = defaults.expr_eye_state;
-    this.cfg.expr_mouth_state = defaults.expr_mouth_state;
-    this.cfg.expr_brow_blush = defaults.expr_brow_blush;
-    this.cfg.expr_heart_eyes = false;
-    this.cfg.expr_empty_eyes = false;
-    this.cfg.expr_tears = false;
-    this.cfg.expr_override_sleeping = false;
-    this.cfg.custom_expression_tags = "";
-    this.syncControlsFromConfig();
-    this.saveCfgAndRefresh();
-    this.setStatus("🔄 已复位人物表情为「随本幕默认」");
-  }
-
-  private setMobileHeaderOpen(open: boolean): void {
-    this.mobileHeaderOpen = open;
-    if (this.elHeaderBar) {
-      this.elHeaderBar.classList.toggle("mobile-header-open", open);
-    }
-    if (this.elMobileHeaderToggleBtn) {
-      this.elMobileHeaderToggleBtn.textContent = open ? "▴ 收起顶栏" : "🎛️ 预设/顶栏 ▾";
-    }
-  }
-
-  private switchMobilePane(pane: "config" | "scenes" | "output"): void {
-    this.activeMobilePane = pane;
-    this.root.dataset.mobilePane = pane;
-    this.root.querySelectorAll<HTMLElement>("[data-mobile-nav]").forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.mobileNav === pane);
-    });
-    if (pane === "config" && this.activeLeftTab === "tab-camera" && this.radarCtrl) {
-      requestAnimationFrame(() => this.radarCtrl?.render());
-    }
-  }
-
-  private syncMobileUi(): void {
-    if (this.elMobilePerspBtn) {
-      this.elMobilePerspBtn.textContent = this.cfg.perspective_mode === "pov" ? "👁️ POV" : "🎥 3rd";
-    }
-    if (this.elMobileQuickSceneLbl) {
-      const ch =
-        STORY_CHAPTERS.find((c) => c.id === this.activeSceneId) ??
-        MULTI_ANGLE_CHAPTERS.find((c) => c.id === this.activeSceneId) ??
-        ALL_POSITIONS_CHAPTERS.find((c) => c.id === this.activeSceneId);
-      this.elMobileQuickSceneLbl.textContent = `当前: ${ch?.title ?? this.activeSceneId}`;
-    }
-    if (this.elMobileOutBadge) {
-      if (this.isGenerating) {
-        this.elMobileOutBadge.textContent = "⏳";
-        this.elMobileOutBadge.className = "mobile-nav-badge busy";
-      } else if (this.gallery.length > 0) {
-        this.elMobileOutBadge.textContent = String(this.gallery.length);
-        this.elMobileOutBadge.className = "mobile-nav-badge has-items";
-      } else {
-        this.elMobileOutBadge.textContent = "";
-        this.elMobileOutBadge.className = "mobile-nav-badge";
-      }
-    }
-  }
-
-  private switchLeftTab(tabId: string): void {
-    this.activeLeftTab = tabId;
-    this.root.querySelectorAll("[data-tab-id]").forEach((b) => {
-      const isMatch = (b as HTMLElement).dataset.tabId === tabId;
-      b.classList.toggle("active", isMatch);
-      if (isMatch) {
-        b.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-      }
-    });
-    this.root.querySelectorAll("[data-panel-id]").forEach((p) => {
-      p.classList.toggle("active", (p as HTMLElement).dataset.panelId === tabId);
-    });
-    if (tabId === "tab-camera" && this.radarCtrl) {
-      requestAnimationFrame(() => this.radarCtrl?.render());
-    }
-  }
-
-  private switchSuiteTab(suiteId: "story" | "multi_angle" | "all_pos"): void {
-    this.activeSuiteTab = suiteId;
-    this.root.querySelectorAll("[data-suite-id]").forEach((b) => {
-      const isMatch = (b as HTMLElement).dataset.suiteId === suiteId;
-      b.classList.toggle("active", isMatch);
-      if (isMatch) {
-        b.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-      }
-    });
-    this.root.querySelectorAll("[data-suite-panel]").forEach((p) => {
-      p.classList.toggle("active", (p as HTMLElement).dataset.suitePanel === suiteId);
-    });
-
-    if (suiteId === "story" && !STORY_CHAPTERS.some((c) => c.id === this.activeSceneId)) {
-      this.selectSingleScene("S00");
-    } else if (suiteId === "multi_angle" && !MULTI_ANGLE_CHAPTERS.some((c) => c.id === this.activeSceneId)) {
-      this.selectSingleScene("MA0");
-    } else if (suiteId === "all_pos" && !ALL_POSITIONS_CHAPTERS.some((c) => c.id === this.activeSceneId)) {
-      const vis = this.getFilteredPosChapters();
-      this.selectSingleScene(vis[0]?.id || "P01");
-    }
-    this.refreshSuiteTexts();
-  }
-
-  private switchOutTab(outTabId: string): void {
-    this.activeOutTab = outTabId;
-    this.root.querySelectorAll("[data-out-tab-id]").forEach((b) => {
-      const isMatch = (b as HTMLElement).dataset.outTabId === outTabId;
-      b.classList.toggle("active", isMatch);
-      if (isMatch) {
-        b.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-      }
-    });
-    this.root.querySelectorAll("[data-out-panel]").forEach((p) => {
-      p.classList.toggle("active", (p as HTMLElement).dataset.outPanel === outTabId);
-    });
-  }
-
-  private selectSingleScene(sceneId: string): void {
-    this.activeSceneId = sceneId;
-    this.activeSubVariantIdx = 0;
-    this.isSingleEdited = false;
-    this.root.querySelectorAll(".scene-row").forEach((r) => {
-      r.classList.toggle("active", (r as HTMLElement).dataset.sceneId === sceneId);
-    });
-    this.syncExpressionDisplays();
-    this.renderSinglePromptBox();
-    this.syncMobileUi();
-  }
-
-  private saveCfgAndRefresh(): void {
-    saveActiveConfig(this.cfg);
-    this.syncExpressionDisplays();
-    this.syncCameraDisplays();
-    this.refreshAllOutputs();
-  }
-
-  private refreshAllOutputs(): void {
-    if (!this.isSingleEdited) {
-      this.renderSinglePromptBox();
-    }
-    this.refreshSuiteTexts();
-  }
-
-  private renderSinglePromptBox(): void {
-    this.currentSceneItems = generateScenePrompts(this.activeSceneId, this.cfg);
-    this.elSingleSelect.innerHTML = "";
-    this.currentSceneItems.forEach((item, idx) => {
-      const opt = this.el("option", "", item.subTitle);
-      opt.value = String(idx);
-      this.elSingleSelect.appendChild(opt);
-    });
-    const safeIdx = Math.max(0, Math.min(this.activeSubVariantIdx, this.currentSceneItems.length - 1));
-    this.activeSubVariantIdx = safeIdx;
-    this.elSingleSelect.value = String(safeIdx);
-
-    const activeItem = this.currentSceneItems[safeIdx];
-    if (activeItem) {
-      this.elCanvasBadge.textContent = activeItem.canvas;
-      this.elSingleText.value = `## ${activeItem.subTitle}（画布：${activeItem.canvas}）：\n${activeItem.prompt}`;
-    } else {
-      this.elSingleText.value = "";
-    }
-    this.updateTokenBadge();
-    this.updateCostHint();
-  }
-
-  private updateTokenBadge(): void {
-    const promptToCount = extractFirstPromptFromPreview(this.elSingleText.value, 0) || this.elSingleText.value;
-    const tok = countPromptT5Tokens(promptToCount);
-    const maxTok = Math.max(tok.api_pos_tokens, tok.api_neg_tokens);
-    this.elTokenBadge.textContent =
-      `API正 ${tok.api_pos_tokens}/512 · 负 ${tok.api_neg_tokens}/512 · 单框 ${tok.web_single_box_tokens}` +
-      (tok.exact_spiece ? "" : " (估算)");
-    this.elTokenBadge.className =
-      "token-badge " + (maxTok > 512 ? "over" : maxTok >= 475 ? "warn" : "ok");
-  }
-
-  private getOrderedSelectedStoryIds(): string[] {
-    return STORY_CHAPTERS.filter((c) => this.selectedStoryIds.has(c.id)).map((c) => c.id);
-  }
-
-  private getActiveSuiteSelectedIds(): string[] {
-    if (this.activeSuiteTab === "multi_angle") {
-      return MULTI_ANGLE_CHAPTERS.filter((c) => this.selectedMaIds.has(c.id)).map((c) => c.id);
-    }
-    if (this.activeSuiteTab === "all_pos") {
-      return this.getFilteredPosChapters()
-        .filter((c) => this.selectedPosIds.has(c.id))
-        .map((c) => c.id);
-    }
-    return this.getOrderedSelectedStoryIds();
-  }
-
-  private refreshSuiteTexts(): void {
-    const ids = this.getActiveSuiteSelectedIds();
-    const povCfg = { ...this.cfg, perspective_mode: "pov" as const };
-    const trdCfg = { ...this.cfg, perspective_mode: "3rd" as const };
-    if (this.elPovText) {
-      this.elPovText.value = generateFullSuite(povCfg, ids, false, false);
-    }
-    if (this.elTrdText) {
-      this.elTrdText.value = generateFullSuite(trdCfg, ids, false, false);
-    }
-  }
-
-  // ==========================================
-  // Preset Management (Built-in + localStorage + JSON)
-  // ==========================================
-  private loadPresetByName(name: string): void {
-    if (name in this.customPresets) {
-      const data = this.customPresets[name];
-      this.cfg = { ...createDefaultCharacterConfig(), ...data, preset_name: name };
-    } else if (name in BUILTIN_CHARACTERS) {
-      const info = BUILTIN_CHARACTERS[name];
-      this.cfg.preset_name = name;
-      this.cfg.char_tag = info.char_tag;
-      this.cfg.eng_name = info.eng_name;
-      this.cfg.eye_color = info.eye_color;
-      this.cfg.hair_tags = info.hair_tags;
-      this.cfg.canon_neg_tags = info.canon_neg_tags;
-      this.cfg.extra_char_tags = "";
-      this.cfg.body_preset = info.body_preset;
-      this.cfg.bust_preset = info.bust_preset;
-    }
-    this.syncControlsFromConfig();
-    this.saveCfgAndRefresh();
-    this.setStatus(`✅ 已切换预设：${name}`);
-  }
-
-  private onSavePreset(): void {
-    const raw = window.prompt("请输入自定义预设名称：", this.cfg.eng_name || "custom");
-    if (!raw || !raw.trim()) return;
-    const cleanName = raw.trim().startsWith("⭐") ? raw.trim() : `⭐ ${raw.trim()}`;
-    this.cfg.preset_name = cleanName;
-    this.customPresets[cleanName] = { ...this.cfg };
-    saveCustomPresets(this.customPresets);
-    this.populatePresetDropdown();
-    this.elPresetSelect.value = cleanName;
-    this.setStatus(`💾 已保存自定义预设「${cleanName}」`);
-  }
-
-  private onDeletePreset(): void {
-    const cur = this.cfg.preset_name;
-    if (cur in BUILTIN_CHARACTERS && !(cur in this.customPresets)) {
-      window.alert("内置角色预设不可删除；请选择您保存的 ⭐ 自定义预设。");
+  private updateQuotaPill(): void {
+    if (!this.elQuotaPill) return;
+    if (!this.apiSettings.api_token.trim()) {
+      this.elQuotaPill.textContent = "🔑 点击填Token";
+      this.elQuotaPill.className = "quota-pill warn";
       return;
     }
-    if (!window.confirm(`确定要删除自定义预设「${cur}」吗？`)) return;
-    delete this.customPresets[cur];
-    saveCustomPresets(this.customPresets);
-    this.populatePresetDropdown();
-    const first = Object.keys(BUILTIN_CHARACTERS)[0];
-    this.loadPresetByName(first);
-  }
 
-  private onExportPresetsJson(): void {
-    const jsonStr = JSON.stringify(this.customPresets, null, 2);
-    triggerTextDownload(jsonStr, "character_presets.json", "application/json;charset=utf-8");
-    this.setStatus("📤 已导出自定义预设 character_presets.json");
-  }
-
-  private onImportPresetsJson(): void {
-    const inp = this.el("input");
-    inp.type = "file";
-    inp.accept = ".json";
-    inp.addEventListener("change", async () => {
-      const file = inp.files?.[0];
-      if (!file) return;
-      try {
-        const parsed = JSON.parse(await file.text()) as Record<string, Partial<CharacterConfig>>;
-        if (!parsed || typeof parsed !== "object") throw new Error("无效的 JSON 预设格式");
-        this.customPresets = { ...this.customPresets, ...parsed };
-        saveCustomPresets(this.customPresets);
-        this.populatePresetDropdown();
-        const firstImported = Object.keys(parsed)[0];
-        if (firstImported) this.loadPresetByName(firstImported);
-        this.setStatus(`📥 已成功导入 ${Object.keys(parsed).length} 条自定义预设`);
-      } catch (err) {
-        window.alert(`导入预设失败：${err instanceof Error ? err.message : String(err)}`);
-      }
-    });
-    inp.click();
-  }
-
-  // ==========================================
-  // NovelAI API Integration (CORS Direct Fetch)
-  // ==========================================
-  private async onCheckSubscription(silent = false): Promise<void> {
-    try {
-      if (!silent) {
-        this.setStatus("🔍 正在查询 NovelAI 账户订阅与 Anlas / Opus 余额...");
-      }
-      const info = await fetchSubscriptionInfo(this.apiSettings.api_token);
-      this.subInfo = info;
-      this.updateAnlasDisplay();
-      const opusExtra =
-        info.opus_usage_percent !== null
-          ? ` | V5额度条: ${info.opus_usage_negative ? "已透支" : `余量${info.opus_usage_percent}%`}`
-          : info.tier === 3 && info.active
-            ? " | Opus免点额度生效中"
-            : "";
-      this.appendLog(
-        `订阅状态: ${info.tier_name} (${info.active ? "激活" : "未激活"}) | 订阅月度余量: ${info.fixed_anlas} + 永久购买: ${info.purchased_anlas} = ${info.anlas_left} Anlas${opusExtra}`
-      );
-      if (!silent) {
-        this.setStatus(
-          `✅ 账户有效：${info.tier_name} | 订阅余量 ${info.fixed_anlas} + 永久 ${info.purchased_anlas} = ${info.anlas_left} Anlas`
-        );
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (this.elApiSubBanner) {
-        this.elApiSubBanner.className = "sub-banner opus-err";
-        this.elApiSubBanner.textContent = `❌ 订阅查询失败：${msg}`;
-      }
-      this.appendLog(`❌ 查点数失败: ${msg}`);
-      if (!silent) {
-        this.setStatus(`❌ ${msg}`);
-        window.alert(msg);
-      }
-    }
-  }
-
-  private describeActivePreciseRefsForManifest(slots: PreciseRefSlotInput[]): string {
-    if (slots.length === 0) return "none";
-    return slots
-      .map((s) => {
-        if (s.mode === "style") {
-          return `Style(${this.preciseStyleRef?.filename ?? "style.png"}, S=${s.strength}, F=${s.fidelity})`;
-        }
-        if (s.mode === "character&style") {
-          return `Character&Style(${this.preciseRef?.filename ?? "char_style.png"}, S=${s.strength}, F=${s.fidelity})`;
-        }
-        return `Character(${this.preciseRef?.filename ?? "char.png"}, S=${s.strength}, F=${s.fidelity})`;
-      })
-      .join(" + ");
-  }
-
-  private updateCostHint(): void {
-    if (!this.elCostHint) return;
-    const activeItem = this.currentSceneItems[this.activeSubVariantIdx];
-    const hint = activeItem?.canvas || "竖图 832x1216";
+    const hint = this.currentSceneItems[0]?.canvas || "竖图 832x1216";
     const [w, h] = parseCanvasSize(hint, this.apiSettings.canvas_preset);
-    const model = this.apiSettings.model;
-    const isV45 = model === MODEL_V4_5_FULL;
-    const effSteps = isV45 ? this.apiSettings.steps : 14;
-    const activeRefSlots = this.getActivePreciseRefSlots();
-    const refCount = activeRefSlots.length;
-    const opusActive = this.isOpusFreeActive();
-    const isOpusFreeBase = opusActive && w * h <= 1048576 && effSteps <= 28;
-    const actualEst = estimateNaiAnlas({
-      model,
+    const activeVibes = this.getActiveVibeSlots();
+    const estSingle = estimateNaiAnlas({
+      model: this.apiSettings.model,
       width: w,
       height: h,
-      steps: effSteps,
-      isOpusFreeEligible: opusActive,
-      preciseRefCount: refCount,
+      steps: this.apiSettings.steps,
+      isOpusFreeEligible: this.isOpusFreeActive(),
+      vibeCount: activeVibes.length,
     });
-    const nonOpusEst = estimateNaiAnlas({
-      model,
-      width: w,
-      height: h,
-      steps: effSteps,
-      isOpusFreeEligible: false,
-      preciseRefCount: refCount,
-    });
-    const modelLbl = this.getActiveModelShortLabel();
-    const upNote = this.apiSettings.auto_upscale_replace ? " + 自动2x放大 1 Anlas" : "";
-    const refSurcharge = refCount * 5;
+    const totalEst = estSingle * (this.apiSettings.batch_count || 1);
 
-    if (isOpusFreeBase && refCount > 0) {
-      const refDesc =
-        refCount === 2
-          ? "Style+Chara 双精密参照 10 Anlas"
-          : `精密参照 (${activeRefSlots[0].mode}) 5 Anlas`;
-      this.elCostHint.textContent =
-        `📐 发送：${w} × ${h} (${effSteps}步 · ${modelLbl}) | 单张消耗：${actualEst} Anlas（Opus 底图免点 0 + ${refDesc}）${upNote}`;
-    } else if (isOpusFreeBase) {
-      this.elCostHint.textContent =
-        `📐 发送：${w} × ${h} (${effSteps}步 · ${modelLbl}) | 单张消耗：0 Anlas（Opus 免点生效中 · 原价约 ${nonOpusEst} Anlas）${upNote}`;
+    if (this.subInfo) {
+      const tierStr = this.subInfo.tier === 3 ? "Opus" : this.subInfo.tier_name;
+      this.elQuotaPill.textContent = `${tierStr} · ${this.subInfo.anlas_left}点 (本次~${totalEst}点)`;
+      this.elQuotaPill.className = totalEst === 0 ? "quota-pill" : "quota-pill warn";
     } else {
-      const opusTip =
-        refCount > 0
-          ? `（Opus 标准尺寸 ≤28步时为 ${refSurcharge} Anlas）`
-          : "（Opus 标准尺寸 ≤28步时为 0 Anlas）";
-      this.elCostHint.textContent =
-        `📐 发送：${w} × ${h} (${effSteps}步 · ${modelLbl}) | 单张预计消耗：约 ${actualEst} Anlas${opusTip}${upNote}`;
+      this.elQuotaPill.textContent = `⚡ 预估 ~${totalEst} Anlas`;
+      this.elQuotaPill.className = "quota-pill";
     }
   }
 
-  private updateAnlasDisplay(): void {
-    if (!this.subInfo) return;
-    const info = this.subInfo;
-    const isOpusFree = info.tier === 3 && info.active && info.unlimited_max_priority && !info.opus_usage_negative;
-
-    let usageFull = "";
-    let usageShort = "";
-    if (info.opus_usage_percent !== null) {
-      const remPct = Math.max(0, Math.min(100, info.opus_usage_percent));
-      const usedPct = Math.max(0, 100 - remPct);
-      usageFull = info.opus_usage_negative
-        ? " | ⚠️ V5额度条：已透支(按点数计费)"
-        : ` | 🔋 V5额度条：充裕(余量 ${remPct}% / 已用 ${usedPct}%)`;
-      usageShort = info.opus_usage_negative
-        ? " · V5额度透支"
-        : ` · OpusV5余${remPct}%`;
-    } else if (info.tier === 3 && info.active) {
-      usageFull = " | ♾️ Opus免点标准生成：生效中 (≤1024² & ≤28步 0点)";
-      usageShort = " · ♾️Opus免点";
-    }
-
-    let expNote = "";
-    if (info.expires_at > 0) {
-      const ms = info.expires_at > 1e12 ? info.expires_at : info.expires_at * 1000;
-      const d = new Date(ms);
-      if (!Number.isNaN(d.getTime()) && d.getUTCFullYear() >= 2020) {
-        expNote = ` | 📅 续期/到期：${d.toISOString().slice(0, 10)}`;
-      }
-    }
-
-    if (this.elApiSubBanner) {
-      this.elApiSubBanner.className = `sub-banner ${
-        info.active && !info.opus_usage_negative ? "opus-ok" : "opus-warn"
-      }`;
-      this.elApiSubBanner.textContent =
-        `💎 套餐：${info.tier_name} (${info.active ? "已激活" : "未激活"}) | ${
-          isOpusFree ? "♾️ Opus 无限标准生成生效中" : info.opus_usage_negative ? "⚠️ 免费额度条已透支" : "点数模式"
-        }\n` +
-        `📊 订阅月度余量(固定)：${info.fixed_anlas} Anlas | 永久购买：${info.purchased_anlas} Anlas | 总计：${info.anlas_left} Anlas` +
-        usageFull +
-        expNote;
-    }
-
-    this.elAnlasBadge.textContent =
-      `💎 ${info.tier_name}${info.active ? "" : "(未激活)"} | 订阅月度:${info.fixed_anlas} + 永久:${info.purchased_anlas} = ${info.anlas_left} Anlas${usageShort}`;
-    this.elAnlasBadge.style.color = info.opus_usage_negative ? "var(--yellow)" : "var(--green)";
-    this.updateCostHint();
-  }
-
-  private async onGenerateCurrentPreview(): Promise<void> {
-    if (this.isGenerating) return;
-    if (!this.apiSettings.api_token.trim()) {
-      this.switchMobilePane("config");
-      this.switchLeftTab("tab-api");
-      window.alert("请先在左侧「⚡ NAI生图」填入 Persistent API Token (pst-...)");
-      return;
-    }
-
-    const blocks = extractPromptBlocksFromPreview(this.elSingleText.value);
-    const promptToSend = extractFirstPromptFromPreview(this.elSingleText.value, 0) || this.elSingleText.value.trim();
-    if (!promptToSend) {
-      window.alert("当前单幕提示词为空！");
-      return;
-    }
-
-    const activeItem = this.currentSceneItems[this.activeSubVariantIdx];
-    const hint = activeItem?.canvas || "竖图 832x1216";
-    const [w, h] = parseCanvasSize(hint, this.apiSettings.canvas_preset);
-    const isC5 = isC5LowresPixelStyleActive(this.cfg) || hint.includes("自动3x硬放大");
-    const mode = this.cfg.perspective_mode;
-    const safeMode = mode === "pov" ? "POV" : "3rd";
-    const subTag = this.currentSceneItems.length > 1 ? `_P${this.activeSubVariantIdx + 1}` : "";
-    const sceneFileTag = `${this.activeSceneId}${subTag}`;
-
-    const activeRefSlots = this.getActivePreciseRefSlots();
-    const modelShort = this.getActiveModelShortLabel();
-    this.isGenerating = true;
-    this.switchOutTab("out-image");
-    this.switchMobilePane("output");
-    this.syncMobileUi();
-    this.setStatus(`🎨 正在生成【${sceneFileTag} · ${safeMode}】(${w}x${h}, ${modelShort})...`);
-    this.appendLog(
-      `开始生成 ${sceneFileTag} (${w}x${h}, ${modelShort}, Seed=${this.apiSettings.seed})...`
-    );
-
-    try {
-      const res = await generateSingleImageNai({
-        apiToken: this.apiSettings.api_token,
-        model: this.apiSettings.model,
-        promptText: promptToSend,
-        width: w,
-        height: h,
-        steps: this.apiSettings.steps,
-        scale: this.apiSettings.scale,
-        cfgRescale: this.apiSettings.cfg_rescale,
-        seed: this.apiSettings.seed,
-        ucPresetMode: this.apiSettings.uc_preset_mode,
-        keepInlineNegatives: this.apiSettings.keep_inline_negatives,
-        extraUc: this.apiSettings.extra_uc,
-        appendV5Quality: this.apiSettings.append_v5_quality,
-        preciseRefs: activeRefSlots,
-        isOpusFreeEligible: this.isOpusFreeActive(),
-        pixel3xNearest: isC5,
-      });
-
-      if (this.activeSceneId === "S00") {
-        this.lastS00Seed = res.seed;
-      }
-
-      let finalBytes = res.imageBytes;
-      let finalW = res.width;
-      let finalH = res.height;
-      let finalElapsed = res.elapsedSec;
-      let finalAnlas = res.estimatedAnlas;
-      let didUpscale = false;
-
-      const baseExt = detectImageExt(res.imageBytes);
-      let finalName = `${sceneFileTag}_${safeMode}_s${res.seed}_${formatTimeHHMMSS()}${baseExt}`;
-
-      if (this.apiSettings.auto_upscale_replace && res.width * res.height <= 1048576) {
-        this.switchOutTab("out-image");
-        this.setStatus("🔎 底图已生成，正在执行 2x 高清放大，完成后再更新画面...");
-        this.appendLog(`🔎 自动 2x Upscale (放大完成前不推送 1x 原图): ${finalName} (${res.width}x${res.height})...`);
-
-        try {
-          const up = await upscaleSingleImageNai({
-            apiToken: this.apiSettings.api_token,
-            imageBytes: res.imageBytes,
-          });
-          finalBytes = up.imageBytes;
-          finalW = up.outWidth;
-          finalH = up.outHeight;
-          finalElapsed = Number((res.elapsedSec + up.elapsedSec).toFixed(2));
-          finalAnlas = res.estimatedAnlas + 1;
-          didUpscale = true;
-          const upExt = detectImageExt(finalBytes);
-          finalName = `${sceneFileTag}_${safeMode}_s${res.seed}_${formatTimeHHMMSS()}_2x_${finalW}x${finalH}${upExt}`;
-        } catch (upErr) {
-          const upMsg = upErr instanceof Error ? upErr.message : String(upErr);
-          this.appendLog(`⚠️ 自动 2x Upscale 失败，保留放大前原图: ${upMsg}`);
-        }
-      }
-
-      const savedPath = await saveBytesToMountedDir([formatDateYYYYMMDD()], finalName, finalBytes);
-      if (!savedPath && this.apiSettings.auto_download) {
-        triggerBytesDownload(finalBytes, finalName);
-      }
-
-      this.pushGalleryRecord({
-        id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        scene_id: didUpscale ? `${sceneFileTag}_2x` : sceneFileTag,
-        mode_label: safeMode,
-        filename: finalName,
-        bytes: finalBytes,
-        objectUrl: URL.createObjectURL(new Blob([finalBytes.slice()], { type: "image/png" })),
-        seed: res.seed,
-        width: finalW,
-        height: finalH,
-        elapsed_sec: finalElapsed,
-        estimated_anlas: finalAnlas,
-        created_at: Date.now(),
-        is_upscaled: didUpscale,
-        saved_to_dir: Boolean(savedPath),
-      });
-
-      this.switchOutTab("out-image");
-      this.appendLog(
-        `✅ ${didUpscale ? "生图+2x放大" : "生成"}完成 ${finalName} (${finalW}x${finalH}, Seed=${res.seed}, ${finalElapsed}s)` +
-          (savedPath ? ` -> 已写盘 ${savedPath}` : "")
-      );
-      this.setStatus(
-        `🎉 ${didUpscale ? "单张生图+2x放大" : "单张生图"}完成！Seed=${res.seed} (${finalElapsed}s)`
-      );
-
-      try {
-        this.subInfo = await fetchSubscriptionInfo(this.apiSettings.api_token);
-        this.updateAnlasDisplay();
-      } catch {
-        // silent refresh
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.appendLog(`❌ 生图失败: ${msg}`);
-      this.setStatus(`❌ 生图失败：${msg}`);
-      window.alert(msg);
-    } finally {
-      this.isGenerating = false;
-      this.syncMobileUi();
-    }
-  }
-
-  private onBatchGenerateCurrentSuite(): void {
-    const ids = this.getActiveSuiteSelectedIds();
-    this.runBatchForIds(ids, this.activeSuiteTab);
-  }
-
-  private async runBatchForIds(ids: string[], suiteKind: "story" | "multi_angle" | "all_pos"): Promise<void> {
-    if (this.isGenerating) return;
-    if (!this.apiSettings.api_token.trim()) {
-      this.switchMobilePane("config");
-      this.switchLeftTab("tab-api");
-      window.alert("请先在左侧「⚡ NAI生图」填入 Persistent API Token (pst-...)");
-      return;
-    }
-    if (ids.length === 0) {
-      window.alert("当前勾选的任务列表为空！");
-      return;
-    }
-
-    const mode = this.cfg.perspective_mode;
-    const safeMode = mode === "pov" ? "POV" : "3rd";
-
-    interface TaskItem {
-      sceneId: string;
-      baseChapterId: string;
-      title: string;
-      promptText: string;
-      width: number;
-      height: number;
-      isC5: boolean;
-    }
-    const tasks: TaskItem[] = [];
-    for (const sid of ids) {
-      const prompts = generateScenePrompts(sid, this.cfg, mode);
-      const valid = prompts.filter((p) => !p.prompt.startsWith("[Base Prompt]"));
-      valid.forEach((item, idx) => {
-        const [w, h] = parseCanvasSize(item.canvas, this.apiSettings.canvas_preset);
-        const tag = valid.length > 1 ? `${sid}_P${idx + 1}` : sid;
-        tasks.push({
-          sceneId: tag,
-          baseChapterId: sid,
-          title: item.subTitle,
-          promptText: item.prompt,
-          width: w,
-          height: h,
-          isC5: isC5LowresPixelStyleActive(this.cfg) || item.canvas.includes("自动3x硬放大"),
-        });
-      });
-    }
-
-    const useS00 = this.apiSettings.use_s00_seed;
-    const initSeed = this.apiSettings.seed;
-    let lockedS00Seed: number | null = null;
-    if (useS00) {
-      if (initSeed > 0 && initSeed <= 4294967288) {
-        lockedS00Seed = initSeed;
-      } else if (!tasks.some((t) => t.baseChapterId === "S00") && this.lastS00Seed) {
-        lockedS00Seed = this.lastS00Seed;
-      }
-    }
-
-    const safeTag = (this.cfg.eng_name || this.cfg.char_tag || "char")
-      .replace(/[^A-Za-z0-9_-]/g, "")
-      .slice(0, 24);
-    const runDirParts = [
-      formatDateYYYYMMDD(),
-      `suite_${safeMode}_${safeTag || suiteKind}_${formatTimeHHMMSS()}`,
-    ];
-
-    const activeRefSlots = this.getActivePreciseRefSlots();
-    const modelShort = this.getActiveModelShortLabel();
-
-    this.isGenerating = true;
-    this.batchAbortCtrl = new AbortController();
-    this.batchLightboxDismissed = false;
-    this.batchDoneLabel = "";
-    this.batchProgressLabel = `⏳ 连出准备中 (0/${tasks.length})`;
-    this.switchLeftTab("tab-api");
-    this.switchOutTab("out-image");
-    this.switchMobilePane("output");
-    this.syncMobileUi();
-    this.appendLog(
-      `🚀 开始批量连出 ${tasks.length} 张 (${suiteKind}, ${safeMode}, ${modelShort}, 锁S00=${useS00})`
-    );
-    this.updateLightboxBatchStatus();
-    if (this.apiSettings.auto_fullscreen_carousel && this.gallery.length > 0) {
-      this.openLightbox(this.gallery[this.activeGalleryIdx] || this.gallery[this.gallery.length - 1], "auto");
-    }
-
-    const refManifestNote = this.describeActivePreciseRefsForManifest(activeRefSlots);
-    const manifestLines: string[] = [
-      `# NovelAI Workbench Batch Manifest (${new Date().toISOString()})`,
-      `# Model: ${this.apiSettings.model} | PreciseRef: ${refManifestNote}`,
-      `# Mode: ${safeMode} | ModuleState: ${describeActiveModules(this.cfg)}`,
-      "",
-    ];
-
-    let succeeded = 0;
-    for (let i = 0; i < tasks.length; i++) {
-      if (this.batchAbortCtrl.signal.aborted) break;
-      const t = tasks[i];
-      const curSeed =
-        t.baseChapterId === "S00"
-          ? useS00 && lockedS00Seed !== null
-            ? lockedS00Seed
-            : initSeed
-          : useS00
-            ? lockedS00Seed ?? initSeed
-            : -1;
-
-      this.batchProgressLabel = `⏳ 正在生成 [${i + 1}/${tasks.length}] ${t.sceneId}`;
-      this.updateLightboxBatchStatus();
-      this.setStatus(
-        `⏳ [${i + 1}/${tasks.length}] 正在生成 ${t.sceneId} (${modelShort}, Seed=${curSeed})...`
-      );
-      this.appendLog(
-        `[${i + 1}/${tasks.length}] 请求 ${t.sceneId} (${t.width}x${t.height}, ${modelShort}, Seed=${curSeed})...`
-      );
-
-      let ok = false;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const res = await generateSingleImageNai({
-            apiToken: this.apiSettings.api_token,
-            model: this.apiSettings.model,
-            promptText: t.promptText,
-            width: t.width,
-            height: t.height,
-            steps: this.apiSettings.steps,
-            scale: this.apiSettings.scale,
-            cfgRescale: this.apiSettings.cfg_rescale,
-            seed: curSeed,
-            ucPresetMode: this.apiSettings.uc_preset_mode,
-            keepInlineNegatives: this.apiSettings.keep_inline_negatives,
-            extraUc: this.apiSettings.extra_uc,
-            appendV5Quality: this.apiSettings.append_v5_quality,
-            preciseRefs: activeRefSlots,
-            isOpusFreeEligible: this.isOpusFreeActive(),
-            pixel3xNearest: t.isC5,
-            signal: this.batchAbortCtrl.signal,
-          });
-          ok = true;
-          succeeded++;
-          if (t.baseChapterId === "S00") {
-            lockedS00Seed = res.seed;
-            this.lastS00Seed = res.seed;
-          } else if (useS00 && lockedS00Seed === null) {
-            lockedS00Seed = res.seed;
-          }
-
-          let finalBytes = res.imageBytes;
-          let finalW = res.width;
-          let finalH = res.height;
-          let finalElapsed = res.elapsedSec;
-          let finalAnlas = res.estimatedAnlas;
-          let didUpscale = false;
-          const baseExt = detectImageExt(res.imageBytes);
-          const baseName = `${String(i + 1).padStart(2, "0")}_${t.sceneId}_${safeMode}_s${res.seed}${baseExt}`;
-          let fname = baseName;
-
-          if (this.apiSettings.auto_upscale_replace && res.width * res.height <= 1048576) {
-            this.batchProgressLabel = `🔎 正在 2x 放大 [${i + 1}/${tasks.length}] ${t.sceneId}`;
-            this.updateLightboxBatchStatus();
-            this.setStatus(`🔎 [${i + 1}/${tasks.length}] 底图已出，正在 2x Upscale（放大完成后再切图）...`);
-            this.appendLog(`  🔎 自动 2x 放大 [${i + 1}/${tasks.length}] ${t.sceneId}...`);
-
-            let upscaledOk = false;
-            for (let upTry = 0; upTry < 2; upTry++) {
-              try {
-                const up = await upscaleSingleImageNai({
-                  apiToken: this.apiSettings.api_token,
-                  imageBytes: res.imageBytes,
-                  signal: this.batchAbortCtrl.signal,
-                });
-                finalBytes = up.imageBytes;
-                finalW = up.outWidth;
-                finalH = up.outHeight;
-                finalElapsed = Number((res.elapsedSec + up.elapsedSec).toFixed(2));
-                finalAnlas = res.estimatedAnlas + 1;
-                didUpscale = true;
-                upscaledOk = true;
-                const upExt = detectImageExt(finalBytes);
-                fname = `${String(i + 1).padStart(2, "0")}_${t.sceneId}_${safeMode}_s${res.seed}_2x_${finalW}x${finalH}${upExt}`;
-                break;
-              } catch (upErr) {
-                if (upErr instanceof NaiApiError && upErr.statusCode === 429 && upTry === 0) {
-                  this.appendLog("  ⚠️ Upscale HTTP 429 限流，等待 3 秒后重试一次...");
-                  await new Promise((r) => setTimeout(r, 3000));
-                  continue;
-                }
-                const upMsg = upErr instanceof Error ? upErr.message : String(upErr);
-                this.appendLog(`  ⚠️ ${t.sceneId} 自动 2x 放大失败，保留原图: ${upMsg}`);
-                break;
-              }
-            }
-            if (!upscaledOk) {
-              fname = baseName;
-            }
-          }
-
-          const savedPath = await saveBytesToMountedDir(runDirParts, fname, finalBytes);
-          manifestLines.push(`## ${fname} (${t.title})\n${t.promptText}\n`);
-
-          this.pushGalleryRecord({
-            id: `${Date.now()}_${i}`,
-            scene_id: didUpscale ? `${t.sceneId}_2x` : t.sceneId,
-            mode_label: safeMode,
-            filename: fname,
-            bytes: finalBytes,
-            objectUrl: URL.createObjectURL(new Blob([finalBytes.slice()], { type: "image/png" })),
-            seed: res.seed,
-            width: finalW,
-            height: finalH,
-            elapsed_sec: finalElapsed,
-            estimated_anlas: finalAnlas,
-            created_at: Date.now(),
-            is_upscaled: didUpscale,
-            saved_to_dir: Boolean(savedPath),
-          });
-          this.appendLog(`  ✅ ${fname} (${finalW}x${finalH}, ${finalElapsed}s, Seed=${res.seed})`);
-          break;
-        } catch (err) {
-          if (err instanceof NaiApiError && err.statusCode === 429 && attempt === 0) {
-            this.appendLog("  ⚠️ HTTP 429 限流，等待 3 秒后重试一次...");
-            await new Promise((r) => setTimeout(r, 3000));
-            continue;
-          }
-          const msg = err instanceof Error ? err.message : String(err);
-          this.appendLog(`  ❌ ${t.sceneId} 失败: ${msg}`);
-          if (err instanceof NaiApiError && (err.statusCode === 401 || err.statusCode === 402)) {
-            this.batchAbortCtrl.abort();
-          }
-          break;
-        }
-      }
-
-      if (ok && i + 1 < tasks.length && !this.batchAbortCtrl.signal.aborted) {
-        await new Promise((r) => setTimeout(r, 450));
-      }
-    }
-
-    await saveBytesToMountedDir(runDirParts, "prompts_manifest.txt", manifestLines.join("\n"));
-    this.isGenerating = false;
-    this.batchAbortCtrl = null;
-    this.batchProgressLabel = "";
-    this.batchDoneLabel = `🎉 本轮连出完成 (${succeeded}/${tasks.length} 张)`;
-    this.updateLightboxBatchStatus();
-    this.switchOutTab("out-image");
-    this.syncMobileUi();
-    const msgDone = `🎉 批量连出结束：成功 ${succeeded}/${tasks.length} 张` +
-      (getMountedDirName() ? `（已保存至 ${runDirParts.join("/")}）` : "（可点击画廊右上角📦打包下载全部 .zip）");
-    this.setStatus(msgDone);
-    this.appendLog(msgDone);
-
+  private async refreshSubscription(silent = false): Promise<void> {
+    if (!this.apiSettings.api_token.trim()) return;
     try {
       this.subInfo = await fetchSubscriptionInfo(this.apiSettings.api_token);
-      this.updateAnlasDisplay();
-    } catch {
-      // silent
+      this.updateQuotaPill();
+      if (!silent) {
+        this.setStatus(
+          `✅ 账户已连接：${this.subInfo.tier_name} · 剩余 ${this.subInfo.anlas_left} Anlas`
+        );
+      }
+    } catch (err) {
+      if (!silent) {
+        this.setStatus(
+          `❌ 查询账户失败：${err instanceof Error ? err.message : String(err)}`,
+          true
+        );
+      }
     }
   }
 
-  private async onUpscaleActiveImage(): Promise<void> {
-    if (this.isGenerating) return;
-    const rec = this.gallery[this.activeGalleryIdx];
-    if (!rec) {
-      window.alert("当前预览画廊还没有图片，请先生成至少一张图片。");
-      return;
-    }
+  private setStatus(msg: string, isError = false): void {
+    if (!this.elStageMeta) return;
+    this.elStageMeta.textContent = msg;
+    this.elStageMeta.className = `stage-meta${isError ? " err" : " ok"}`;
+  }
+
+  private async runGenerationQueue(
+    tasks: Array<{ sceneId: string; useManualPrompt?: boolean; forceRandomSeed?: boolean }>
+  ): Promise<void> {
+    if (this.isGenerating || tasks.length === 0) return;
     if (!this.apiSettings.api_token.trim()) {
-      this.switchMobilePane("config");
-      this.switchLeftTab("tab-api");
-      window.alert("请先填写 API Token！");
+      this.elApiCard.classList.remove("collapsed");
+      this.mobileCol = "left";
+      this.syncMobileColumns();
+      this.setStatus("⚠️ 请先在左侧底部「🔑 API 令牌」卡片填入 Persistent API Token (pst-...)", true);
       return;
     }
 
     this.isGenerating = true;
-    this.syncMobileUi();
-    this.setStatus(`🔎 正在对 ${rec.filename} 执行官方 2x 高清放大 (1 Anlas)...`);
-    this.appendLog(`🔎 请求官方 2x Upscale: ${rec.filename} (${rec.width}x${rec.height})...`);
+    this.abortController = new AbortController();
+    this.elHeroGenBtn.style.display = "none";
+    this.elStopGenBtn.style.display = "inline-flex";
+    this.elProgressBanner.style.display = "inline-flex";
+    this.updateBatchCheckedButton();
+    this.syncStageToolbar();
+
+    // Switch mobile view to Center Stage so user sees live output immediately
+    this.mobileCol = "center";
+    this.syncMobileColumns();
+
+    const activeVibes = this.getActiveVibeSlots();
+    const safeLimit = computeSafePosTokenLimit({
+      isV45: this.apiSettings.model === MODEL_V4_5_FULL,
+      activeVibeCount: activeVibes.length,
+    });
+    this.cfg.pos_token_limit = safeLimit;
+
+    const sessionFolder = `${formatDateYYYYMMDD()}_${(this.cfg.eng_name || "Studio").replace(/[^a-zA-Z0-9_-]/g, "")}`;
+    const promptLogs: string[] = [];
+
+    try {
+      for (let i = 0; i < tasks.length; i++) {
+        if (this.abortController.signal.aborted) break;
+        const task = tasks[i];
+        const genItems = generateScenePrompts(task.sceneId, this.cfg);
+        const sceneItem = genItems[0];
+        if (!sceneItem) continue;
+
+        let rawPosPrompt: string;
+        let customNeg: string;
+        if (task.useManualPrompt) {
+          rawPosPrompt = this.elPosTextarea.value.trim();
+          customNeg = this.elNegTextarea.value.trim();
+        } else {
+          const sp = splitPromptPosAndNeg(sceneItem.prompt);
+          rawPosPrompt = sp.posPrompt;
+          customNeg = sp.negPrompt;
+        }
+
+        const isPixelC5 = isC5LowresPixelStyleActive(this.cfg);
+        const [w, h] = isPixelC5
+          ? sceneItem.canvas.includes("384x512")
+            ? [384, 512]
+            : [512, 384]
+          : parseCanvasSize(sceneItem.canvas, this.apiSettings.canvas_preset);
+
+        const reqSeed =
+          task.forceRandomSeed || tasks.length > 1 ? -1 : this.apiSettings.seed;
+
+        const tStart = performance.now();
+        this.startLiveTimerLabel(
+          `[${i + 1}/${tasks.length}] 正在生成 ${task.sceneId}${this.apiSettings.auto_upscale_replace && !isPixelC5 ? " (+自动2x高清)" : ""}`,
+          tStart
+        );
+
+        const res = await generateSingleImageNai({
+          apiToken: this.apiSettings.api_token,
+          model: this.apiSettings.model,
+          promptText: rawPosPrompt,
+          customNegPrompt: customNeg,
+          width: w,
+          height: h,
+          steps: this.apiSettings.steps,
+          scale: this.apiSettings.scale,
+          cfgRescale: this.apiSettings.cfg_rescale,
+          seed: reqSeed,
+          ucPresetMode: this.apiSettings.uc_preset_mode,
+          keepInlineNegatives: false,
+          extraUc: this.apiSettings.extra_uc,
+          appendV5Quality: this.apiSettings.append_v5_quality,
+          vibes: activeVibes,
+          normalizeVibeStrength: this.apiSettings.vibe_normalize_strength,
+          isOpusFreeEligible: this.isOpusFreeActive(),
+          pixel3xNearest: isPixelC5,
+          signal: this.abortController.signal,
+        });
+
+        let finalBytes = res.imageBytes;
+        let finalW = res.width;
+        let finalH = res.height;
+        let finalElapsed = res.elapsedSec;
+        let isUpscaled = false;
+
+        // INVARIANT (AGENTS.md Rule 3): When auto_upscale_replace is enabled, NEVER push temporary 1x base images
+        // to the gallery or Lightbox before 2x upscaling completes!
+        if (this.apiSettings.auto_upscale_replace && !isPixelC5) {
+          this.startLiveTimerLabel(
+            `[${i + 1}/${tasks.length}] 正在执行 2x 高清放大替换 ${task.sceneId}`,
+            tStart
+          );
+          try {
+            const up = await upscaleSingleImageNai({
+              apiToken: this.apiSettings.api_token,
+              imageBytes: finalBytes,
+              signal: this.abortController.signal,
+            });
+            finalBytes = up.imageBytes;
+            finalW = up.outWidth;
+            finalH = up.outHeight;
+            finalElapsed = Number((finalElapsed + up.elapsedSec).toFixed(2));
+            isUpscaled = true;
+          } catch (upErr) {
+            if (this.abortController.signal.aborted) break;
+            this.setStatus(
+              `⚠️ 2x 自动放大失败，已保留 1x 原图：${upErr instanceof Error ? upErr.message : String(upErr)}`,
+              true
+            );
+          }
+        }
+
+        const ext = detectImageExt(finalBytes);
+        const timeTag = formatTimeHHMMSS();
+        const filename = `${timeTag}_${task.sceneId}_s${res.seed}${isUpscaled ? "_2x" : ""}${ext}`;
+        const copyForBlob = new Uint8Array(finalBytes.byteLength);
+        copyForBlob.set(finalBytes);
+        const objectUrl = URL.createObjectURL(new Blob([copyForBlob], { type: "image/png" }));
+
+        const rec: GeneratedImageRecord = {
+          id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          scene_id: task.sceneId,
+          mode_label: this.cfg.perspective_mode,
+          filename,
+          bytes: finalBytes,
+          objectUrl,
+          seed: res.seed,
+          width: finalW,
+          height: finalH,
+          elapsed_sec: finalElapsed,
+          estimated_anlas: res.estimatedAnlas + (isUpscaled ? 1 : 0),
+          created_at: Date.now(),
+          prompt_pos: rawPosPrompt,
+          prompt_neg: customNeg,
+          is_upscaled: isUpscaled,
+        };
+
+        // Save to mounted local directory if connected
+        const savedPath = await saveBytesToMountedDir([sessionFolder], filename, finalBytes);
+        if (savedPath) rec.saved_to_dir = true;
+        promptLogs.push(`# ${filename} | ${finalW}x${finalH} | Seed: ${res.seed}\n[POS] ${rawPosPrompt}\n[NEG] ${customNeg}\n`);
+        if (getMountedDirName()) {
+          await saveBytesToMountedDir([sessionFolder], "prompts.txt", promptLogs.join("\n"));
+        }
+
+        if (this.apiSettings.auto_download) {
+          triggerBytesDownload(finalBytes, filename);
+        }
+
+        this.gallery.push(rec);
+        this.selectedGalleryIdx = this.gallery.length - 1;
+        this.renderHeroViewport();
+        this.renderFilmstrip();
+        this.setStatus(
+          `✅ ${rec.scene_id} · ${rec.width}×${rec.height}${rec.is_upscaled ? " [2x HD]" : ""} · Seed: ${rec.seed} · ${rec.elapsed_sec}s${rec.saved_to_dir ? " · 📂已落盘" : ""}`
+        );
+
+        // Fullscreen Carousel Lightbox sync (ONLY after final 2x or 1x record is pushed!)
+        if (this.lightboxOpen) {
+          if (this.carouselMode === "follow_latest") {
+            this.lightboxIdx = this.gallery.length - 1;
+          }
+          this.renderLightboxFrame();
+        } else if (this.apiSettings.auto_fullscreen_carousel && tasks.length > 1) {
+          this.openLightbox(this.gallery.length - 1, this.apiSettings.carousel_auto_mode);
+        }
+      }
+    } catch (err) {
+      if (!this.abortController.signal.aborted) {
+        this.setStatus(
+          `❌ 生图中断：${err instanceof Error ? err.message : String(err)}`,
+          true
+        );
+      } else {
+        this.setStatus("⏹ 已手动停止生图队列");
+      }
+    } finally {
+      this.stopLiveTimerLabel();
+      this.isGenerating = false;
+      this.abortController = null;
+      this.elHeroGenBtn.style.display = "inline-flex";
+      this.elStopGenBtn.style.display = "none";
+      this.elProgressBanner.style.display = "none";
+      this.updateBatchCheckedButton();
+      this.syncStageToolbar();
+      void this.refreshSubscription(true);
+    }
+  }
+
+  private startLiveTimerLabel(prefix: string, tStart: number): void {
+    this.stopLiveTimerLabel();
+    const update = () => {
+      const sec = ((performance.now() - tStart) / 1000).toFixed(1);
+      this.elProgressText.textContent = `${prefix} · ${sec}s`;
+    };
+    update();
+    this.genTimerHandle = window.setInterval(update, 200);
+  }
+
+  private stopLiveTimerLabel(): void {
+    if (this.genTimerHandle !== null) {
+      window.clearInterval(this.genTimerHandle);
+      this.genTimerHandle = null;
+    }
+  }
+
+  private async upscaleSelectedGalleryImage(): Promise<void> {
+    const rec = this.gallery[this.selectedGalleryIdx];
+    if (!rec || rec.is_upscaled || this.isGenerating) return;
+    if (!this.apiSettings.api_token.trim()) {
+      this.setStatus("⚠️ 请先填写 API Token", true);
+      return;
+    }
+
+    this.isGenerating = true;
+    this.syncStageToolbar();
+    this.elProgressBanner.style.display = "inline-flex";
+    const t0 = performance.now();
+    this.startLiveTimerLabel(`🔍 正在 2x 放大 ${rec.scene_id}`, t0);
 
     try {
       const up = await upscaleSingleImageNai({
         apiToken: this.apiSettings.api_token,
         imageBytes: rec.bytes,
       });
-      const stem = rec.filename.replace(/\.[^.]+$/, "");
-      const ext = detectImageExt(up.imageBytes);
-      const outName = `${stem}_upscaled_${up.outWidth}x${up.outHeight}${ext}`;
-      const savedPath = await saveBytesToMountedDir([formatDateYYYYMMDD()], outName, up.imageBytes);
-      if (!savedPath && this.apiSettings.auto_download) {
-        triggerBytesDownload(up.imageBytes, outName);
+      URL.revokeObjectURL(rec.objectUrl);
+      const copy = new Uint8Array(up.imageBytes.byteLength);
+      copy.set(up.imageBytes);
+      rec.bytes = up.imageBytes;
+      rec.objectUrl = URL.createObjectURL(new Blob([copy], { type: "image/png" }));
+      rec.width = up.outWidth;
+      rec.height = up.outHeight;
+      rec.is_upscaled = true;
+      rec.filename = rec.filename.replace(/(\.[^.]+)$/, "_2x$1");
+
+      if (getMountedDirName()) {
+        const folder = `${formatDateYYYYMMDD()}_${(this.cfg.eng_name || "Studio").replace(/[^a-zA-Z0-9_-]/g, "")}`;
+        const saved = await saveBytesToMountedDir([folder], rec.filename, rec.bytes);
+        if (saved) rec.saved_to_dir = true;
       }
 
-      if (this.apiSettings.auto_upscale_replace) {
-        this.removeGalleryRecordById(rec.id);
-      }
-      this.pushGalleryRecord({
-        id: `${Date.now()}_up`,
-        scene_id: `${rec.scene_id}_2x`,
-        mode_label: rec.mode_label,
-        filename: outName,
-        bytes: up.imageBytes,
-        objectUrl: URL.createObjectURL(new Blob([up.imageBytes.slice()], { type: "image/png" })),
-        seed: rec.seed,
-        width: up.outWidth,
-        height: up.outHeight,
-        elapsed_sec: up.elapsedSec,
-        estimated_anlas: 1,
-        created_at: Date.now(),
-        is_upscaled: true,
-        saved_to_dir: Boolean(savedPath),
-      });
-
-      this.setStatus(`🎉 2x 高清放大完成：${up.srcWidth}x${up.srcHeight} ➔ ${up.outWidth}x${up.outHeight} (${up.elapsedSec}s)`);
-      this.appendLog(`✅ 2x Upscale 完成: ${outName} (${up.outWidth}x${up.outHeight}, ${up.elapsedSec}s)`);
-      try {
-        this.subInfo = await fetchSubscriptionInfo(this.apiSettings.api_token);
-        this.updateAnlasDisplay();
-      } catch {
-        // silent refresh
-      }
+      this.renderHeroViewport();
+      this.renderFilmstrip();
+      if (this.lightboxOpen) this.renderLightboxFrame();
+      this.setStatus(
+        `✨ 2x 放大完成：${rec.scene_id} · ${rec.width}×${rec.height} (${up.elapsedSec}s)`
+      );
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.appendLog(`❌ 2x 放大失败: ${msg}`);
-      this.setStatus(`❌ 放大失败：${msg}`);
-      window.alert(msg);
+      this.setStatus(
+        `❌ 2x 放大失败：${err instanceof Error ? err.message : String(err)}`,
+        true
+      );
     } finally {
+      this.stopLiveTimerLabel();
       this.isGenerating = false;
-      this.syncMobileUi();
+      this.elProgressBanner.style.display = "none";
+      this.syncStageToolbar();
     }
   }
 
-  private pushGalleryRecord(rec: GeneratedImageRecord): void {
-    this.gallery.push(rec);
-    const latestIdx = this.gallery.length - 1;
-    const isBatchActive = Boolean(this.isGenerating && this.batchAbortCtrl);
-    const lightboxOpen = this.elLightbox.classList.contains("open");
+  private renderHeroViewport(): void {
+    this.elHeroViewport.innerHTML = "";
+    this.elHeroViewport.appendChild(this.elProgressBanner);
 
-    if (
-      isBatchActive &&
-      this.apiSettings.auto_fullscreen_carousel &&
-      !lightboxOpen &&
-      !this.batchLightboxDismissed
-    ) {
-      this.activeGalleryIdx = latestIdx;
-      this.renderGallery();
-      this.openLightbox(rec, "auto");
+    const rec = this.gallery[this.selectedGalleryIdx];
+    if (!rec) {
+      this.syncStageToolbar();
       return;
     }
 
-    if (lightboxOpen) {
-      if (this.carouselMode === "follow_latest" || this.activeGalleryIdx < 0) {
-        this.activeGalleryIdx = latestIdx;
-        this.renderGallery();
-        this.syncLightboxView(true);
-      } else {
-        // In "timed" or "manual" mode, keep current slide & timer undisturbed
-        this.renderGallery();
-        this.syncLightboxView(false);
-      }
-      return;
-    }
-
-    this.activeGalleryIdx = latestIdx;
-    this.renderGallery();
+    const img = document.createElement("img");
+    img.className = "hero-img";
+    img.src = rec.objectUrl;
+    img.alt = rec.filename;
+    img.title = "点击进入全屏灯箱查看";
+    img.addEventListener("click", () => this.openLightbox(this.selectedGalleryIdx));
+    this.elHeroViewport.appendChild(img);
+    this.syncStageToolbar();
   }
 
-  private renderGallery(): void {
-    const rec = this.gallery[this.activeGalleryIdx];
-    this.elPreviewStage.innerHTML = "";
-    if (rec) {
-      const img = this.el("img");
+  private renderFilmstrip(): void {
+    if (this.gallery.length === 0) {
+      this.elFilmstripBar.classList.add("hidden");
+      return;
+    }
+    this.elFilmstripBar.classList.remove("hidden");
+    this.elFilmstripScroll.innerHTML = "";
+
+    this.gallery.forEach((rec, idx) => {
+      const item = this.el(
+        "div",
+        `film-item${idx === this.selectedGalleryIdx ? " active" : ""}`
+      );
+      const img = document.createElement("img");
       img.src = rec.objectUrl;
-      img.alt = rec.filename;
-      img.title = "点击打开全屏高清灯箱对比";
-      img.addEventListener("click", () => this.openLightbox(rec));
-      this.elPreviewStage.appendChild(img);
-      this.elPreviewMeta.textContent =
-        `${rec.is_upscaled ? "🔎2x" : "✅"} ${rec.scene_id} [${rec.mode_label}] | ` +
-        `${rec.width}×${rec.height} | Seed: ${rec.seed} | ${rec.elapsed_sec}s` +
-        (rec.saved_to_dir ? " | 📁已写盘" : "");
-    } else {
-      this.elPreviewStage.appendChild(this.el("span", "hint-text", "等待 NovelAI V4.5 / V5 生成图片..."));
-    }
-
-    this.elFilmstrip.innerHTML = "";
-    this.gallery.forEach((item, idx) => {
-      const thumb = this.el("div", `film-thumb ${idx === this.activeGalleryIdx ? "active" : ""}`);
-      const tImg = this.el("img");
-      tImg.src = item.objectUrl;
-      const lbl = this.el("div", "film-lbl", item.scene_id);
-      thumb.append(tImg, lbl);
-      thumb.addEventListener("click", () => {
-        this.activeGalleryIdx = idx;
-        this.renderGallery();
+      const chk = this.el("input", "film-item-chk") as HTMLInputElement;
+      chk.type = "checkbox";
+      chk.checked = this.checkedGalleryIds.has(rec.id);
+      chk.title = "勾选以用于打包 ZIP 导出（不勾选则默认打包全部）";
+      chk.addEventListener("click", (ev) => ev.stopPropagation());
+      chk.addEventListener("change", () => {
+        if (chk.checked) this.checkedGalleryIds.add(rec.id);
+        else this.checkedGalleryIds.delete(rec.id);
       });
-      this.elFilmstrip.appendChild(thumb);
+
+      item.append(img, chk);
+      if (rec.is_upscaled) {
+        item.appendChild(this.el("span", "film-item-2x", "2x"));
+      }
+      item.appendChild(this.el("div", "film-item-lbl", rec.scene_id));
+      item.addEventListener("click", () => {
+        this.selectedGalleryIdx = idx;
+        this.renderHeroViewport();
+        this.renderFilmstrip();
+        this.setStatus(
+          `🖼️ ${rec.scene_id} · ${rec.width}×${rec.height}${rec.is_upscaled ? " [2x HD]" : ""} · Seed: ${rec.seed}`
+        );
+      });
+      this.elFilmstripScroll.appendChild(item);
     });
-    this.syncMobileUi();
+
+    // Keep latest active thumbnail scrolled into view
+    const activeThumb = this.elFilmstripScroll.children[this.selectedGalleryIdx] as
+      | HTMLElement
+      | undefined;
+    activeThumb?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
   }
 
-  private onDownloadAllGalleryZip(): void {
+  private exportGalleryZip(): void {
     if (this.gallery.length === 0) {
-      window.alert("当前会话还没有生成任何图片可供打包下载。");
+      this.setStatus("⚠️ 当前画廊为空，无可打包图片", true);
       return;
     }
-    const entries = this.gallery.map((g) => ({ name: g.filename, data: g.bytes }));
-    const blob = buildStoreZipBlob(entries);
-    triggerBlobDownload(blob, `novelai_session_${formatDateYYYYMMDD()}_${formatTimeHHMMSS()}.zip`);
-    this.setStatus(`📦 已打包下载当前会话全部 ${this.gallery.length} 张图片 (.zip)`);
+    const targets =
+      this.checkedGalleryIds.size > 0
+        ? this.gallery.filter((g) => this.checkedGalleryIds.has(g.id))
+        : this.gallery;
+    const entries: Array<{ name: string; data: Uint8Array | string }> = targets.map((g) => ({
+      name: g.filename,
+      data: g.bytes,
+    }));
+    const logTxt = targets
+      .map(
+        (g) =>
+          `# ${g.filename} (${g.width}x${g.height}, Seed=${g.seed})\n[Positive]\n${g.prompt_pos || ""}\n[Negative]\n${g.prompt_neg || ""}\n`
+      )
+      .join("\n----------------------------------------\n");
+    entries.push({ name: "prompts.txt", data: logTxt });
+    const zip = buildStoreZipBlob(entries);
+    triggerBlobDownload(zip, `NAI_Studio_${formatDateYYYYMMDD()}_${formatTimeHHMMSS()}.zip`);
+    this.setStatus(`📦 已打包下载 ${targets.length} 张图片与 prompts.txt`);
   }
 
-  private syncCheckerboard(): void {
-    this.elPreviewStage.classList.toggle("checkerboard", this.checkerboardOn);
-    this.elLightboxBody.classList.toggle("checkerboard", this.checkerboardOn);
-  }
-
-  private setAutoCarouselEnabled(enabled: boolean): void {
-    this.apiSettings.auto_fullscreen_carousel = enabled;
-    saveApiSettings(this.apiSettings);
-    for (const cb of this.autoCarouselCheckboxes) {
-      cb.checked = enabled;
-    }
-  }
-
-  private setAutoUpscaleEnabled(enabled: boolean): void {
-    this.apiSettings.auto_upscale_replace = enabled;
-    saveApiSettings(this.apiSettings);
-    for (const cb of this.autoUpscaleCheckboxes) {
-      cb.checked = enabled;
-    }
-    this.updateCostHint();
-  }
-
-  private removeGalleryRecordById(id: string): void {
-    const idx = this.gallery.findIndex((g) => g.id === id);
-    if (idx < 0) return;
-    const [removed] = this.gallery.splice(idx, 1);
-    if (removed?.objectUrl) {
-      URL.revokeObjectURL(removed.objectUrl);
-    }
-    if (this.gallery.length === 0) {
-      this.activeGalleryIdx = -1;
-    } else if (this.activeGalleryIdx >= this.gallery.length) {
-      this.activeGalleryIdx = this.gallery.length - 1;
-    } else if (idx < this.activeGalleryIdx) {
-      this.activeGalleryIdx = Math.max(0, this.activeGalleryIdx - 1);
-    }
-    this.renderGallery();
-    this.syncLightboxView();
-  }
-
-  private openLightbox(rec: GeneratedImageRecord, launchMode: "manual" | "auto" = "manual"): void {
-    const idx = this.gallery.findIndex((g) => g.id === rec.id);
-    if (idx >= 0) {
-      this.activeGalleryIdx = idx;
-    }
-    this.lightboxZoom1x = false;
-    this.elLightboxImg.classList.remove("zoomed-1x");
-    this.elLightbox.classList.add("open");
-    this.syncLightboxView(true);
-    this.updateLightboxBatchStatus();
-    if (launchMode === "auto") {
-      const targetMode: CarouselMode = this.isGenerating
-        ? this.apiSettings.carousel_auto_mode
-        : "timed";
-      this.setCarouselMode(targetMode, false, this.isGenerating);
-    } else {
-      this.setCarouselMode("manual", false, false);
-    }
-  }
-
-  private syncLightboxView(scrollActiveThumb = true): void {
-    if (!this.elLightbox.classList.contains("open")) return;
-    const rec = this.gallery[this.activeGalleryIdx];
-    if (!rec) return;
-    if (this.elLightboxImg.src !== rec.objectUrl) {
-      this.elLightboxImg.src = rec.objectUrl;
-    }
-    this.elLightboxMeta.textContent =
-      `[${this.activeGalleryIdx + 1}/${this.gallery.length}] ${rec.filename}  (${rec.width}×${rec.height} · Seed ${rec.seed})`;
-
-    this.elLightboxStrip.innerHTML = "";
-    this.gallery.forEach((item, idx) => {
-      const thumb = this.el("div", `film-thumb ${idx === this.activeGalleryIdx ? "active" : ""}`);
-      const tImg = this.el("img");
-      tImg.src = item.objectUrl;
-      const lbl = this.el("div", "film-lbl", item.scene_id);
-      thumb.append(tImg, lbl);
-      thumb.addEventListener("click", () => {
-        this.activeGalleryIdx = idx;
-        this.renderGallery();
-        this.syncLightboxView(true);
-        if (this.carouselMode === "follow_latest" && idx < this.gallery.length - 1) {
-          this.setCarouselMode("manual", false, false);
-        } else if (this.carouselMode === "timed") {
-          this.restartTimedInterval();
-        }
-      });
-      this.elLightboxStrip.appendChild(thumb);
-      if (scrollActiveThumb && idx === this.activeGalleryIdx) {
-        thumb.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-      }
+  private bindGlobalEvents(): void {
+    document.addEventListener("click", () => {
+      this.closeAllPopovers();
     });
-  }
 
-  private updateLightboxBatchStatus(): void {
-    if (!this.elLightboxProgress || !this.elLightboxStopBatchBtn) return;
-    const isBatchActive = Boolean(this.isGenerating && this.batchAbortCtrl);
-    if (isBatchActive && this.batchProgressLabel) {
-      this.elLightboxProgress.textContent = this.batchProgressLabel;
-      this.elLightboxProgress.className = "lightbox-status-pill active";
-      this.elLightboxStopBatchBtn.style.display = "";
-    } else if (this.batchDoneLabel && this.elLightbox.classList.contains("open")) {
-      this.elLightboxProgress.textContent = this.batchDoneLabel;
-      this.elLightboxProgress.className = "lightbox-status-pill active done";
-      this.elLightboxStopBatchBtn.style.display = "none";
-    } else {
-      this.elLightboxProgress.textContent = "";
-      this.elLightboxProgress.className = "lightbox-status-pill";
-      this.elLightboxStopBatchBtn.style.display = "none";
-    }
-  }
-
-  private handleManualLightboxStep(delta: number): void {
-    this.stepLightbox(delta);
-    if (this.carouselMode === "follow_latest") {
-      this.setCarouselMode("manual", false, false);
-    } else if (this.carouselMode === "timed") {
-      this.restartTimedInterval();
-    }
-  }
-
-  private stepLightbox(delta: number): void {
-    if (this.gallery.length === 0) return;
-    const len = this.gallery.length;
-    this.activeGalleryIdx = (this.activeGalleryIdx + delta + len) % len;
-    this.renderGallery();
-    this.syncLightboxView(true);
-  }
-
-  private clearCarouselTimer(): void {
-    if (this.carouselTimer !== null) {
-      window.clearInterval(this.carouselTimer);
-      this.carouselTimer = null;
-    }
-  }
-
-  private restartTimedInterval(): void {
-    this.clearCarouselTimer();
-    if (this.carouselMode !== "timed" || !this.elLightbox.classList.contains("open")) return;
-    const sec = this.apiSettings.carousel_interval_sec || 4;
-    this.carouselTimer = window.setInterval(() => {
-      if (!this.elLightbox.classList.contains("open") || this.carouselMode !== "timed") {
-        this.clearCarouselTimer();
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") {
+        if (this.lightboxOpen) {
+          this.closeLightbox();
+        } else {
+          this.closeAllPopovers();
+        }
         return;
       }
-      if (this.gallery.length > 1) {
-        this.stepLightbox(1);
+      if (this.lightboxOpen) {
+        if (ev.key === "ArrowLeft") {
+          ev.preventDefault();
+          this.stepLightbox(-1, true);
+        } else if (ev.key === "ArrowRight" || ev.key === " ") {
+          ev.preventDefault();
+          this.stepLightbox(1, true);
+        }
       }
-    }, sec * 1000);
+    });
   }
 
-  private setCarouselMode(mode: CarouselMode, jumpLatest = true, persistPref = true): void {
-    this.clearCarouselTimer();
-    this.carouselMode = mode;
+  // ===========================================================================
+  // LIVE MCP BRIDGE COMMAND EXECUTOR
+  // ===========================================================================
+  private buildStateSnapshotForMcp(): Record<string, unknown> {
+    const activeVibes = this.getActiveVibeSlots();
+    const safeLimit = computeSafePosTokenLimit({
+      isV45: this.apiSettings.model === MODEL_V4_5_FULL,
+      activeVibeCount: activeVibes.length,
+    });
+    const posPrompt = this.elPosTextarea.value.trim();
+    const negPrompt = this.elNegTextarea.value.trim();
+    const counts = countSeparatedT5Tokens({
+      posPrompt,
+      sceneNegPrompt: negPrompt,
+      ucPresetMode:
+        this.apiSettings.model === MODEL_V5_FULL_MEDIUM
+          ? "heavy"
+          : this.apiSettings.uc_preset_mode,
+      extraUc: this.apiSettings.extra_uc,
+      appendQuality: this.apiSettings.append_v5_quality,
+    });
 
-    if (persistPref && (mode === "follow_latest" || mode === "timed")) {
-      this.apiSettings.carousel_auto_mode = mode;
+    const { api_token: _redacted, ...safeApiSettings } = this.apiSettings;
+    return {
+      connected: true,
+      is_generating: this.isGenerating,
+      action_mode: this.actionMode,
+      active_scene_id: this.actionMode === "free" ? "FREE" : this.activeSceneId,
+      checked_position_ids: Array.from(this.checkedPositionIds),
+      checked_multi_angle_ids: Array.from(this.checkedMultiAngleIds),
+      is_manual_prompt_locked: this.isManualPromptEdited,
+      prompt: {
+        scene_title: this.elPromptSceneLbl.textContent || "",
+        positive: posPrompt,
+        scene_negative: negPrompt,
+        pos_tokens: counts.posTokens,
+        neg_tokens: counts.negTokens,
+        safe_pos_limit: this.apiSettings.model === MODEL_V5_FULL_MEDIUM ? 512 : safeLimit,
+      },
+      character_config: { ...this.cfg },
+      api_settings: {
+        ...safeApiSettings,
+        has_api_token: Boolean(this.apiSettings.api_token.trim()),
+      },
+      vibes: this.vibeItems.map((v, idx) => ({
+        index: idx,
+        id: v.id,
+        name: v.name,
+        enabled: v.enabled,
+        strength: v.strength,
+        information_extracted: v.informationExtracted,
+        models: Object.keys(v.encodings),
+      })),
+      presets: {
+        active: this.cfg.preset_name,
+        custom: Object.keys(this.customPresets),
+        builtin: this.getAvailableBuiltinKeys(),
+      },
+      gallery: {
+        count: this.gallery.length,
+        selected_index: this.selectedGalleryIdx,
+        latest:
+          this.gallery.length > 0
+            ? {
+                filename: this.gallery[this.gallery.length - 1].filename,
+                scene_id: this.gallery[this.gallery.length - 1].scene_id,
+                seed: this.gallery[this.gallery.length - 1].seed,
+                width: this.gallery[this.gallery.length - 1].width,
+                height: this.gallery[this.gallery.length - 1].height,
+                is_upscaled: Boolean(this.gallery[this.gallery.length - 1].is_upscaled),
+              }
+            : null,
+      },
+    };
+  }
+
+  private async handleMcpCommand(
+    method: string,
+    params: Record<string, unknown>
+  ): Promise<unknown> {
+    if (method === "get_state") {
+      return this.buildStateSnapshotForMcp();
+    }
+
+    if (method === "update_config") {
+      const cfgPatch = (params.character_config as Record<string, unknown> | undefined) ?? {};
+      const apiPatch = (params.api_settings as Record<string, unknown> | undefined) ?? {};
+      const changedNotes: string[] = [];
+
+      const prevStyle = this.cfg.style_preset;
+      for (const [k, v] of Object.entries(cfgPatch)) {
+        if (k === "eye_color" || k === "hair_tags" || v === undefined) continue;
+        if (k in this.cfg) {
+          (this.cfg as unknown as Record<string, unknown>)[k] = v;
+          changedNotes.push(k);
+        }
+      }
+
+      // Auto-sync lighting & bundled Vibe if style_preset changed and lighting_preset wasn't explicitly overridden
+      if (
+        typeof cfgPatch.style_preset === "string" &&
+        cfgPatch.style_preset !== prevStyle
+      ) {
+        if (cfgPatch.lighting_preset === undefined) {
+          this.cfg.lighting_preset = resolveLightingForStyle(this.cfg.style_preset);
+        }
+        const stylePack = STYLE_BUNDLED_VIBE_PACK[this.cfg.style_preset];
+        if (stylePack && BUNDLED_VIBE_PACKS[stylePack]) {
+          await this.injectBundledVibePack(stylePack, false);
+        }
+      }
+
+      for (const [k, v] of Object.entries(apiPatch)) {
+        if (k === "api_token" || v === undefined) continue;
+        if (k in this.apiSettings) {
+          (this.apiSettings as unknown as Record<string, unknown>)[k] = v;
+          changedNotes.push(k);
+        }
+      }
+
+      if (
+        params.action_mode === "positions" ||
+        params.action_mode === "multi_angle" ||
+        params.action_mode === "free"
+      ) {
+        this.actionMode = params.action_mode;
+        changedNotes.push(`mode=${params.action_mode}`);
+      }
+      if (typeof params.active_scene_id === "string" && params.active_scene_id.trim()) {
+        const sid = params.active_scene_id.trim();
+        if (sid === "FREE") {
+          this.actionMode = "free";
+        } else if (sid.startsWith("MA")) {
+          this.actionMode = "multi_angle";
+          this.activeSceneId = sid;
+        } else if (sid.startsWith("P")) {
+          this.actionMode = "positions";
+          this.activeSceneId = sid;
+        }
+        changedNotes.push(`scene=${sid}`);
+      }
+      if (Array.isArray(params.checked_position_ids)) {
+        this.checkedPositionIds = new Set(
+          params.checked_position_ids.filter((x): x is string => typeof x === "string")
+        );
+      }
+      if (Array.isArray(params.checked_multi_angle_ids)) {
+        this.checkedMultiAngleIds = new Set(
+          params.checked_multi_angle_ids.filter((x): x is string => typeof x === "string")
+        );
+      }
+
+      this.isManualPromptEdited = false;
+      saveActiveConfig(this.cfg);
       saveApiSettings(this.apiSettings);
+      this.populatePresetSelect();
+      this.syncAllControls();
+      this.renderRightModeView();
+      this.refreshSceneAndPrompt();
+      this.setStatus(`🤖 MCP 已实时更新网页 (${changedNotes.slice(0, 5).join(", ") || "同步完成"})`);
+      return this.buildStateSnapshotForMcp();
     }
 
-    if (mode === "follow_latest" && jumpLatest && this.gallery.length > 0) {
-      this.activeGalleryIdx = this.gallery.length - 1;
-      this.renderGallery();
-      this.syncLightboxView(true);
-    } else if (mode === "timed") {
-      this.restartTimedInterval();
-    }
-
-    this.syncCarouselControlsUi();
-  }
-
-  private syncCarouselControlsUi(): void {
-    const sec = this.apiSettings.carousel_interval_sec || 4;
-    if (this.elLightboxFollowBtn) {
-      const onFollow = this.carouselMode === "follow_latest";
-      this.elLightboxFollowBtn.textContent = onFollow ? "📌 跟踪最新中" : "📌 跟踪最新";
-      this.elLightboxFollowBtn.className = onFollow ? "btn-sm btn-green" : "btn-sm";
-    }
-    if (this.elLightboxPlayBtn) {
-      const onTimed = this.carouselMode === "timed";
-      this.elLightboxPlayBtn.textContent = onTimed ? `⏸️ 按秒轮播中 (${sec}s)` : "▶️ 按秒轮播";
-      this.elLightboxPlayBtn.className = onTimed ? "btn-sm btn-green" : "btn-sm btn-blue";
-    }
-    for (const [val, btn] of this.elLightboxIntervalBtns.entries()) {
-      btn.classList.toggle("active", val === sec);
-    }
-  }
-
-  private async toggleNativeFullscreen(): Promise<void> {
-    try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen();
-      } else {
-        await this.elLightbox.requestFullscreen();
+    if (method === "set_manual_prompt") {
+      if (params.unlock === true) {
+        this.isManualPromptEdited = false;
+        this.refreshSceneAndPrompt();
+        this.setStatus("🤖 MCP 已解除手改词条锁定，恢复引擎自动生成");
+        return this.buildStateSnapshotForMcp();
       }
-    } catch {
-      // Ignore if browser blocks fullscreen API in local file context
-    }
-  }
 
-  private closeLightbox(): void {
-    if (this.isGenerating && this.batchAbortCtrl) {
-      this.batchLightboxDismissed = true;
+      let pos = this.elPosTextarea.value;
+      let neg = this.elNegTextarea.value;
+      if (typeof params.positive === "string") {
+        pos = params.positive;
+      }
+      if (typeof params.negative === "string") {
+        neg = params.negative;
+      }
+      if (typeof params.replace_target === "string" && params.replace_target.length > 0) {
+        const rep = typeof params.replace_with === "string" ? params.replace_with : "";
+        pos = pos.split(params.replace_target).join(rep);
+      }
+      this.elPosTextarea.value = pos;
+      this.elNegTextarea.value = neg;
+      this.isManualPromptEdited = true;
+      this.elManualLockPill.style.display = "inline-flex";
+      if (params.expand_drawer === true && !this.promptDrawerExpanded) {
+        this.elDrawerToggleBtn.click();
+      }
+      this.updateTokenBadgeFromBoxes();
+      this.setStatus("🤖 MCP 已直接更新当前正向/负向提示词框 (手改已锁定)");
+      return this.buildStateSnapshotForMcp();
     }
-    this.setCarouselMode("manual", false, false);
-    if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => {});
+
+    if (method === "manage_presets") {
+      const action = String(params.action || "");
+      const name = typeof params.name === "string" ? params.name.trim() : "";
+      if (action === "select") {
+        if (!name) throw new Error("Missing preset name for select");
+        await this.applySelectedCharacterPreset(name);
+        return this.buildStateSnapshotForMcp();
+      }
+      if (action === "save") {
+        if (!name) throw new Error("Missing preset name for save");
+        const finalName = name.startsWith("⭐") ? name : `⭐ ${name}`;
+        unmarkPresetDeleted(finalName);
+        this.cfg.preset_name = finalName;
+        this.customPresets[finalName] = { ...this.cfg };
+        saveCustomPresets(this.customPresets);
+        saveActiveConfig(this.cfg);
+        this.populatePresetSelect();
+        this.setStatus(`🤖 MCP 已保存自定义角色预设「${finalName}」`);
+        return this.buildStateSnapshotForMcp();
+      }
+      if (action === "delete") {
+        const target = name || this.elPresetSelect.value || this.cfg.preset_name;
+        const ok = await this.deletePresetByKey(target);
+        if (!ok) throw new Error(`Preset '${target}' could not be deleted`);
+        return this.buildStateSnapshotForMcp();
+      }
+      if (action === "restore_defaults") {
+        this.restoreFactoryPresets();
+        return this.buildStateSnapshotForMcp();
+      }
+      throw new Error(`Unknown manage_presets action: ${action}`);
     }
-    this.elLightbox.classList.remove("open");
+
+    if (method === "manage_vibes") {
+      const action = String(params.action || "list");
+      if (action === "clear") {
+        this.vibeItems = [];
+        await clearStoredVibeItems();
+        this.syncVibeUI();
+        this.refreshSceneAndPrompt();
+        this.setStatus("🤖 MCP 已清空 Vibe 槽位");
+        return this.buildStateSnapshotForMcp();
+      }
+      if (action === "set_master") {
+        if (typeof params.enabled === "boolean") {
+          this.apiSettings.vibe_transfer_enabled = params.enabled;
+        }
+        if (typeof params.normalize_strength === "boolean") {
+          this.apiSettings.vibe_normalize_strength = params.normalize_strength;
+        }
+        saveApiSettings(this.apiSettings);
+        this.syncVibeUI();
+        this.refreshSceneAndPrompt();
+        return this.buildStateSnapshotForMcp();
+      }
+      if (action === "update_slot") {
+        const idx = Number(params.index ?? -1);
+        const item = this.vibeItems[idx];
+        if (!item) throw new Error(`Vibe slot index ${idx} out of range (0..${this.vibeItems.length - 1})`);
+        if (typeof params.strength === "number") {
+          item.strength = Math.max(-1, Math.min(1, Number(params.strength.toFixed(2))));
+        }
+        if (typeof params.enabled === "boolean") {
+          item.enabled = params.enabled;
+        }
+        await saveStoredVibeItems(this.vibeItems);
+        this.syncVibeUI();
+        this.refreshSceneAndPrompt();
+        this.setStatus(`🤖 MCP 已更新 Vibe 槽位 #${idx + 1} (${item.name}: ${item.strength})`);
+        return this.buildStateSnapshotForMcp();
+      }
+      if (action === "import_base64") {
+        const b64 = String(params.base64 || "");
+        const filename = String(params.filename || "imported.naiv4vibebundle");
+        const append = Boolean(params.append);
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const file = new File([bytes], filename);
+        await this.handleVibeFilesImport([file], append);
+        return this.buildStateSnapshotForMcp();
+      }
+      return this.buildStateSnapshotForMcp();
+    }
+
+    if (method === "trigger_generate") {
+      if (this.isGenerating) {
+        throw new Error("网页当前正在执行生图任务，请等待当前队列完成或停止后再试。");
+      }
+      const sceneIdsRaw = Array.isArray(params.scene_ids)
+        ? params.scene_ids.filter((x): x is string => typeof x === "string")
+        : [];
+      const count = Math.max(1, Math.min(8, Number(params.count || this.apiSettings.batch_count || 1)));
+      const forceRandomSeed = Boolean(params.force_random_seed);
+      const targetIds =
+        sceneIdsRaw.length > 0
+          ? sceneIdsRaw
+          : [this.actionMode === "free" ? "FREE" : this.activeSceneId];
+      const queue: Array<{ sceneId: string; useManualPrompt?: boolean; forceRandomSeed?: boolean }> = [];
+      for (const sid of targetIds) {
+        for (let c = 0; c < count; c++) {
+          queue.push({
+            sceneId: sid,
+            useManualPrompt: sid === targetIds[0] && this.isManualPromptEdited,
+            forceRandomSeed,
+          });
+        }
+      }
+
+      const prevCount = this.gallery.length;
+      const waitFinish = params.wait_for_result !== false;
+      if (!waitFinish) {
+        void this.runGenerationQueue(queue);
+        return { started: true, queued_tasks: queue.length };
+      }
+
+      await this.runGenerationQueue(queue);
+      const added = this.gallery.slice(prevCount);
+      const latest = added[added.length - 1];
+      let savedPreviewPath: string | null = null;
+      if (latest && params.upload_preview !== false) {
+        savedPreviewPath = await this.mcpBridge.uploadImageBytesToBridge({
+          filename: latest.filename,
+          sceneId: latest.scene_id,
+          seed: latest.seed,
+          width: latest.width,
+          height: latest.height,
+          isUpscaled: Boolean(latest.is_upscaled),
+          bytes: latest.bytes,
+        });
+      }
+      return {
+        completed: true,
+        generated_count: added.length,
+        latest_image: latest
+          ? {
+              filename: latest.filename,
+              scene_id: latest.scene_id,
+              seed: latest.seed,
+              width: latest.width,
+              height: latest.height,
+              elapsed_sec: latest.elapsed_sec,
+              is_upscaled: Boolean(latest.is_upscaled),
+              local_preview_path: savedPreviewPath,
+            }
+          : null,
+      };
+    }
+
+    if (method === "get_latest_image") {
+      const idx =
+        typeof params.gallery_index === "number"
+          ? params.gallery_index
+          : this.selectedGalleryIdx >= 0
+            ? this.selectedGalleryIdx
+            : this.gallery.length - 1;
+      const rec = this.gallery[idx];
+      if (!rec) {
+        throw new Error("当前网页画廊为空，尚无已生成的图片。");
+      }
+      const savedPath = await this.mcpBridge.uploadImageBytesToBridge({
+        filename: rec.filename,
+        sceneId: rec.scene_id,
+        seed: rec.seed,
+        width: rec.width,
+        height: rec.height,
+        isUpscaled: Boolean(rec.is_upscaled),
+        bytes: rec.bytes,
+      });
+      return {
+        filename: rec.filename,
+        scene_id: rec.scene_id,
+        seed: rec.seed,
+        width: rec.width,
+        height: rec.height,
+        is_upscaled: Boolean(rec.is_upscaled),
+        local_preview_path: savedPath,
+      };
+    }
+
+    throw new Error(`Unsupported MCP bridge method: ${method}`);
   }
 }
