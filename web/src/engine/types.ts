@@ -1,5 +1,10 @@
 export type PerspectiveMode = "pov" | "3rd";
 export type ActionMode = "positions" | "multi_angle" | "free";
+export type CharacterGenderMode =
+  | "normal"
+  | "femboy"
+  | "futa_no_balls"
+  | "futa_with_balls";
 
 export interface CharacterConfig {
   preset_name: string;
@@ -7,6 +12,7 @@ export interface CharacterConfig {
   eng_name: string;
   canon_neg_tags: string;
   extra_char_tags: string;
+  gender_mode?: CharacterGenderMode;
 
   body_preset: string;
   bust_preset: string;
@@ -62,14 +68,6 @@ export interface CharacterConfig {
   free_action_prose: string;
   free_action_nsfw: boolean;
 
-  cam_enable_override: boolean;
-  cam_azimuth: number;
-  cam_elevation: number;
-  cam_shot_preset: string;
-  cam_wide_lens: boolean;
-  cam_dutch_angle: boolean;
-  cam_gaze_preset: string;
-
   expr_preset: string;
   expr_eye_state: string;
   expr_mouth_state: string;
@@ -89,6 +87,7 @@ export function createDefaultCharacterConfig(): CharacterConfig {
     eng_name: "Javelin",
     canon_neg_tags: "neckerchief, serafuku, plaid, gloves, crown",
     extra_char_tags: "",
+    gender_mode: "normal",
 
     body_preset: "纤细娇小（原版默认 slender, petite）",
     bust_preset: "默认随角色原设",
@@ -143,14 +142,6 @@ export function createDefaultCharacterConfig(): CharacterConfig {
     free_action_tags: "cowboy shot, sitting, crossed legs, head tilt, gentle smile, looking at viewer",
     free_action_prose: "",
     free_action_nsfw: false,
-
-    cam_enable_override: false,
-    cam_azimuth: 0,
-    cam_elevation: 12,
-    cam_shot_preset: "随原幕景别",
-    cam_wide_lens: false,
-    cam_dutch_angle: false,
-    cam_gaze_preset: "👁️ 始终看镜头（背后自动回眸）",
 
     expr_preset: "🔄 随本幕剧情默认（保留原幕微表情与熟睡/半醒节奏）",
     expr_eye_state: "随表情预设默认",

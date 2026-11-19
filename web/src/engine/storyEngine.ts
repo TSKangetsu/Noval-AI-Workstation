@@ -4,8 +4,6 @@ import {
   BODY_PRESETS,
   BUILTIN_CHARACTERS,
   BUST_PRESETS,
-  CAMERA_GAZE_PRESETS,
-  CAMERA_SHOT_PRESETS,
   ENV_PRESETS,
   EXPR_BLUSH_CONFLICT_TAGS,
   EXPR_BLUSH_TAGS,
@@ -33,13 +31,17 @@ import {
   SKIN_PRESETS,
   STYLE_PRESETS,
 } from "../data/engineConstants";
-import { applyCameraOverrideToPrompt, describeCameraShort } from "./cameraRig";
 import {
   applySmartQualitySuffix,
   countPromptT5Tokens,
   splitPromptPosAndNeg,
 } from "./t5Tokenizer";
-import type { CharacterConfig, PerspectiveMode, ScenePromptItem } from "./types";
+import type {
+  CharacterConfig,
+  CharacterGenderMode,
+  PerspectiveMode,
+  ScenePromptItem,
+} from "./types";
 
 export function sanitizeStyleForTransparentBg(headPos: string): string {
   if (!headPos) return "";
@@ -1265,7 +1267,12 @@ export function generateScenePrompts(
     }
     if (tpl.extra_neg) {
       let tplNeg = tpl.extra_neg;
-      if (cfg.enable_uterus_xray && !tpl.builtin_xray) {
+      if (
+        cfg.enable_uterus_xray &&
+        !tpl.builtin_xray &&
+        sceneId !== "MA7A" &&
+        sceneId !== "MA7D"
+      ) {
         const xrayAllow = new Set([
           "x-ray",
           "cross-section",
@@ -1412,14 +1419,14 @@ export function generateScenePrompts(
     const tpl = ALL_POSITIONS_TEMPLATES[sceneId];
     const channel = tpl.channel;
     const isTentacle = channel === "tentacle";
-    const povCamOverrideOff = !cfg.cam_enable_override || isPov;
-    const povVis =
-      isPov && povCamOverrideOff
-        ? tpl.pov_visibility ?? "front_face_visible"
-        : "front_face_visible";
+    const povVis = isPov
+      ? tpl.pov_visibility ?? "front_face_visible"
+      : "front_face_visible";
     const isRearNoFacePov = povVis === "rear_no_face";
     const isTopDownOverShoulderPov = povVis === "top_down_over_shoulder";
-    const suppressPovFaceAndEyes = isRearNoFacePov || isTopDownOverShoulderPov;
+    const isVentralNoEyesPov = povVis === "ventral_no_eyes";
+    const suppressPovFaceAndEyes =
+      isRearNoFacePov || isTopDownOverShoulderPov || isVentralNoEyesPov;
     const lockSceneEnv = Boolean(tpl.lock_scene_env);
     const cfgForModules = lockSceneEnv
       ? { ...cfg, env_preset: "🔄 随本幕/体位工具栏默认环境" }
@@ -2164,84 +2171,213 @@ export function generateScenePrompts(
         const oral69Condom = showP && condomOn ? ", 1.3::condom::, 1.25::condom on penis::" : "";
         const oral69Used =
           showP && condomOn ? ", 1.35::condom::, 1.3::condom on penis::, 1.35::cum in condom::, used condom" : "";
-        const cunnilingusCore = joinTags(
-          m.anat_pos,
-          "1.35::pussy::, 1.3::spread pussy::, pussy from behind, 1.3::cunnilingus::"
-        );
-        if (stageCode === "before") {
-          organTags = showP
-            ? joinTags(
-                cunnilingusCore,
-                `oral, fellatio, penis${oral69Condom}, saliva`,
-                af ? wtag("pussy juice", 1.2, f) : ""
-              )
-            : joinTags(cunnilingusCore, "saliva", af ? wtag("pussy juice", 1.2, f) : "");
-          organProse = showP && condomOn ? ", wearing a condom" : "";
-        } else if (stageCode === "during") {
-          const base69 = showP
-            ? joinTags(cunnilingusCore, `oral, fellatio, penis${oral69Used}, saliva`)
-            : joinTags(cunnilingusCore, "orgasm, climax, female ejaculation, saliva");
-          organTags = showP && condomOn
-            ? joinTags(base69, "ejaculation, climax, bulging condom", wtag("cum", 1.3, f), wtag("pussy juice", 1.35, f), "sweat")
-            : joinTags(
-                base69,
-                "ejaculation, climax",
-                wtag("cum", 1.35, f),
-                wtag("cum overflow", 1.35, f),
-                wtag("pussy juice", 1.4, f),
-                "saliva, sweat"
-              );
-          organProse =
-            ", climaxing together in mutual sixty-nine with glistening fluids and overflowing white cum";
-        } else if (stageCode === "after_inside") {
-          const base69 = showP
-            ? joinTags(cunnilingusCore, `oral, after fellatio, penis${oral69Used}, saliva trail`)
-            : joinTags(cunnilingusCore, "after cunnilingus, after orgasm, heavy breathing, saliva trail");
-          organTags = showP && condomOn
-            ? joinTags(base69, "after ejaculation, bulging condom", wtag("cum", 1.3, f), wtag("pussy juice", 1.35, f), "sweat")
-            : joinTags(
-                base69,
-                "after ejaculation, heavy breathing",
-                wtag("cum", 1.35, f),
-                wtag("cum overflow", 1.35, f),
-                wtag("cum string", 1.3, f),
-                wtag("pussy juice", 1.35, f),
-                "cum on thighs, sweat"
-              );
-          organProse =
-            ", resting right after mutual climax with glistening fluids and sticky white cum trails";
-        } else if (stageCode === "prolapse") {
-          const base69 = showP
-            ? condomOn
-              ? joinTags(cunnilingusCore, "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, 1.35::after fellatio::, pull out, penis, 1.35::used condom::, 1.35::cum in condom::")
-              : joinTags(cunnilingusCore, "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, 1.35::after fellatio::, pull out, penis, cum on penis")
-            : joinTags(cunnilingusCore, "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, after cunnilingus");
-          organTags = joinTags(
-            base69,
-            wtag("cum", 1.4, f),
-            wtag("cumdrip", 1.4, f),
-            wtag("cum string", 1.4, f),
-            wtag("pussy juice", 1.4, f),
-            "cum on thighs, saliva trail, sweat"
+        if (isPov) {
+          const pov69Crotch = joinTags(
+            m.anat_pos,
+            "1.45::pussy::, 1.4::pussy from behind::, 1.35::spread pussy::, labia"
           );
-          organProse =
-            ", right after mutual climax with a glistening prolapsed cervix exposed overhead and sticky white cum strings below";
+          if (stageCode === "before") {
+            organTags = showP
+              ? joinTags(
+                  pov69Crotch,
+                  af ? wtag("pussy juice", 1.3, f) : "",
+                  `1.45::oral::, 1.45::fellatio::, open mouth, lips around penis, 1.35::penis::, erection${oral69Condom}, saliva`
+                )
+              : joinTags(
+                  pov69Crotch,
+                  af ? wtag("pussy juice", 1.3, f) : "",
+                  "1.35::cunnilingus::, open mouth, saliva"
+                );
+            organProse = showP
+              ? condomOn
+                ? " sucking his condom-sheathed erect penis"
+                : " sucking his erect penis"
+              : "";
+          } else if (stageCode === "during") {
+            const basePov69 = showP
+              ? joinTags(
+                  pov69Crotch,
+                  wtag("pussy juice", 1.45, f),
+                  `1.45::oral::, 1.45::fellatio::, open mouth, lips around penis, 1.35::penis::, erection${oral69Used}, saliva`
+                )
+              : joinTags(
+                  pov69Crotch,
+                  wtag("pussy juice", 1.45, f),
+                  "1.35::cunnilingus::, orgasm, climax, female ejaculation, open mouth, saliva"
+                );
+            organTags = showP && condomOn
+              ? joinTags(basePov69, "ejaculation, climax, bulging condom", wtag("cum", 1.35, f), "sweat")
+              : joinTags(
+                  basePov69,
+                  "ejaculation, climax",
+                  wtag("cum", 1.35, f),
+                  "cum overflow, sweat"
+                );
+            organProse = showP
+              ? " sucking his erect penis as thick white cum overflows at the bottom"
+              : " trembling in mutual climax with glistening fluids";
+          } else if (stageCode === "after_inside") {
+            const basePov69 = showP
+              ? joinTags(
+                  pov69Crotch,
+                  wtag("pussy juice", 1.45, f),
+                  `1.45::oral::, 1.45::fellatio::, after fellatio, open mouth, lips around penis, 1.35::penis::, erection${oral69Used}, saliva`
+                )
+              : joinTags(
+                  pov69Crotch,
+                  wtag("pussy juice", 1.4, f),
+                  "after cunnilingus, after orgasm, heavy breathing, open mouth, saliva trail"
+                );
+            organTags = showP && condomOn
+              ? joinTags(basePov69, "after ejaculation, bulging condom", wtag("cum", 1.35, f), "sweat")
+              : joinTags(
+                  basePov69,
+                  "after ejaculation, heavy breathing",
+                  wtag("cum", 1.35, f),
+                  "cum overflow, cum string, sweat"
+                );
+            organProse = showP
+              ? " keeping her lips around his erect penis as thick white cum pools and overflows"
+              : " resting right after mutual climax with glistening fluids";
+          } else if (stageCode === "prolapse") {
+            const basePov69 = showP
+              ? condomOn
+                ? joinTags(
+                    pov69Crotch,
+                    "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, 1.4::after fellatio::, pull out, open mouth, 1.35::penis::, 1.35::used condom::, 1.35::cum in condom::"
+                  )
+                : joinTags(
+                    pov69Crotch,
+                    "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, 1.4::after fellatio::, pull out, open mouth, 1.35::penis::, cum on penis"
+                  )
+              : joinTags(
+                  pov69Crotch,
+                  "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, after cunnilingus"
+                );
+            organTags = joinTags(
+              basePov69,
+              wtag("pussy juice", 1.45, f),
+              wtag("cum", 1.4, f),
+              wtag("cumdrip", 1.4, f),
+              wtag("cum string", 1.4, f),
+              "saliva trail, sweat"
+            );
+            organProse =
+              " right after mutual climax with a glistening prolapsed cervix overhead and sticky white cum strings at her mouth below";
+          } else {
+            const basePov69 = showP
+              ? condomOn
+                ? joinTags(
+                    pov69Crotch,
+                    "1.4::after fellatio::, 0.55::oral::, pull out, open mouth, 1.35::penis::, erection, 1.35::used condom::, 1.3::condom on penis::, 1.35::cum in condom::"
+                  )
+                : joinTags(
+                    pov69Crotch,
+                    "1.4::after fellatio::, 0.55::oral::, pull out, open mouth, 1.35::penis::, erection, cum on penis"
+                  )
+              : joinTags(pov69Crotch, "after cunnilingus, pull out, open mouth");
+            organTags = joinTags(
+              basePov69,
+              wtag("pussy juice", 1.45, f),
+              wtag("cum", 1.4, f),
+              "cum overflow",
+              wtag("cum string", 1.45, f),
+              "saliva, saliva trail, sweat"
+            );
+            organProse = showP
+              ? " pulling her mouth slightly back from his erect penis at the bottom with sticky white cum strings"
+              : " right after mutual sixty-nine with glistening fluids";
+          }
         } else {
-          const base69 = showP
-            ? condomOn
-              ? joinTags(cunnilingusCore, "1.35::after fellatio::, 0.55::oral::, pull out, penis, 1.35::used condom::, 1.3::condom on penis::, 1.35::cum in condom::")
-              : joinTags(cunnilingusCore, "1.35::after fellatio::, 0.55::oral::, pull out, penis, cum on penis")
-            : joinTags(cunnilingusCore, "after cunnilingus, pull out");
-          organTags = joinTags(
-            base69,
-            wtag("cum", 1.4, f),
-            wtag("cumdrip", 1.4, f),
-            wtag("cum string", 1.45, f),
-            wtag("pussy juice", 1.35, f),
-            "cum on thighs, saliva trail, sweat"
+          const third69Crotch = joinTags(
+            m.anat_pos,
+            "1.35::pussy::, 1.45::cunnilingus::, licking pussy, tongue on pussy"
           );
-          organProse =
-            ", pulling back right after mutual sixty-nine with glistening lower anatomy overhead and sticky white cum strings";
+          if (stageCode === "before") {
+            organTags = showP
+              ? joinTags(
+                  third69Crotch,
+                  `1.45::oral::, 1.45::fellatio::, open mouth, penis in mouth, penis, erection${oral69Condom}, saliva`,
+                  af ? joinTags("saliva trail", wtag("pussy juice", 1.25, f)) : ""
+                )
+              : joinTags(third69Crotch, "open mouth, saliva", af ? wtag("pussy juice", 1.25, f) : "");
+            organProse = showP
+              ? condomOn
+                ? ", sucking his condom-sheathed erect penis"
+                : ", sucking his erect penis"
+              : "";
+          } else if (stageCode === "during") {
+            const base3rd69 = showP
+              ? joinTags(
+                  third69Crotch,
+                  `1.45::oral::, 1.45::fellatio::, open mouth, penis in mouth, penis, erection${oral69Used}, saliva, saliva trail`
+                )
+              : joinTags(third69Crotch, "orgasm, climax, female ejaculation, open mouth, saliva");
+            organTags = showP && condomOn
+              ? joinTags(base3rd69, "ejaculation, climax, bulging condom", wtag("cum", 1.35, f), wtag("pussy juice", 1.4, f), "sweat")
+              : joinTags(
+                  base3rd69,
+                  "ejaculation, climax",
+                  wtag("cum", 1.35, f),
+                  "cum in mouth, cum overflow",
+                  wtag("pussy juice", 1.4, f),
+                  "sweat"
+                );
+            organProse =
+              ", climaxing together as thick white cum fills her mouth and overflows while glistening fluids drip at the opposite end";
+          } else if (stageCode === "after_inside") {
+            const base3rd69 = showP
+              ? joinTags(
+                  third69Crotch,
+                  `1.45::oral::, 1.45::fellatio::, after fellatio, open mouth, penis in mouth, penis, erection${oral69Used}, saliva, saliva trail`
+                )
+              : joinTags(third69Crotch, "after cunnilingus, after orgasm, heavy breathing, saliva trail");
+            organTags = showP && condomOn
+              ? joinTags(base3rd69, "after ejaculation, bulging condom", wtag("cum", 1.35, f), wtag("pussy juice", 1.4, f), "sweat")
+              : joinTags(
+                  base3rd69,
+                  "after ejaculation, heavy breathing",
+                  wtag("cum", 1.35, f),
+                  "cum in mouth, cum overflow",
+                  wtag("cum string", 1.3, f),
+                  wtag("pussy juice", 1.4, f),
+                  "sweat"
+                );
+            organProse =
+              ", resting right after mutual climax with thick white cum overflowing from her mouth and glistening fluids";
+          } else if (stageCode === "prolapse") {
+            const base3rd69 = showP
+              ? condomOn
+                ? joinTags(third69Crotch, "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, 1.4::after fellatio::, pull out, open mouth, penis, 1.35::used condom::, 1.35::cum in condom::")
+                : joinTags(third69Crotch, "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, 1.4::after fellatio::, pull out, open mouth, penis, cum on penis")
+              : joinTags(third69Crotch, "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, after cunnilingus");
+            organTags = joinTags(
+              base3rd69,
+              wtag("cum", 1.4, f),
+              "cum in mouth",
+              wtag("cum string", 1.4, f),
+              wtag("pussy juice", 1.4, f),
+              "saliva trail, sweat"
+            );
+            organProse =
+              ", right after mutual climax with a glistening prolapsed cervix and sticky white cum strings";
+          } else {
+            const base3rd69 = showP
+              ? condomOn
+                ? joinTags(third69Crotch, "1.4::after fellatio::, 0.55::oral::, pull out, open mouth, penis, erection, 1.35::used condom::, 1.3::condom on penis::, 1.35::cum in condom::")
+                : joinTags(third69Crotch, "1.4::after fellatio::, 0.55::oral::, pull out, open mouth, penis, erection, cum on penis")
+              : joinTags(third69Crotch, "after cunnilingus, pull out, open mouth");
+            organTags = joinTags(
+              base3rd69,
+              wtag("cum", 1.4, f),
+              "cum in mouth, cum overflow",
+              wtag("cum string", 1.45, f),
+              wtag("pussy juice", 1.4, f),
+              "saliva, saliva trail, sweat"
+            );
+            organProse =
+              ", pulling back slightly right after mutual sixty-nine with sticky white cum strings and glistening fluids";
+          }
         }
       } else if (channel === "oral") {
         const oralCondom = showP && condomOn ? ", 1.3::condom::, 1.25::condom on penis::" : "";
@@ -2534,17 +2670,41 @@ export function generateScenePrompts(
       }
     }
 
-    if (isPov && (sceneId === "P25" || isTopDownOverShoulderPov) && posOutfit) {
+    if (
+      isPov &&
+      (sceneId === "P25" || isTopDownOverShoulderPov || isVentralNoEyesPov) &&
+      posOutfit
+    ) {
+      const stripVentral69Set = isVentralNoEyesPov
+        ? new Set([
+            "rabbit tail",
+            "black pasties",
+            "heart pasties",
+            "pasties",
+            "covered nipples",
+          ])
+        : new Set(["rabbit tail"]);
       posOutfit = splitTopLevelCommaSegments(posOutfit)
         .filter((tok) => {
           const bare = tok.replace(/^-?\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
-          return Boolean(bare) && bare !== "rabbit tail";
+          return Boolean(bare) && !stripVentral69Set.has(bare);
         })
         .join(", ");
     }
 
-    if (isPov && povCamOverrideOff && tpl.extra_pov_neg) {
+    if (isVentralNoEyesPov && tailNegUsed) {
+      const unblock69NegSet = new Set(["nipples", "open mouth", "lips"]);
+      tailNegUsed = tailNegUsed
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => Boolean(t) && !unblock69NegSet.has(t.toLowerCase()))
+        .join(", ");
+    }
+
+    if (isPov && tpl.extra_pov_neg) {
       extraNeg = joinTags(tpl.extra_pov_neg, extraNeg);
+    } else if (!isPov && tpl.extra_3rd_neg) {
+      extraNeg = joinTags(tpl.extra_3rd_neg, extraNeg);
     }
 
     if (isRearNoFacePov) {
@@ -2626,8 +2786,13 @@ export function generateScenePrompts(
     const remPos = "sweat";
     const fullNeg = joinTags(extraNeg, transNeg, tailNegUsed);
     const povLbl = isPov ? "第一人称 (POV)" : "第三人称 (客观镜头)";
-    const coreProse = isPov && povCamOverrideOff && tpl.prose_pov ? tpl.prose_pov : tpl.prose_core;
-    const proseSentence = `${m.name} ${coreProse}${partnerProse}${organProse}${bgProse}.`;
+    const rawCoreProse = isPov && tpl.prose_pov ? tpl.prose_pov : tpl.prose_core;
+    const resolvedCoreProse = rawCoreProse.replaceAll("{name}", m.name);
+    const effectivePartnerProse = rawCoreProse.includes("{name}") ? "" : partnerProse;
+    const proseSentence = rawCoreProse.includes("{name}")
+      ? `${resolvedCoreProse}${effectivePartnerProse}${organProse}${bgProse}.`
+      : `${m.name} ${resolvedCoreProse}${effectivePartnerProse}${organProse}${bgProse}.`;
+    const resolvedCanvas = isPov && tpl.canvas_pov ? tpl.canvas_pov : tpl.canvas;
 
     const pPos = joinTags(
       headUsed,
@@ -2646,7 +2811,7 @@ export function generateScenePrompts(
     );
     results.push({
       subTitle: `【${tpl.title} · ${povLbl}${sceneBadge}${stageBadge}${condomBadge}】`,
-      canvas: tpl.canvas,
+      canvas: resolvedCanvas,
       prompt: pPos,
     });
   } else if (sceneId === "FREE") {
@@ -2782,7 +2947,8 @@ export function generateScenePrompts(
   const suppressPovFacePost =
     isPosPovLocked &&
     (ALL_POSITIONS_TEMPLATES[sceneId].pov_visibility === "rear_no_face" ||
-      ALL_POSITIONS_TEMPLATES[sceneId].pov_visibility === "top_down_over_shoulder");
+      ALL_POSITIONS_TEMPLATES[sceneId].pov_visibility === "top_down_over_shoulder" ||
+      ALL_POSITIONS_TEMPLATES[sceneId].pov_visibility === "ventral_no_eyes");
 
   // Post-pass 0: Global Character Expression Override (skipped on no-face rear/top-down POV to prevent 180° owl head-turn)
   if (exprCtrl.active && !suppressPovFacePost) {
@@ -2790,34 +2956,6 @@ export function generateScenePrompts(
       subTitle: `${item.subTitle} · [😊${exprCtrl.short_label}]`,
       canvas: item.canvas,
       prompt: applyExpressionToPrompt(item.prompt, exprCtrl, cfg.enable_t5_prose, negOn),
-    }));
-  }
-
-  // Post-pass 1: Global 3D Camera Override (only applies on 3rd-person / Multi-Angle / Free Action so leftover azimuth=0 never overwrites 1st-person POV optical framing)
-  if (cfg.cam_enable_override && sceneId !== "MA0" && !isPosPovLocked) {
-    const shotCode = CAMERA_SHOT_PRESETS[cfg.cam_shot_preset] ?? "auto";
-    const gazeCode = CAMERA_GAZE_PRESETS[cfg.cam_gaze_preset] ?? "auto_look";
-    const shortCam = describeCameraShort(
-      true,
-      cfg.cam_azimuth,
-      cfg.cam_elevation,
-      shotCode,
-      cfg.cam_wide_lens,
-      cfg.cam_dutch_angle
-    );
-    const eyesClosed = exprCtrl.active ? !exprCtrl.eyes_open : false;
-    results = results.map((item) => ({
-      subTitle: `${item.subTitle} · [🎥${shortCam}]`,
-      canvas: item.canvas,
-      prompt: applyCameraOverrideToPrompt(item.prompt, {
-        azimuth: cfg.cam_azimuth,
-        elevation: cfg.cam_elevation,
-        shotCode,
-        wideLens: cfg.cam_wide_lens,
-        dutchAngle: cfg.cam_dutch_angle,
-        gazeCode,
-        eyesClosedScene: eyesClosed,
-      }),
     }));
   }
 
@@ -2847,8 +2985,9 @@ export function generateScenePrompts(
     }));
   }
 
-  // Post-pass 4: Optional Uterus Cross-Section / X-Ray Pass (runs BEFORE Lighting Prose so lighting tail sentence stays last)
-  if (cfg.enable_uterus_xray) {
+  // Post-pass 4: Optional Uterus Cross-Section / X-Ray Pass (auto-disabled on Femboy mode to avoid female womb contradiction)
+  const activeGenderMode: CharacterGenderMode = cfg.gender_mode ?? "normal";
+  if (cfg.enable_uterus_xray && activeGenderMode !== "femboy") {
     const xraySpec = resolveUterusXraySpec(sceneId, cfg);
     if (xraySpec) {
       results = results.map((item) => {
@@ -2866,6 +3005,32 @@ export function generateScenePrompts(
         };
       });
     }
+  }
+
+  // Post-pass 4.1: Character Gender Mode Transform (Femboy / Futanari No-Balls / Futanari With-Balls)
+  if (activeGenderMode !== "normal") {
+    const isRearNoFacePos =
+      isPosPovLocked && ALL_POSITIONS_TEMPLATES[sceneId]?.pov_visibility === "rear_no_face";
+    const genderBadge =
+      activeGenderMode === "femboy"
+        ? "🎀伪娘"
+        : activeGenderMode === "futa_no_balls"
+          ? "⚡扶他·无蛋"
+          : "⚡扶他·有蛋";
+    results = results.map((item) => {
+      if (item.prompt.startsWith("[Base Prompt]")) return item;
+      return {
+        ...item,
+        subTitle: `${item.subTitle} · [${genderBadge}]`,
+        prompt: applyGenderModeTransform(item.prompt, activeGenderMode, {
+          sceneId,
+          isRearNoFacePos,
+          enableNegatives: negOn,
+          enableProse: cfg.enable_t5_prose,
+          engName: (cfg.eng_name || "the character").trim(),
+        }),
+      };
+    });
   }
 
   // Post-pass 4.2: Deduplicate repeated single-tag tokens in positive prefix (recovers 10~25 duplicate tokens cleanly)
@@ -3113,6 +3278,8 @@ function resolveUterusXraySpec(
   if (
     (sceneId in MULTI_ANGLE_TEMPLATES &&
       sceneId !== "MA0" &&
+      sceneId !== "MA7A" &&
+      sceneId !== "MA7D" &&
       !MULTI_ANGLE_TEMPLATES[sceneId]?.builtin_xray &&
       (cfg.enable_multi_angle_nsfw || Boolean(MULTI_ANGLE_TEMPLATES[sceneId]?.force_nsfw))) ||
     (sceneId === "FREE" && cfg.free_action_nsfw)
@@ -3361,4 +3528,598 @@ function enforcePositiveTokenBudget(
   }
 
   return rawPrompt;
+}
+
+const ANTI_OVERSIZE_ANATOMY_UC = [
+  "huge penis",
+  "large penis",
+  "oversized penis",
+  "thick penis",
+  "hyper penis",
+  "monster penis",
+  "veiny penis",
+  "giant penis",
+  "huge testicles",
+  "large testicles",
+];
+
+function stripWeightPrefix(tok: string): string {
+  return tok.trim().replace(/^-?\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+}
+
+function applyGenderModeTransform(
+  rawPrompt: string,
+  mode: Exclude<CharacterGenderMode, "normal">,
+  opts: {
+    sceneId: string;
+    isRearNoFacePos: boolean;
+    enableNegatives: boolean;
+    enableProse: boolean;
+    engName: string;
+  }
+): string {
+  const isMa7Derivative =
+    opts.sceneId === "MA7A" ||
+    opts.sceneId === "MA7B" ||
+    opts.sceneId === "MA7C" ||
+    opts.sceneId === "MA7D";
+  const isMa7Xray = opts.sceneId === "MA7B" || opts.sceneId === "MA7C";
+  const isMa7Pregnant = opts.sceneId === "MA7A" || opts.sceneId === "MA7B";
+  const isMa7Flat = opts.sceneId === "MA7C" || opts.sceneId === "MA7D";
+  const negBlocks: string[] = [];
+  const posOnly = rawPrompt
+    .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
+      negBlocks.push(block.trim());
+      return "";
+    })
+    .replace(/^[ ,]+|[ ,]+$/g, "");
+
+  const segments = splitTopLevelCommaSegments(posOnly);
+  let proseIdx = -1;
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (!seg || seg.includes("::")) continue;
+    if (/^[A-Z]|^the girl\b/.test(seg) || seg.split(/\s+/).length >= 8) {
+      proseIdx = i;
+      break;
+    }
+  }
+
+  const tagSegs = proseIdx >= 0 ? segments.slice(0, proseIdx) : segments;
+  let prosePart = proseIdx >= 0 ? segments.slice(proseIdx).join(", ") : "";
+  const bareTagSet = new Set(tagSegs.map((t) => stripWeightPrefix(t)));
+
+  const hasPartnerBoy =
+    bareTagSet.has("1boy") ||
+    bareTagSet.has("2boys") ||
+    bareTagSet.has("hetero") ||
+    bareTagSet.has("faceless male");
+  const isNsfw =
+    bareTagSet.has("nsfw") ||
+    bareTagSet.has("rating:explicit") ||
+    bareTagSet.has("uncensored") ||
+    bareTagSet.has("pussy") ||
+    bareTagSet.has("vaginal") ||
+    bareTagSet.has("oral") ||
+    bareTagSet.has("fellatio");
+  const isBareChest =
+    bareTagSet.has("bare breasts") ||
+    bareTagSet.has("breasts out") ||
+    bareTagSet.has("nude") ||
+    bareTagSet.has("completely nude") ||
+    bareTagSet.has("open jacket") ||
+    bareTagSet.has("nipples") ||
+    bareTagSet.has("black pasties") ||
+    bareTagSet.has("heart pasties");
+  const isPullOutScene =
+    bareTagSet.has("pull out") ||
+    bareTagSet.has("after vaginal") ||
+    bareTagSet.has("after sex") ||
+    bareTagSet.has("vaginal prolapse");
+  const isProlapseScene =
+    bareTagSet.has("vaginal prolapse") || bareTagSet.has("prolapse");
+  const isPenetratedScene =
+    bareTagSet.has("vaginal") ||
+    bareTagSet.has("insertion") ||
+    bareTagSet.has("cervical penetration") ||
+    bareTagSet.has("after vaginal") ||
+    bareTagSet.has("vaginal prolapse") ||
+    bareTagSet.has("fingering") ||
+    bareTagSet.has("double penetration");
+
+  let mainNegTokens: string[] = [];
+  const extraNegBlocks: string[] = [];
+  for (const nb of negBlocks) {
+    if (nb.startsWith("-2::") && mainNegTokens.length === 0) {
+      mainNegTokens = nb
+        .slice(4, -2)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    } else {
+      extraNegBlocks.push(nb);
+    }
+  }
+
+  const outTags: string[] = [];
+
+  if (mode === "femboy") {
+    const femboyStripPos = new Set([
+      "1girl",
+      "1boy",
+      "hetero",
+      "small breasts",
+      "medium breasts",
+      "large breasts",
+      "huge breasts",
+      "flat chest",
+      "bare breasts",
+      "breasts out",
+      "cleavage",
+      "underboob",
+      "black pasties",
+      "heart pasties",
+      "pasties",
+      "covered nipples",
+      "nipples",
+      "pussy",
+      "vulva",
+      "labia",
+      "clitoris",
+      "spread pussy",
+      "spreading own pussy",
+      "spreading another's pussy",
+      "clitoral stimulation",
+      "pussy juice",
+      "pussy juice trail",
+      "pussy juice string",
+      "pussy juice on fingers",
+      "pussy from behind",
+      "cunnilingus",
+      "licking pussy",
+      "tongue on pussy",
+      "female ejaculation",
+      "squirting",
+      "vaginal",
+      "insertion",
+      "cervical penetration",
+      "after vaginal",
+      "cum in pussy",
+      "cum on pussy",
+      "vaginal prolapse",
+      "prolapse",
+      "cervix",
+      "uterus",
+      "cum in uterus",
+      "eggs in uterus",
+      "x-ray",
+      "cross-section",
+      "pregnant",
+      "female masturbation",
+      "paizuri",
+      "paizuri pose",
+      "breasts squeezed together",
+      "breast grab",
+      "grabbing own breasts",
+      "grabbing another's breast",
+      "breast grab from behind",
+      "squeezing breasts",
+      "sunken breasts",
+      "flushed breasts",
+      "erect nipples",
+      "nipple tweak",
+      "pinching nipples",
+      "pink pussy",
+      "dark pigmented labia edges",
+      "two-tone mucosa",
+      "flushed groin",
+      "used condom in pussy",
+      "cum in condom",
+      ...(isMa7Derivative ? ["fingers"] : []),
+    ]);
+    if (isMa7Pregnant) {
+      femboyStripPos.delete("pregnant");
+    }
+
+    let actorInserted = false;
+    let bodyChestInserted = false;
+
+    for (const seg of tagSegs) {
+      const bare = stripWeightPrefix(seg);
+      if (!bare) continue;
+
+      if (bare === "1girl") {
+        if (!actorInserted) {
+          actorInserted = true;
+          if (hasPartnerBoy) {
+            outTags.push(
+              "2boys",
+              "1.55::yaoi::",
+              "1.55::otoko no ko::",
+              "1.45::crossdressing::",
+              "1.35::genderbend::"
+            );
+          } else {
+            outTags.push(
+              isNsfw ? "1.45::1boy::" : "1.35::1boy::",
+              "solo",
+              isNsfw ? "1.55::otoko no ko::" : "1.45::otoko no ko::",
+              isNsfw ? "1.45::crossdressing::" : "1.4::crossdressing::",
+              "1.35::genderbend::",
+              "androgynous"
+            );
+          }
+        }
+        continue;
+      }
+
+      if (bare === "solo" && actorInserted && !hasPartnerBoy) {
+        continue;
+      }
+
+      if (bare === "short female") {
+        outTags.push("1.25::short male::");
+        continue;
+      }
+
+      if (bare === "bare breasts" || bare === "breasts out") {
+        if (!opts.isRearNoFacePos && !bodyChestInserted) {
+          bodyChestInserted = true;
+          outTags.push(
+            "bare chest",
+            "1.55::flat chest::",
+            "1.4::flat male chest::",
+            "tiny pink nipples",
+            "hairless torso"
+          );
+        }
+        continue;
+      }
+
+      if (femboyStripPos.has(bare)) {
+        continue;
+      }
+
+      // Prevent huge bare penis boost on petite femboy
+      if (bare === "penis" && !hasPartnerBoy) {
+        continue;
+      }
+
+      outTags.push(seg);
+    }
+
+    if (!actorInserted) {
+      outTags.unshift(
+        ...(hasPartnerBoy
+          ? ["2boys", "1.55::yaoi::", "1.55::otoko no ko::", "1.45::crossdressing::", "1.35::genderbend::"]
+          : [
+              isNsfw ? "1.45::1boy::" : "1.35::1boy::",
+              "solo",
+              isNsfw ? "1.55::otoko no ko::" : "1.45::otoko no ko::",
+              "1.4::crossdressing::",
+              "1.35::genderbend::",
+              "androgynous",
+            ])
+      );
+    }
+
+    if (!opts.isRearNoFacePos && !bodyChestInserted) {
+      outTags.push(
+        ...(isBareChest
+          ? ["bare chest", "1.55::flat chest::", "1.4::flat male chest::", "tiny pink nipples", "hairless torso"]
+          : ["1.45::flat chest::", "male chest", "hairless chest"])
+      );
+    }
+
+    if (isNsfw) {
+      if (isMa7Derivative) {
+        if (isMa7Flat) {
+          outTags.push("hand on hip");
+        }
+        outTags.push(
+          "1.45::male::",
+          "1.55::small penis::",
+          "1.35::tiny penis::",
+          "1.35::small testicles::",
+          "testicles",
+          "1.35::erection::",
+          "1.45::precum::",
+          "1.4::precum string::",
+          "dripping"
+        );
+        if (isMa7Xray) {
+          outTags.push(
+            "1.45::x-ray::",
+            "1.4::cross-section::",
+            "1.45::intestines::",
+            "1.5::cum in ass::",
+            "internal cumshot"
+          );
+        }
+      } else if (hasPartnerBoy && isPenetratedScene) {
+        if (isPullOutScene) {
+          outTags.push(
+            "1.45::after anal::",
+            "1.45::pull out::",
+            "after sex",
+            "1.35::spread anus::",
+            "1.3::gaping::",
+            ...(isProlapseScene ? ["1.45::anal prolapse::"] : []),
+            "cum in ass",
+            "cum overflow",
+            "cumdrip",
+            "cum string",
+            ...(opts.isRearNoFacePos
+              ? ["1.35::small penis::", "1.3::small testicles::", "testicles"]
+              : ["1.4::small penis::", "1.3::small testicles::", "testicles", "erection"])
+          );
+        } else {
+          outTags.push(
+            "1.5::anal::",
+            "1.45::anal penetration::",
+            "1.45::male penetrated::",
+            ...(opts.isRearNoFacePos
+              ? ["1.35::small penis::", "1.3::small testicles::", "testicles"]
+              : ["1.4::small penis::", "1.3::small testicles::", "testicles", "erection"])
+          );
+        }
+      } else if (hasPartnerBoy) {
+        outTags.push("1.4::small penis::", "1.3::small testicles::", "testicles", "erection");
+      } else {
+        outTags.push(
+          "1.45::male::",
+          "1.55::small penis::",
+          "1.35::tiny penis::",
+          "1.35::small testicles::",
+          "testicles",
+          "erection",
+          "precum"
+        );
+      }
+    } else if (bareTagSet.has("skirt lift") || bareTagSet.has("panties")) {
+      outTags.push("1.25::bulge::");
+    }
+
+    if (opts.enableProse && prosePart) {
+      if (isMa7Derivative) {
+        const bellyDesc = isMa7Pregnant
+          ? "while resting his other hand on his taut round distended belly with a protruding navel"
+          : "with his other hand resting on his hip above his slender flat belly";
+        const xrayDesc = isMa7Xray
+          ? ", accompanied by a centered anatomical cross-section x-ray cutaway window showing his intestines filled with white cum"
+          : "";
+        prosePart = `${opts.engName} in a cowboy shot with legs apart, completely flat male chest, tilting his head with a peace sign near his cheek ${bellyDesc}, unobstructed crotch showing his small erect penis dripping clear prostatic precum threads${xrayDesc}.`;
+      } else {
+        prosePart = prosePart
+          .replace(/\bher\b/gi, "his")
+          .replace(/\bshe\b/gi, "he")
+          .replace(/\bgirl\b/gi, "petite crossdressing boy")
+          .replace(/\bbare breasts\b/gi, "flat male chest")
+          .replace(/\bbreasts\b/gi, "flat chest")
+          .replace(/\bpussy\b/gi, "back entrance")
+          .replace(/\blower anatomy\b/gi, "slender hips");
+      }
+    }
+
+    const femboyUnblockNeg = new Set([
+      "1boy",
+      "male",
+      "2boys",
+      "yaoi",
+      "penis",
+      "phallus",
+      "testicles",
+      "balls",
+      "scrotum",
+      "flat chest",
+      "male chest",
+      "nipples",
+      "anal",
+      ...(isProlapseScene ? ["anal prolapse"] : []),
+      ...(isMa7Derivative ? ["dripping"] : []),
+      ...(isMa7Xray ? ["x-ray", "cross-section", "cutaway", "internal cumshot"] : []),
+      "otoko no ko",
+      "crossdressing",
+      "genderbend",
+      "bulge",
+    ]);
+    const femboyAddNeg = [
+      "1girl",
+      "female",
+      "girl",
+      "hetero",
+      "breasts",
+      "small breasts",
+      "medium breasts",
+      "large breasts",
+      "cleavage",
+      "underboob",
+      "pussy",
+      "vulva",
+      "labia",
+      "vaginal",
+      "futanari",
+      "hermaphrodite",
+      ...(isMa7Derivative ? ["uterus", "cervix", "extra hands", "extra fingers"] : []),
+      ...(isPullOutScene && !isMa7Derivative ? ["anal penetration", "insertion"] : []),
+      "muscular",
+      "muscular male",
+      "bara",
+      "broad shoulders",
+      "wide shoulders",
+      "thick neck",
+      "adam's apple",
+      "facial hair",
+      "stubble",
+      "mature male",
+      "tall male",
+      ...(hasPartnerBoy
+        ? ["hyper penis", "monster penis", "giant penis", "huge testicles"]
+        : ANTI_OVERSIZE_ANATOMY_UC),
+    ];
+    mainNegTokens = mainNegTokens.filter((t) => !femboyUnblockNeg.has(t.toLowerCase()));
+    const lowerNeg = new Set(mainNegTokens.map((t) => t.toLowerCase()));
+    for (let i = femboyAddNeg.length - 1; i >= 0; i--) {
+      const tag = femboyAddNeg[i];
+      if (!lowerNeg.has(tag.toLowerCase())) {
+        mainNegTokens.unshift(tag);
+        lowerNeg.add(tag.toLowerCase());
+      }
+    }
+  } else {
+    // Futanari (futa_no_balls | futa_with_balls)
+    const withBalls = mode === "futa_with_balls";
+    // On Solo scenes, use strict petite small/tiny penis + full Anti-Oversize UC.
+    // On 2-person Male-on-Futa scenes, AVOID global `1.55::small penis::, 1.35::tiny penis::` and `large penis / thick penis` UC
+    // so the male partner's penis stays normal/full-sized while T5 prose + gentle `1.15::small futanari penis::` keeps ONLY her shaft compact!
+    const futaCoreTags = isNsfw
+      ? hasPartnerBoy
+        ? [
+            "1.55::futanari::",
+            withBalls ? "1.45::futa with balls::" : "1.45::futa without balls::",
+            ...(withBalls ? ["1.25::small testicles::", "testicles"] : []),
+            "erection",
+          ]
+        : !opts.isRearNoFacePos
+          ? [
+              "1.55::futanari::",
+              withBalls ? "1.45::futa with balls::" : "1.45::futa without balls::",
+              "1.55::small penis::",
+              "1.35::tiny penis::",
+              ...(withBalls ? ["1.35::small testicles::", "testicles"] : []),
+              "erection",
+            ]
+          : [
+              "1.55::futanari::",
+              withBalls ? "1.45::futa with balls::" : "1.45::futa without balls::",
+              "1.4::small penis::",
+              ...(withBalls ? ["1.3::small testicles::", "testicles"] : []),
+              "erection",
+            ]
+      : [
+          "1.55::futanari::",
+          withBalls ? "1.45::futa with balls::" : "1.45::futa without balls::",
+        ];
+
+    let futaHeaderInserted = false;
+    const futaAntiPasteStrip =
+      isNsfw && !opts.isRearNoFacePos
+        ? new Set([
+            "groin",
+            "pussy",
+            "labia",
+            "clitoris",
+            "spread pussy",
+            "spreading own pussy",
+            "gaping",
+            "pink pussy",
+            "dark pigmented labia edges",
+            "two-tone mucosa",
+            "flushed groin",
+            ...(isMa7Derivative ? ["fingers"] : []),
+          ])
+        : isMa7Derivative
+          ? new Set(["spread pussy", "spreading own pussy", "fingers"])
+          : null;
+    for (const seg of tagSegs) {
+      const bare = stripWeightPrefix(seg);
+      if (!bare) continue;
+      if (futaAntiPasteStrip && futaAntiPasteStrip.has(bare)) continue;
+      if (bare === "1girl") {
+        outTags.push(seg);
+        if (!futaHeaderInserted) {
+          futaHeaderInserted = true;
+          outTags.push(...futaCoreTags);
+        }
+        continue;
+      }
+      outTags.push(seg);
+    }
+    if (!futaHeaderInserted) {
+      outTags.unshift(...futaCoreTags);
+    }
+
+    if (isNsfw) {
+      if (isMa7Derivative) {
+        if (isMa7Flat) {
+          outTags.push("hand on hip");
+        }
+        outTags.push(
+          "1.35::erection::",
+          "1.45::precum::",
+          "1.4::precum string::",
+          "dripping",
+          "1.35::pussy::"
+        );
+        if (opts.enableProse && prosePart) {
+          const bellyClause = isMa7Pregnant
+            ? "while resting her other hand on her taut round distended belly with a protruding navel"
+            : "with her other hand resting on her hip above her slender flat belly";
+          const shaftDesc = withBalls
+            ? "small erect futanari shaft with small neat testicles"
+            : "small erect ball-free futanari shaft";
+          const xrayClause = isMa7Xray
+            ? ", accompanied by a centered x-ray uterus cutaway showing her womb filled to capacity"
+            : "";
+          prosePart = `${opts.engName} in a cowboy shot with legs apart, tilting her head with a peace sign near her cheek ${bellyClause}, unobstructed crotch showing ${shaftDesc} dripping clear precum threads above her pussy overflowing with thick white cum${xrayClause}.`;
+        }
+      } else {
+        if (!opts.isRearNoFacePos) {
+          outTags.push("1.35::precum::");
+        }
+        if (opts.enableProse && prosePart && hasPartnerBoy && isPenetratedScene && !opts.isRearNoFacePos) {
+          const layerClause = isPullOutScene
+            ? withBalls
+              ? "exposing her small female breasts and her own cute petite erect futanari penis with small neat testicles resting high above her parted pussy, contrasting cleanly against the male partner's thicker normal-sized penis withdrawing below."
+              : "exposing her small female breasts and her own cute petite erect ball-free futanari penis resting high above her parted pussy, contrasting cleanly against the male partner's thicker normal-sized penis withdrawing below."
+            : withBalls
+              ? "exposing her small female breasts and her own cute petite erect futanari penis with small neat testicles resting high above her glistening pussy while the male partner's normal-sized penis penetrates her pussy cleanly underneath."
+              : "exposing her small female breasts and her own cute petite erect ball-free futanari penis resting above her glistening pussy while the male partner's normal-sized penis penetrates her pussy cleanly underneath.";
+          prosePart = `${prosePart.replace(/\.+\s*$/, "")}, ${layerClause}`;
+        }
+      }
+    } else if (bareTagSet.has("skirt lift") || bareTagSet.has("panties")) {
+      outTags.push("1.25::bulge::");
+    }
+
+    const futaUnblockNeg = new Set([
+      "penis",
+      "phallus",
+      "futanari",
+      ...(isMa7Derivative ? ["dripping"] : []),
+      ...(withBalls ? ["testicles", "balls", "scrotum"] : []),
+    ]);
+    const futaOversizeNeg = hasPartnerBoy
+      ? ["hyper penis", "monster penis", "giant penis", "huge testicles"]
+      : ANTI_OVERSIZE_ANATOMY_UC;
+    const futaAddNeg = [
+      ...(hasPartnerBoy ? ["2boys"] : ["1boy", "male"]),
+      "otoko no ko",
+      "crossdressing",
+      "yaoi",
+      "flat chest",
+      "male chest",
+      "pectorals",
+      ...(isMa7Derivative ? ["extra hands", "extra fingers"] : []),
+      ...(withBalls ? [] : ["testicles", "balls", "scrotum"]),
+      ...futaOversizeNeg,
+    ];
+    mainNegTokens = mainNegTokens.filter((t) => !futaUnblockNeg.has(t.toLowerCase()));
+    const lowerNeg = new Set(mainNegTokens.map((t) => t.toLowerCase()));
+    for (let i = futaAddNeg.length - 1; i >= 0; i--) {
+      const tag = futaAddNeg[i];
+      if (!lowerNeg.has(tag.toLowerCase())) {
+        mainNegTokens.unshift(tag);
+        lowerNeg.add(tag.toLowerCase());
+      }
+    }
+  }
+
+  const rebuiltPos = prosePart ? `${outTags.join(", ")}, ${prosePart}` : outTags.join(", ");
+  const outParts = [rebuiltPos];
+  if (opts.enableNegatives && mainNegTokens.length > 0) {
+    outParts.push(`-2::${mainNegTokens.join(", ")}::`);
+  }
+  outParts.push(...extraNegBlocks);
+  return outParts.join(", ");
 }

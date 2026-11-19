@@ -55,6 +55,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   overflow: hidden;
   user-select: none;
@@ -1068,10 +1069,10 @@ textarea:disabled {
   min-width: 30px;
 }
 
-/* Inline Override Bar (Expression + 3D Camera Popover Triggers) */
+/* Inline Override Bar (Expression Popover Trigger) */
 .override-strip {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 6px;
   padding: 6px 9px;
   background: #121520;
@@ -1292,9 +1293,35 @@ textarea:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 14px;
-  background: rgba(19, 22, 34, 0.9);
+  padding: calc(8px + env(safe-area-inset-top, 0px)) 14px 8px;
+  background: rgba(19, 22, 34, 0.94);
   border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.lightbox-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.lightbox-head-row .stage-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lightbox-close-btn {
+  flex-shrink: 0;
+}
+
+.lightbox-ctrls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
@@ -1338,15 +1365,27 @@ textarea:disabled {
 }
 
 /* =========================================
-   RESPONSIVE BREAKPOINT (< 1120px)
+   RESPONSIVE BREAKPOINT (< 1120px Tablet / Mobile)
    ========================================= */
 @media (max-width: 1120px) {
   .studio-topbar {
     flex-wrap: wrap;
     padding: 6px 8px;
+    gap: 6px;
   }
   .mobile-col-nav {
     display: flex;
+    flex-shrink: 0;
+    border-top: 1px solid var(--border-strong);
+    border-bottom: none;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+    gap: 6px;
+    z-index: 35;
+  }
+  .mobile-col-nav button {
+    height: 36px;
+    font-size: 12.5px;
+    font-weight: 700;
   }
   .studio-workspace {
     grid-template-columns: 1fr;
@@ -1360,5 +1399,282 @@ textarea:disabled {
   .prompt-drawer-body {
     grid-template-columns: 1fr;
     height: 240px;
+  }
+}
+
+/* =========================================
+   MOBILE PHONE OPTIMIZATION (<= 768px)
+   ========================================= */
+@media (max-width: 768px) {
+  html,
+  body {
+    font-size: 13px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Compact 2-row Topbar with horizontally scrollable middle strip */
+  .studio-topbar {
+    padding: calc(6px + env(safe-area-inset-top, 0px)) 8px 6px;
+    gap: 6px;
+    min-height: auto;
+  }
+  .brand-badge {
+    display: none;
+  }
+  .topbar-group-left {
+    width: 100%;
+    order: 1;
+    gap: 5px;
+  }
+  .preset-select-main {
+    flex: 1;
+    width: auto;
+    max-width: none;
+    min-width: 0;
+    height: 36px;
+    font-size: 13px;
+  }
+  .topbar-group-center {
+    width: 100%;
+    order: 2;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+    gap: 6px;
+  }
+  .topbar-group-center::-webkit-scrollbar {
+    display: none;
+  }
+  .topbar-group-center > * {
+    flex-shrink: 0;
+  }
+  .topbar-group-right {
+    width: 100%;
+    order: 3;
+    justify-content: space-between;
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+  .topbar-group-right .mcp-pill,
+  .topbar-group-right .quota-pill {
+    height: 36px;
+    padding: 0 8px;
+    font-size: 11.5px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .topbar-group-right .btn-generate-hero,
+  .topbar-group-right .btn-danger {
+    flex: 1;
+    height: 38px;
+    font-size: 13.5px;
+    padding: 0 12px;
+  }
+
+  /* Generous touch targets (min 34~38px height) */
+  .btn {
+    min-height: 36px;
+    padding: 0 10px;
+    font-size: 12.5px;
+  }
+  .btn-xs {
+    min-height: 32px;
+    padding: 0 9px;
+    font-size: 12px;
+  }
+  .btn-icon {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0 8px;
+  }
+  .seg-btn {
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+  .chip-btn {
+    min-height: 32px;
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+  .switch-pill {
+    min-height: 28px;
+    padding: 0 10px;
+    font-size: 11.5px;
+  }
+  input[type="text"],
+  input[type="password"],
+  input[type="number"],
+  select,
+  textarea {
+    min-height: 36px;
+    font-size: 14px;
+    padding: 6px 9px;
+  }
+  .topbar-canvas-select,
+  .batch-select,
+  .seed-box {
+    height: 36px;
+  }
+  .seed-box input {
+    min-height: 28px;
+    width: 72px;
+    font-size: 13px;
+  }
+  .seed-box .btn-icon {
+    min-width: 30px;
+    min-height: 30px;
+  }
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  /* Left Column: smooth scrolling + spacious cards */
+  .col-left {
+    padding: 8px 8px 18px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .studio-card-head {
+    min-height: 44px;
+    padding: 8px 10px;
+  }
+
+  /* Right Column: single continuous vertical scroll so pose list is NEVER crushed! */
+  .col-right {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .action-mode-bar,
+  .context-ctrl-box,
+  .override-strip,
+  .pose-filter-bar {
+    flex-shrink: 0;
+  }
+  .override-trigger {
+    min-height: 38px;
+    padding: 6px 10px;
+    font-size: 12.5px;
+  }
+  .pose-list-scroll {
+    flex: none;
+    overflow-y: visible;
+    padding: 8px 8px 20px;
+    gap: 6px;
+  }
+  .pose-card {
+    padding: 8px 8px;
+    gap: 8px;
+  }
+  .pose-card input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+  }
+  .pose-main-title {
+    font-size: 13px;
+    white-space: normal;
+    line-height: 1.3;
+  }
+  .pose-sub-title {
+    font-size: 11px;
+  }
+  .pose-row-actions .btn-xs {
+    min-height: 34px;
+    padding: 0 10px;
+  }
+
+  /* Center Stage: scrollable toolbar & drawer */
+  .stage-toolbar {
+    padding: 6px 8px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .stage-actions {
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .stage-actions::-webkit-scrollbar {
+    display: none;
+  }
+  .stage-actions > * {
+    flex-shrink: 0;
+  }
+  .prompt-drawer-bar {
+    flex-wrap: wrap;
+    padding: 6px 8px;
+    gap: 6px;
+  }
+  .prompt-bar-left {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .prompt-drawer-body {
+    height: 260px;
+    overflow-y: auto;
+  }
+  .prompt-box-col textarea {
+    min-height: 92px;
+    font-size: 13px;
+  }
+
+  /* Floating Popovers: bottom-sheet style on mobile */
+  .floating-popover {
+    max-width: none;
+    max-height: 70dvh;
+    padding: 12px;
+    border-radius: 14px;
+  }
+
+  /* Lightbox Mobile Controls */
+  .lightbox-topbar {
+    flex-direction: column;
+    align-items: stretch;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) 10px 8px;
+    gap: 6px;
+  }
+  .lightbox-head-row {
+    width: 100%;
+    flex: none;
+  }
+  .lightbox-close-btn {
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .lightbox-ctrls {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .lightbox-ctrls .seg-group {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .lightbox-ctrls .seg-btn {
+    padding: 6px 4px;
+    text-align: center;
+  }
+  .lightbox-stage {
+    padding: 8px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+  .lightbox-nav-btn {
+    width: 44px;
+    height: 60px;
+    background: rgba(25, 29, 43, 0.62);
+    z-index: 5;
+  }
+  .lightbox-nav-btn.prev {
+    left: 6px;
+  }
+  .lightbox-nav-btn.next {
+    right: 6px;
   }
 }

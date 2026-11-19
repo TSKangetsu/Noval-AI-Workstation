@@ -11,8 +11,6 @@ import {
   BUILTIN_CHARACTERS,
   BUNDLED_CUSTOM_PRESETS,
   BUST_PRESETS,
-  CAMERA_GAZE_PRESETS,
-  CAMERA_SHOT_PRESETS,
   CANVAS_PRESETS,
   ENV_PRESETS,
   EXPRESSION_PRESETS,
@@ -499,8 +497,6 @@ function lookupPresetCatalog(category: string, query = ""): Record<string, unkno
     multi_angle: MULTI_ANGLE_CHAPTERS.filter(
       (c) => !q || c.id.toLowerCase().includes(q) || c.title.toLowerCase().includes(q)
     ).map((c) => ({ id: c.id, title: c.title })),
-    camera_shots: filterKeys(Object.keys(CAMERA_SHOT_PRESETS)),
-    camera_gazes: filterKeys(Object.keys(CAMERA_GAZE_PRESETS)),
   };
 
   if (!category || category === "all") {
@@ -537,7 +533,7 @@ const MCP_TOOLS = [
         category: {
           type: "string",
           description:
-            "Category to inspect: 'all' | 'models' | 'canvases' | 'characters' | 'body' | 'bust' | 'skin' | 'outfits' | 'outfit_states' | 'legwear' | 'styles' | 'lighting' | 'env' | 'morph' | 'pubic' | 'pigment' | 'expressions' | 'pos_male_modes' | 'pos_stages' | 'pos_scenes' | 'poses' | 'multi_angle' | 'camera_shots'",
+            "Category to inspect: 'all' | 'models' | 'canvases' | 'characters' | 'body' | 'bust' | 'skin' | 'outfits' | 'outfit_states' | 'legwear' | 'styles' | 'lighting' | 'env' | 'morph' | 'pubic' | 'pigment' | 'expressions' | 'pos_male_modes' | 'pos_stages' | 'pos_scenes' | 'poses' | 'multi_angle'",
         },
         query: {
           type: "string",

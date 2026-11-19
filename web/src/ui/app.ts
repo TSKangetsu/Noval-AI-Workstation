@@ -4,9 +4,6 @@ import {
   BODY_PRESETS,
   BUILTIN_CHARACTERS,
   BUST_PRESETS,
-  CAMERA_GAZE_PRESETS,
-  CAMERA_QUICK_PRESETS,
-  CAMERA_SHOT_PRESETS,
   CANVAS_PRESETS,
   ENV_PRESETS,
   EXPRESSION_BLUSH_PRESETS,
@@ -36,7 +33,6 @@ import {
   STYLE_PRESETS,
 } from "../data/engineConstants";
 import { BUNDLED_VIBE_PACKS, cloneBundledVibeItems } from "../data/bundledVibes";
-import { describeCameraShort } from "../engine/cameraRig";
 import {
   describeExpressionShort,
   generateScenePrompts,
@@ -56,6 +52,7 @@ import {
   type ActionMode,
   type CarouselMode,
   type CharacterConfig,
+  type CharacterGenderMode,
   type GeneratedImageRecord,
   type NaiApiSettings,
   type NaiModelId,
@@ -115,7 +112,6 @@ import {
   parseVibeFileBytes,
   resolveVibeEncodingForModel,
 } from "../services/vibeBundleParser";
-import { CameraRadarCanvas } from "./cameraRadarCanvas";
 
 function compactOptionText(raw: string, maxLen = 38): string {
   const cleaned = raw.replace(/（([^）]{18,})）/g, (_m, inner: string) => {
@@ -147,7 +143,7 @@ export class WorkbenchApp {
 
   private actionMode: ActionMode = "positions";
   private activeSceneId = "P01";
-  private activeMa7Variant: "" | "MA7A" | "MA7B" | "MA7C" = "";
+  private activeMa7Variant: "" | "MA7A" | "MA7B" | "MA7C" | "MA7D" = "";
   private activePosCategory = POS_CATEGORIES[0];
   private posSearchQuery = "";
   private checkedPositionIds = new Set<string>(["P01"]);
@@ -251,7 +247,6 @@ export class WorkbenchApp {
   private elActionModeBtns = new Map<ActionMode, HTMLButtonElement>();
   private elContextCtrlBox!: HTMLElement;
   private elExprTrigger!: HTMLButtonElement;
-  private elCamTrigger!: HTMLButtonElement;
   private elPoseFilterBar!: HTMLElement;
   private elPoseListWrap!: HTMLElement;
   private elFreeActionWrap!: HTMLElement;
@@ -263,10 +258,8 @@ export class WorkbenchApp {
   private elMcpPopSwitch!: HTMLButtonElement;
   private elMcpPopStatusNote!: HTMLElement;
   private elExprPopover!: HTMLElement;
-  private elCamPopover!: HTMLElement;
   private elSavePresetPopover!: HTMLElement;
   private elSavePresetInput!: HTMLInputElement;
-  private radarWidget: CameraRadarCanvas | null = null;
   private elLightbox!: HTMLElement;
   private elLightboxImg!: HTMLImageElement;
   private elLightboxMeta!: HTMLElement;
@@ -338,12 +331,20 @@ export class WorkbenchApp {
     // 1. Top Studio Bar
     this.root.appendChild(this.buildTopBar());
 
-    // 2. Mobile Column Switcher (< 1120px)
-    const mobileNav = this.el("div", "mobile-col-nav");
+    // 2. Three-Column Workspace
+    const ws = this.el("div", "studio-workspace");
+    this.elColLeft = this.buildLeftColumn();
+    this.elColCenter = this.buildCenterColumn();
+    this.elColRight = this.buildRightColumn();
+    ws.append(this.elColLeft, this.elColCenter, this.elColRight);
+    this.root.appendChild(ws);
+
+    // 3. Mobile Bottom Tab Bar (< 1120px)
+    const mobileNav = this.el("nav", "mobile-col-nav");
     const mTabs: Array<["left" | "center" | "right", string]> = [
       ["left", "👤 人设·画风·Vibe"],
       ["center", "🖼️ 主画布·词条"],
-      ["right", "🔞 动作·镜头库"],
+      ["right", "🔞 动作库"],
     ];
     for (const [colKey, label] of mTabs) {
       const b = this.el("button", `btn btn-xs${this.mobileCol === colKey ? " btn-primary" : ""}`, label);
@@ -356,25 +357,15 @@ export class WorkbenchApp {
     }
     this.root.appendChild(mobileNav);
 
-    // 3. Three-Column Workspace
-    const ws = this.el("div", "studio-workspace");
-    this.elColLeft = this.buildLeftColumn();
-    this.elColCenter = this.buildCenterColumn();
-    this.elColRight = this.buildRightColumn();
-    ws.append(this.elColLeft, this.elColCenter, this.elColRight);
-    this.root.appendChild(ws);
-
     // 4. Floating Popovers & Lightbox
     this.elMcpPopover = this.buildMcpPopover();
     this.elSavePresetPopover = this.buildSavePresetPopover();
     this.elExprPopover = this.buildExpressionPopover();
-    this.elCamPopover = this.buildCameraPopover();
     this.elLightbox = this.buildLightbox();
     this.root.append(
       this.elMcpPopover,
       this.elSavePresetPopover,
       this.elExprPopover,
-      this.elCamPopover,
       this.elLightbox
     );
 
@@ -397,7 +388,7 @@ export class WorkbenchApp {
     const bar = this.el("header", "studio-topbar");
 
     // Left: Brand + Character Preset Selector + Save/Delete/Reset
-    const gLeft = this.el("div", "topbar-group");
+    const gLeft = this.el("div", "topbar-group topbar-group-left");
     gLeft.appendChild(this.el("div", "brand-badge", "✨ NAI Studio 2.0"));
 
     this.elPresetSelect = this.el("select", "preset-select-main");
@@ -446,7 +437,7 @@ export class WorkbenchApp {
     gLeft.append(this.elPresetSelect, btnSavePreset, this.elDeletePresetBtn, btnResetAll);
 
     // Center: Model Segmented Pills + Canvas + Seed + Batch
-    const gCenter = this.el("div", "topbar-group");
+    const gCenter = this.el("div", "topbar-group topbar-group-center");
     const modelSeg = this.el("div", "seg-group");
     const models: Array<[NaiModelId, string, string]> = [
       [MODEL_V4_5_FULL, "♾️ V4.5 Full", "Opus 标准尺寸 28步真正无限 0 Anlas · 原生支持 Vibe Transfer"],
@@ -531,7 +522,7 @@ export class WorkbenchApp {
     gCenter.append(modelSeg, this.elCanvasSelect, seedBox, this.elBatchSelect);
 
     // Right: MCP Bridge Pill + Quota Pill + Folder Mount + Hero Generate / Stop
-    const gRight = this.el("div", "topbar-group");
+    const gRight = this.el("div", "topbar-group topbar-group-right");
     this.elMcpPill = this.el("button", "mcp-pill");
     this.elMcpPill.title = "MCP 实时控制桥（支持本机与局域网/远程连接）：点击设置服务器地址或开关";
     this.elMcpPill.addEventListener("click", (ev) => {
@@ -927,6 +918,33 @@ export class WorkbenchApp {
       this.bindCfgSelect("肤质光泽", "skin_preset", Object.keys(SKIN_PRESETS))
     );
     c1.body.appendChild(bodyGrid);
+
+    const genderRow = this.el("div", "field-row");
+    genderRow.appendChild(
+      this.el("label", "", "性别形态（互斥切换 · 自动清冲突词与防过大锁）")
+    );
+    const genderChips = this.el("div", "chip-wrap");
+    const genderModes: Array<[CharacterGenderMode, string, string]> = [
+      ["normal", "👩 常规女主", "标准女性角色设定"],
+      ["femboy", "🎀 伪娘", "平胸女装少年 (1boy/2boys, yaoi, anal · 自动屏蔽胸部/女阴/子宫透视)"],
+      ["futa_no_balls", "⚡ 扶他·无蛋", "双性女体·无蛋娇小比例 (保留女胸与双通道，屏蔽蛋蛋与过大词)"],
+      ["futa_with_balls", "⚡ 扶他·有蛋", "双性女体·有蛋娇小比例 (保留女胸与双通道，防过大比例锁)"],
+    ];
+    for (const [gVal, gLbl, gTip] of genderModes) {
+      const btn = this.el("button", "chip-btn", gLbl);
+      btn.title = gTip;
+      btn.addEventListener("click", () => {
+        this.cfg.gender_mode = gVal;
+        this.onCfgChanged();
+        this.renderRightModeView();
+      });
+      this.syncHooks.push(() => {
+        btn.classList.toggle("active", (this.cfg.gender_mode ?? "normal") === gVal);
+      });
+      genderChips.appendChild(btn);
+    }
+    genderRow.appendChild(genderChips);
+    c1.body.appendChild(genderRow);
 
     const subMoreChar = this.el("details", "sub-drawer");
     subMoreChar.appendChild(this.el("summary", "", "▸ 萌点配饰胶囊 & 原设服装屏蔽词"));
@@ -1641,21 +1659,14 @@ export class WorkbenchApp {
     // 2. Dynamic Context Control Box
     this.elContextCtrlBox = this.el("div", "context-ctrl-box");
 
-    // 3. Compact Override Strip (Expression Popover + 3D Camera Popover)
+    // 3. Compact Override Strip (Expression Popover Trigger)
     const overrideStrip = this.el("div", "override-strip");
     this.elExprTrigger = this.el("button", "override-trigger");
     this.elExprTrigger.addEventListener("click", (ev) => {
       ev.stopPropagation();
       this.togglePopover(this.elExprPopover, this.elExprTrigger);
     });
-
-    this.elCamTrigger = this.el("button", "override-trigger");
-    this.elCamTrigger.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      this.togglePopover(this.elCamPopover, this.elCamTrigger);
-      this.radarWidget?.render();
-    });
-    overrideStrip.append(this.elExprTrigger, this.elCamTrigger);
+    overrideStrip.append(this.elExprTrigger);
 
     // 4. Pose Search & Category Filter Bar
     this.elPoseFilterBar = this.el("div", "pose-filter-bar");
@@ -1814,13 +1825,13 @@ export class WorkbenchApp {
       ],
       [
         "🔬 子宫透视",
-        hasBuiltinXray || this.cfg.enable_uterus_xray,
+        (this.cfg.gender_mode ?? "normal") !== "femboy" && (hasBuiltinXray || this.cfg.enable_uterus_xray),
         () => {
           this.cfg.enable_uterus_xray = !this.cfg.enable_uterus_xray;
           this.onCfgChanged();
           this.renderRightModeView();
         },
-        hasBuiltinXray,
+        hasBuiltinXray || (this.cfg.gender_mode ?? "normal") === "femboy",
       ],
       [
         "🏁 透明底",
@@ -1936,32 +1947,72 @@ export class WorkbenchApp {
     });
     r1.append(btnNsfw, btnXray);
 
-    // Row 1.5: MA7 3 Dedicated Derived Variant Buttons (Top-only; bottom list keeps single MA7)
+    // Row 1.5: MA7 2×2 Orthogonal Controls (腹型: 圆腹 / 平腹  ×  透视: 无透视 / 透视)
     const rMa7 = this.el("div", "ctrl-inline-row");
     rMa7.appendChild(this.el("span", "ctrl-tag-lbl", "MA7派生"));
-    const ma7Variants: Array<["MA7A" | "MA7B" | "MA7C", string, string]> = [
-      ["MA7A", "🤰 ①圆腹无透视", "MA7 歪头比耶派生①：饱满圆腹溢流版（无透视窗 · 再次点击切回原版 MA7）"],
-      ["MA7B", "🤰🔬 ②圆腹+透视", "MA7 歪头比耶派生②：饱满圆腹 + 内部透视窗版（再次点击切回原版 MA7）"],
-      ["MA7C", "🔬 ③平腹+透视", "MA7 歪头比耶派生③：纤细平腹 + 内部透视满盈版（再次点击切回原版 MA7）"],
-    ];
-    for (const [vid, vLbl, vTip] of ma7Variants) {
-      const vb = this.el(
-        "button",
-        `chip-btn${this.activeMa7Variant === vid && this.activeSceneId === vid ? " active" : ""}`,
-        vLbl
-      );
-      vb.title = vTip;
-      vb.addEventListener("click", () => {
-        if (this.activeMa7Variant === vid && this.activeSceneId === vid) {
-          this.activeMa7Variant = "";
-          this.selectScene("MA7");
-        } else {
-          this.activeMa7Variant = vid;
-          this.selectScene(vid);
-        }
-      });
-      rMa7.appendChild(vb);
-    }
+    const isMa7DerivedActive =
+      this.activeSceneId === "MA7A" ||
+      this.activeSceneId === "MA7B" ||
+      this.activeSceneId === "MA7C" ||
+      this.activeSceneId === "MA7D";
+    const curBelly: "round" | "flat" =
+      this.activeSceneId === "MA7C" || this.activeSceneId === "MA7D" ? "flat" : "round";
+    const curXray: boolean = this.activeSceneId === "MA7B" || this.activeSceneId === "MA7C";
+
+    const resolveMa7Id = (belly: "round" | "flat", xray: boolean): "MA7A" | "MA7B" | "MA7C" | "MA7D" => {
+      if (belly === "round") return xray ? "MA7B" : "MA7A";
+      return xray ? "MA7C" : "MA7D";
+    };
+
+    const btnRound = this.el(
+      "button",
+      `chip-btn${isMa7DerivedActive && curBelly === "round" ? " active" : ""}`,
+      "🤰 圆腹"
+    );
+    btnRound.title = "MA7 饱满圆腹版（再次点击可退出派生回到原版 MA7）";
+    btnRound.addEventListener("click", () => {
+      if (isMa7DerivedActive && curBelly === "round") {
+        this.activeMa7Variant = "";
+        this.selectScene("MA7");
+      } else {
+        const nextId = resolveMa7Id("round", isMa7DerivedActive ? curXray : false);
+        this.activeMa7Variant = nextId;
+        this.selectScene(nextId);
+      }
+    });
+
+    const btnFlat = this.el(
+      "button",
+      `chip-btn${isMa7DerivedActive && curBelly === "flat" ? " active" : ""}`,
+      "✨ 平腹"
+    );
+    btnFlat.title = "MA7 纤细平腹版（再次点击可退出派生回到原版 MA7）";
+    btnFlat.addEventListener("click", () => {
+      if (isMa7DerivedActive && curBelly === "flat") {
+        this.activeMa7Variant = "";
+        this.selectScene("MA7");
+      } else {
+        const nextId = resolveMa7Id("flat", isMa7DerivedActive ? curXray : false);
+        this.activeMa7Variant = nextId;
+        this.selectScene(nextId);
+      }
+    });
+
+    const btnMa7Xray = this.el(
+      "button",
+      `chip-btn${isMa7DerivedActive && curXray ? " active" : ""}`,
+      isMa7DerivedActive && curXray ? "🔬 透视 ON" : "🔬 透视 OFF"
+    );
+    btnMa7Xray.title = "独立切换 MA7 派生的内部透视窗（圆腹/平腹均可自由搭配透视或无透视）";
+    btnMa7Xray.addEventListener("click", () => {
+      const nextBelly = isMa7DerivedActive ? curBelly : "flat";
+      const nextXray = isMa7DerivedActive ? !curXray : true;
+      const nextId = resolveMa7Id(nextBelly, nextXray);
+      this.activeMa7Variant = nextId;
+      this.selectScene(nextId);
+    });
+
+    rMa7.append(btnRound, btnFlat, btnMa7Xray);
 
     const r2 = this.el("div", "ctrl-inline-row");
     const envSw = this.el(
@@ -2230,7 +2281,12 @@ export class WorkbenchApp {
   private selectScene(sceneId: string): void {
     const prevId = this.activeSceneId;
     this.activeSceneId = sceneId;
-    if (sceneId === "MA7A" || sceneId === "MA7B" || sceneId === "MA7C") {
+    if (
+      sceneId === "MA7A" ||
+      sceneId === "MA7B" ||
+      sceneId === "MA7C" ||
+      sceneId === "MA7D"
+    ) {
       this.activeMa7Variant = sceneId;
     }
     this.isManualPromptEdited = false;
@@ -2369,7 +2425,6 @@ export class WorkbenchApp {
     this.elMcpPopover?.classList.add("hidden");
     this.elSavePresetPopover?.classList.add("hidden");
     this.elExprPopover?.classList.add("hidden");
-    this.elCamPopover?.classList.add("hidden");
   }
 
   private buildMcpPopover(): HTMLElement {
@@ -2446,10 +2501,21 @@ export class WorkbenchApp {
     this.closeAllPopovers();
     if (!wasHidden) return;
     pop.classList.remove("hidden");
+    if (window.innerWidth <= 768) {
+      pop.style.left = "8px";
+      pop.style.right = "8px";
+      pop.style.width = "auto";
+      pop.style.top = "auto";
+      pop.style.bottom = "calc(58px + env(safe-area-inset-bottom, 0px))";
+      return;
+    }
+    pop.style.right = "";
+    pop.style.bottom = "";
     const rect = anchor.getBoundingClientRect();
     const popW = Math.min(420, window.innerWidth - 20);
     const left = Math.max(10, Math.min(rect.left, window.innerWidth - popW - 10));
-    const top = Math.min(rect.bottom + 6, window.innerHeight - 360);
+    const measuredH = Math.min(pop.offsetHeight || 360, window.innerHeight - 70);
+    const top = Math.min(rect.bottom + 6, window.innerHeight - measuredH - 12);
     pop.style.left = `${left}px`;
     pop.style.top = `${Math.max(54, top)}px`;
   }
@@ -2578,126 +2644,25 @@ export class WorkbenchApp {
     return pop;
   }
 
-  private buildCameraPopover(): HTMLElement {
-    const pop = this.el("div", "floating-popover hidden");
-    pop.style.width = "436px";
-    pop.addEventListener("click", (ev) => ev.stopPropagation());
-
-    const head = this.el("div", "popover-head");
-    head.appendChild(this.el("span", "", "🧭 3D 机位球面雷达与景别覆写"));
-    const rightActs = this.el("div", "topbar-group");
-    const swCam = this.el("button", "switch-pill", "OFF");
-    swCam.addEventListener("click", () => {
-      this.cfg.cam_enable_override = !this.cfg.cam_enable_override;
-      this.onCfgChanged();
-    });
-    const btnResetCam = this.el("button", "btn btn-xs", "↺ 复位");
-    btnResetCam.addEventListener("click", () => {
-      this.cfg.cam_enable_override = false;
-      this.cfg.cam_azimuth = 0;
-      this.cfg.cam_elevation = 12;
-      this.cfg.cam_shot_preset = "随原幕景别";
-      this.cfg.cam_wide_lens = false;
-      this.cfg.cam_dutch_angle = false;
-      this.onCfgChanged();
-    });
-    const btnClose = this.el("button", "btn btn-xs btn-icon", "✕");
-    btnClose.addEventListener("click", () => pop.classList.add("hidden"));
-    rightActs.append(swCam, btnResetCam, btnClose);
-    head.appendChild(rightActs);
-
-    // Quick Camera Angle Pills
-    const quickWrap = this.el("div", "chip-wrap");
-    for (const [label, az, el, shotOpt, wideOpt] of CAMERA_QUICK_PRESETS) {
-      const c = this.el("button", "chip-btn", label);
-      c.addEventListener("click", () => {
-        this.cfg.cam_enable_override = true;
-        this.cfg.cam_azimuth = az;
-        this.cfg.cam_elevation = el;
-        if (shotOpt) {
-          const foundShot = Object.entries(CAMERA_SHOT_PRESETS).find(([, code]) => code === shotOpt);
-          if (foundShot) this.cfg.cam_shot_preset = foundShot[0];
-        }
-        this.cfg.cam_wide_lens = wideOpt;
-        this.onCfgChanged();
-      });
-      quickWrap.appendChild(c);
-    }
-
-    const radarWrap = this.el("div", "radar-canvas-wrap");
-    const canvas = document.createElement("canvas");
-    radarWrap.appendChild(canvas);
-    this.radarWidget = new CameraRadarCanvas(
-      canvas,
-      (next) => {
-        this.cfg.cam_enable_override = next.enabled;
-        this.cfg.cam_azimuth = next.azimuth;
-        this.cfg.cam_elevation = next.elevation;
-        this.onCfgChanged();
-      },
-      () => {
-        this.cfg.cam_enable_override = false;
-        this.cfg.cam_azimuth = 0;
-        this.cfg.cam_elevation = 12;
-        this.onCfgChanged();
-      }
-    );
-
-    const shotGrid = this.el("div", "grid-2");
-    shotGrid.append(
-      this.bindCfgSelect("景别远近", "cam_shot_preset", Object.keys(CAMERA_SHOT_PRESETS), () => {
-        this.cfg.cam_enable_override = true;
-      }),
-      this.bindCfgSelect("视线朝向", "cam_gaze_preset", Object.keys(CAMERA_GAZE_PRESETS), () => {
-        this.cfg.cam_enable_override = true;
-      })
-    );
-
-    const lensChips = this.el("div", "chip-wrap");
-    const btnWide = this.el("button", "chip-btn", "🔭 广角透视夸张 (Wide-Angle)");
-    btnWide.addEventListener("click", () => {
-      this.cfg.cam_enable_override = true;
-      this.cfg.cam_wide_lens = !this.cfg.cam_wide_lens;
-      this.onCfgChanged();
-    });
-    const btnDutch = this.el("button", "chip-btn", "📐 倾斜构图 (Dutch Angle)");
-    btnDutch.addEventListener("click", () => {
-      this.cfg.cam_enable_override = true;
-      this.cfg.cam_dutch_angle = !this.cfg.cam_dutch_angle;
-      this.onCfgChanged();
-    });
-    lensChips.append(btnWide, btnDutch);
-
-    this.syncHooks.push(() => {
-      swCam.classList.toggle("on", this.cfg.cam_enable_override);
-      swCam.textContent = this.cfg.cam_enable_override ? "覆写ON" : "OFF";
-      btnWide.classList.toggle("active", this.cfg.cam_wide_lens);
-      btnDutch.classList.toggle("active", this.cfg.cam_dutch_angle);
-      this.radarWidget?.setState({
-        enabled: this.cfg.cam_enable_override,
-        azimuth: this.cfg.cam_azimuth,
-        elevation: this.cfg.cam_elevation,
-      });
-    });
-
-    pop.append(head, quickWrap, radarWrap, shotGrid, lensChips);
-    return pop;
-  }
-
   // ===========================================================================
   // FULLSCREEN CAROUSEL LIGHTBOX (Mutually Exclusive Modes + Auto-2x Invariant)
   // ===========================================================================
   private buildLightbox(): HTMLElement {
     const overlay = this.el("div", "lightbox-overlay hidden");
     const top = this.el("div", "lightbox-topbar");
+    const headRow = this.el("div", "lightbox-head-row");
     this.elLightboxMeta = this.el("div", "stage-meta", "");
 
-    const ctrls = this.el("div", "topbar-group");
+    const btnLbClose = this.el("button", "btn btn-xs btn-danger lightbox-close-btn", "✕ 退出全屏");
+    btnLbClose.addEventListener("click", () => this.closeLightbox());
+    headRow.append(this.elLightboxMeta, btnLbClose);
+
+    const ctrls = this.el("div", "lightbox-ctrls");
     const modeSeg = this.el("div", "seg-group");
     const cModes: Array<[CarouselMode, string]> = [
-      ["manual", "✋ 手动翻页"],
-      ["follow_latest", "⚡ 跟随最新出图"],
-      ["timed", "⏱️ 定时轮播"],
+      ["manual", "✋ 手动"],
+      ["follow_latest", "⚡ 跟随最新"],
+      ["timed", "⏱️ 轮播"],
     ];
     this.elLightboxModeBtns.clear();
     for (const [cm, lbl] of cModes) {
@@ -2732,18 +2697,26 @@ export class WorkbenchApp {
       if (rec) triggerBytesDownload(rec.bytes, rec.filename);
     });
 
-    const btnLbClose = this.el("button", "btn btn-xs btn-danger", "✕ 退出全屏 (Esc)");
-    btnLbClose.addEventListener("click", () => this.closeLightbox());
-
-    ctrls.append(modeSeg, intSel, btnLbUpscale, btnLbDl, btnLbClose);
-    top.append(this.elLightboxMeta, ctrls);
+    ctrls.append(modeSeg, intSel, btnLbUpscale, btnLbDl);
+    top.append(headRow, ctrls);
 
     const stage = this.el("div", "lightbox-stage");
+    stage.addEventListener("click", (ev) => {
+      if (ev.target === stage) {
+        this.closeLightbox();
+      }
+    });
     const btnPrev = this.el("button", "lightbox-nav-btn prev", "‹");
-    btnPrev.addEventListener("click", () => this.stepLightbox(-1, true));
+    btnPrev.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.stepLightbox(-1, true);
+    });
     this.elLightboxImg = document.createElement("img");
     const btnNext = this.el("button", "lightbox-nav-btn next", "›");
-    btnNext.addEventListener("click", () => this.stepLightbox(1, true));
+    btnNext.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.stepLightbox(1, true);
+    });
     stage.append(btnPrev, this.elLightboxImg, btnNext);
 
     overlay.append(top, stage);
@@ -2818,6 +2791,7 @@ export class WorkbenchApp {
     saveActiveConfig(this.cfg);
     this.syncAllControls();
     this.refreshSceneAndPrompt();
+    this.updateQuotaPill();
   }
 
   private syncAllControls(): void {
@@ -2836,8 +2810,17 @@ export class WorkbenchApp {
     this.elIdentityCard.classList.toggle("muted", !idOn);
     this.elIdentitySwitch.classList.toggle("on", idOn);
     this.elIdentitySwitch.textContent = idOn ? "ON" : "OFF";
+    const gMode = this.cfg.gender_mode ?? "normal";
+    const gSuffix =
+      gMode === "femboy"
+        ? " · 🎀伪娘"
+        : gMode === "futa_no_balls"
+          ? " · ⚡扶他无蛋"
+          : gMode === "futa_with_balls"
+            ? " · ⚡扶他有蛋"
+            : "";
     this.elIdentitySummary.textContent = idOn
-      ? `${this.cfg.eng_name || this.cfg.char_tag}`
+      ? `${this.cfg.eng_name || this.cfg.char_tag}${gSuffix}`
       : "已关闭人物词";
 
     const outOn = Boolean(this.cfg.enable_outfit);
@@ -2916,31 +2899,6 @@ export class WorkbenchApp {
       this.el("span", "", `😊 表情: ${exprActive ? exprShort : "随动作默认"}`),
       this.el("span", "", "▾")
     );
-
-    const isPosPovMode =
-      this.actionMode === "positions" &&
-      this.activeSceneId in ALL_POSITIONS_TEMPLATES &&
-      this.cfg.perspective_mode === "pov";
-    const camActive = Boolean(this.cfg.cam_enable_override) && !isPosPovMode;
-    const shotCode = CAMERA_SHOT_PRESETS[this.cfg.cam_shot_preset] ?? "auto";
-    const camShort = isPosPovMode
-      ? "POV第一人称锁定"
-      : camActive
-        ? describeCameraShort(
-            true,
-            this.cfg.cam_azimuth,
-            this.cfg.cam_elevation,
-            shotCode,
-            this.cfg.cam_wide_lens,
-            this.cfg.cam_dutch_angle
-          )
-        : "随动作默认";
-    this.elCamTrigger.classList.toggle("active", camActive);
-    this.elCamTrigger.innerHTML = "";
-    this.elCamTrigger.append(
-      this.el("span", "", `🧭 机位: ${camShort}`),
-      this.el("span", "", "▾")
-    );
   }
 
   private syncStageToolbar(): void {
@@ -2978,6 +2936,7 @@ export class WorkbenchApp {
     saveApiSettings(this.apiSettings);
     this.syncAllControls();
     this.refreshSceneAndPrompt();
+    this.updateQuotaPill();
   }
 
   // ===========================================================================

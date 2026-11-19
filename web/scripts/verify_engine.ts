@@ -14,6 +14,7 @@ import {
   POS_STAGE_PRESETS,
   resolveLightingForStyle,
   STYLE_BUNDLED_VIBE_PACK,
+  STYLE_PRESETS,
 } from "../src/data/engineConstants";
 import { BUNDLED_VIBE_PACKS, cloneBundledVibeItems } from "../src/data/bundledVibes";
 import { generateScenePrompts } from "../src/engine/storyEngine";
@@ -784,7 +785,6 @@ async function main(): Promise<void> {
     "P22",
     "P23",
     "P29",
-    "P33",
     "P38",
     "P44",
     "P49",
@@ -794,11 +794,14 @@ async function main(): Promise<void> {
     const pid = `P${String(i).padStart(2, "0")}`;
     const tpl = ALL_POSITIONS_TEMPLATES[pid];
     assert(tpl, `Missing template ${pid}`);
-    const expectedVis = expectedRearNoFace.has(pid)
-      ? "rear_no_face"
-      : expectedTopDown.has(pid)
-        ? "top_down_over_shoulder"
-        : "front_face_visible";
+    const expectedVis =
+      pid === "P33"
+        ? "ventral_no_eyes"
+        : expectedRearNoFace.has(pid)
+          ? "rear_no_face"
+          : expectedTopDown.has(pid)
+            ? "top_down_over_shoulder"
+            : "front_face_visible";
     assert.equal(tpl.pov_visibility, expectedVis, `${pid} pov_visibility mismatch`);
   }
 
@@ -964,13 +967,9 @@ async function main(): Promise<void> {
     "P25 POV must open thighs with leg lift + grabbing thigh and strip crossed legs / rabbit tail"
   );
 
-  // (3) P28 / P40 / P51: suspended mid-air elevation + Global 3D Radar leftover azimuth=0 must NOT break POV!
+  // (3) P28 / P40 / P51: suspended mid-air elevation in top_down_over_shoulder POV
   for (const suspId of ["P28", "P40", "P51"] as const) {
-    const [sItem] = generateScenePrompts(
-      suspId,
-      { ...povAuditCfg, cam_enable_override: true, cam_azimuth: 0, cam_elevation: 12 },
-      "pov"
-    );
+    const [sItem] = generateScenePrompts(suspId, povAuditCfg, "pov");
     const spSusp = splitPromptPosAndNeg(sItem.prompt);
     assert(
       spSusp.posPrompt.includes("1.35::suspended::") &&
@@ -978,18 +977,51 @@ async function main(): Promise<void> {
         spSusp.posPrompt.includes("top-down") &&
         !spSusp.posPrompt.includes("front view") &&
         !spSusp.posPrompt.includes("mesugaki"),
-      `${suspId} POV must include mid-air suspension and ignore leftover 3D Camera azimuth=0 override`
+      `${suspId} POV must include mid-air suspension and top-down framing without face leakage`
     );
   }
-  // Confirm 3D Camera Radar STILL works normally in 3rd-person mode!
-  const [p28Cam3rd] = generateScenePrompts(
-    "P28",
-    { ...povAuditCfg, cam_enable_override: true, cam_azimuth: 90, cam_elevation: 0 },
-    "3rd"
-  );
-  assert(p28Cam3rd.subTitle.includes("🎥"), "3D Camera Radar override must remain active on 3rd-person mode");
 
-  // (4) P33: dual-channel sixty_nine exposes lower anatomy + open bottom + supports uterus x-ray
+  // (4) P33 Calibrated Mutual 69 (POV Portrait 832x1216 ventral_no_eyes + 3RD Landscape 1216x832 side-profile)
+  const [p33CalibPov] = generateScenePrompts(
+    "P33",
+    {
+      ...povAuditCfg,
+      pos_stage: "💦 2. 射精中 · 内射/迸发瞬间（climax / internal cumshot · 白浊喷涌）",
+    },
+    "pov"
+  );
+  const spP33Pov = splitPromptPosAndNeg(p33CalibPov.prompt);
+  const p33PovNegSet = new Set(spP33Pov.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    p33CalibPov.canvas.includes("832x1216") &&
+      spP33Pov.posPrompt.includes("1.5::pov::") &&
+      spP33Pov.posPrompt.includes("grabbing ass") &&
+      spP33Pov.posPrompt.includes("bare stomach") &&
+      spP33Pov.posPrompt.includes("underboob") &&
+      spP33Pov.posPrompt.includes("bare breasts") &&
+      spP33Pov.posPrompt.includes("head down") &&
+      spP33Pov.posPrompt.includes("chin") &&
+      spP33Pov.posPrompt.includes("1.45::pussy::") &&
+      spP33Pov.posPrompt.includes("1.4::pussy from behind::") &&
+      spP33Pov.posPrompt.includes("1.45::oral::") &&
+      spP33Pov.posPrompt.includes("1.45::fellatio::") &&
+      spP33Pov.posPrompt.includes("open mouth") &&
+      spP33Pov.posPrompt.includes("lips around penis") &&
+      !spP33Pov.posPrompt.includes("mesugaki") &&
+      !spP33Pov.posPrompt.includes("gradient eyes") &&
+      !spP33Pov.posPrompt.includes("aqua eyes") &&
+      !spP33Pov.posPrompt.includes("rabbit tail") &&
+      p33PovNegSet.has("eyes") &&
+      p33PovNegSet.has("eyebrows") &&
+      p33PovNegSet.has("eyelashes") &&
+      p33PovNegSet.has("pupils") &&
+      p33PovNegSet.has("vaginal") &&
+      p33PovNegSet.has("insertion") &&
+      p33PovNegSet.has("covered crotch") &&
+      !p33PovNegSet.has("face"),
+    "P33 POV must use 832x1216 portrait, preserve ventral torso + inverted chin/open mouth, suppress eyes (without blocking 'face'), and block vaginal insertion"
+  );
+
   const [p33SkirtPov] = generateScenePrompts(
     "P33",
     {
@@ -999,16 +1031,40 @@ async function main(): Promise<void> {
     },
     "pov"
   );
-  const spP33 = splitPromptPosAndNeg(p33SkirtPov.prompt);
+  const spP33Skirt = splitPromptPosAndNeg(p33SkirtPov.prompt);
   assert(
-    spP33.posPrompt.includes("1.35::pussy::") &&
-      spP33.posPrompt.includes("1.3::spread pussy::") &&
-      spP33.posPrompt.includes("1.3::cunnilingus::") &&
-      spP33.posPrompt.includes("skirt lift") &&
-      spP33.posPrompt.includes("panties aside") &&
-      spP33.posPrompt.includes("1.35::x-ray::") &&
-      !spP33.posPrompt.includes("lying on back"),
-    "P33 POV must inject lower anatomy + open skirt/panties aside + uterus x-ray without lying on back"
+    spP33Skirt.posPrompt.includes("skirt lift") &&
+      spP33Skirt.posPrompt.includes("panties aside") &&
+      spP33Skirt.posPrompt.includes("1.35::x-ray::"),
+    "P33 POV with skirt + uterus x-ray must retain skirt lift, panties aside, and x-ray cutaway"
+  );
+
+  const [p33Calib3rd] = generateScenePrompts(
+    "P33",
+    {
+      ...povAuditCfg,
+      pos_stage: "💦 2. 射精中 · 内射/迸发瞬间（climax / internal cumshot · 白浊喷涌）",
+    },
+    "3rd"
+  );
+  const spP333rd = splitPromptPosAndNeg(p33Calib3rd.prompt);
+  const p333rdNegSet = new Set(spP333rd.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    p33Calib3rd.canvas.includes("1216x832") &&
+      spP333rd.posPrompt.includes("1.45::from side::") &&
+      spP333rd.posPrompt.includes("1.55::sixty-nine::") &&
+      spP333rd.posPrompt.includes("opposing orientation") &&
+      spP333rd.posPrompt.includes("head to crotch") &&
+      spP333rd.posPrompt.includes("1.45::cunnilingus::") &&
+      spP333rd.posPrompt.includes("licking pussy") &&
+      spP333rd.posPrompt.includes("1.45::oral::") &&
+      spP333rd.posPrompt.includes("penis in mouth") &&
+      p333rdNegSet.has("pov") &&
+      p333rdNegSet.has("worm's-eye view") &&
+      p333rdNegSet.has("vaginal") &&
+      p333rdNegSet.has("insertion") &&
+      p333rdNegSet.has("fused bodies"),
+    "P33 3RD must use 1216x832 landscape full-body side profile with dual-end cunnilingus + fellatio and anti-POV/anti-insertion UC"
   );
 
   // (5) P41: inverted piledriver with upside-down + hips at top + head at bottom + anti-upright UC
@@ -1038,8 +1094,247 @@ async function main(): Promise<void> {
     "P44 POV must include close rear focus and route post-climax fluid to cum on ass"
   );
 
+  // 16. Verify Gender Mode Transform (Femboy / Futa No-Balls / Futa With-Balls — Conflict-Free Assertions)
+  // (a) Femboy on Reverse Bunnysuit Solo (P43) + Two-Person Supine POV (P02) + Uterus X-Ray auto-disable
+  const femboySoloCfg = {
+    ...povAuditCfg,
+    gender_mode: "femboy" as const,
+    enable_uterus_xray: true,
+  };
+  const [fbSolo] = generateScenePrompts("P43", femboySoloCfg, "3rd");
+  const spFbSolo = splitPromptPosAndNeg(fbSolo.prompt);
+  const fbSoloNeg = new Set(spFbSolo.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    spFbSolo.posPrompt.includes("1.45::1boy::") &&
+      spFbSolo.posPrompt.includes("1.55::otoko no ko::") &&
+      spFbSolo.posPrompt.includes("1.55::flat chest::") &&
+      spFbSolo.posPrompt.includes("1.55::small penis::") &&
+      spFbSolo.posPrompt.includes("1.35::small testicles::") &&
+      !spFbSolo.posPrompt.includes("1girl") &&
+      !spFbSolo.posPrompt.includes("bare breasts") &&
+      !spFbSolo.posPrompt.includes("heart pasties") &&
+      !spFbSolo.posPrompt.includes("pussy") &&
+      !spFbSolo.posPrompt.includes("uterus") &&
+      fbSoloNeg.has("1girl") &&
+      fbSoloNeg.has("breasts") &&
+      fbSoloNeg.has("futanari") &&
+      fbSoloNeg.has("bara") &&
+      fbSoloNeg.has("huge penis") &&
+      !fbSoloNeg.has("1boy") &&
+      !fbSoloNeg.has("penis"),
+    "Femboy Solo P43 must cleanly convert to flat-chested petite boy without breasts/pussy/uterus or UC self-contradictions"
+  );
+
+  // Femboy 2-Person Pull-Out stage (povAuditCfg uses stage 4 pull_out!) must use after anal + pull out and block anal penetration/insertion
+  const [fbDuoPullOut] = generateScenePrompts("P02", femboySoloCfg, "pov");
+  const spFbDuoPull = splitPromptPosAndNeg(fbDuoPullOut.prompt);
+  const fbDuoPullNeg = new Set(spFbDuoPull.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    spFbDuoPull.posPrompt.includes("2boys") &&
+      spFbDuoPull.posPrompt.includes("1.55::yaoi::") &&
+      spFbDuoPull.posPrompt.includes("1.45::after anal::") &&
+      spFbDuoPull.posPrompt.includes("1.45::pull out::") &&
+      !spFbDuoPull.posPrompt.includes("anal penetration") &&
+      !spFbDuoPull.posPrompt.includes("hetero") &&
+      !spFbDuoPull.posPrompt.includes("vaginal") &&
+      !spFbDuoPull.posPrompt.includes("pussy") &&
+      !spFbDuoPull.posPrompt.includes("x-ray") &&
+      fbDuoPullNeg.has("anal penetration") &&
+      fbDuoPullNeg.has("insertion") &&
+      fbDuoPullNeg.has("hetero") &&
+      fbDuoPullNeg.has("vaginal") &&
+      fbDuoPullNeg.has("pussy") &&
+      !fbDuoPullNeg.has("2boys") &&
+      !fbDuoPullNeg.has("anal"),
+    "Femboy 2-Person P02 Pull-Out POV must emit after anal + pull out and block anal penetration/insertion"
+  );
+
+  // Femboy 2-Person Penetration stage (stage 2 during) must use anal + anal penetration + male penetrated
+  const [fbDuo] = generateScenePrompts(
+    "P02",
+    {
+      ...femboySoloCfg,
+      pos_stage: "💦 2. 射精中 · 内射/迸发瞬间（climax / internal cumshot · 白浊喷涌）",
+    },
+    "pov"
+  );
+  const spFbDuo = splitPromptPosAndNeg(fbDuo.prompt);
+  const fbDuoNeg = new Set(spFbDuo.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    spFbDuo.posPrompt.includes("2boys") &&
+      spFbDuo.posPrompt.includes("1.55::yaoi::") &&
+      spFbDuo.posPrompt.includes("1.5::anal::") &&
+      spFbDuo.posPrompt.includes("1.45::anal penetration::") &&
+      spFbDuo.posPrompt.includes("1.45::male penetrated::") &&
+      !spFbDuo.posPrompt.includes("hetero") &&
+      !spFbDuo.posPrompt.includes("vaginal") &&
+      !spFbDuo.posPrompt.includes("pussy") &&
+      !fbDuoNeg.has("anal penetration"),
+    "Femboy 2-Person P02 Penetration POV must switch to 2boys yaoi anal without hetero/vaginal/uterus conflict"
+  );
+
+  // (b) Futanari No-Balls on Solo (P43) & Male-on-Futa Receiving POV (P02 with Uterus X-Ray)
+  const futaNoBallsCfg = {
+    ...povAuditCfg,
+    gender_mode: "futa_no_balls" as const,
+    enable_uterus_xray: true,
+  };
+  const [fnSolo] = generateScenePrompts("P43", futaNoBallsCfg, "3rd");
+  const spFnSolo = splitPromptPosAndNeg(fnSolo.prompt);
+  const fnSoloNeg = new Set(spFnSolo.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    spFnSolo.posPrompt.includes("1girl") &&
+      spFnSolo.posPrompt.includes("1.55::futanari::") &&
+      spFnSolo.posPrompt.includes("1.45::futa without balls::") &&
+      spFnSolo.posPrompt.includes("1.55::small penis::") &&
+      spFnSolo.posPrompt.includes("1.35::precum::") &&
+      !spFnSolo.posPrompt.includes("1.35::pussy::") &&
+      !spFnSolo.posPrompt.includes("labia") &&
+      !spFnSolo.posPrompt.includes("spread pussy") &&
+      !spFnSolo.posPrompt.includes("gaping") &&
+      spFnSolo.posPrompt.includes("bare breasts") &&
+      spFnSolo.posPrompt.includes("1.35::x-ray::") &&
+      fnSoloNeg.has("testicles") &&
+      fnSoloNeg.has("balls") &&
+      fnSoloNeg.has("otoko no ko") &&
+      fnSoloNeg.has("flat chest") &&
+      fnSoloNeg.has("huge penis") &&
+      !fnSoloNeg.has("penis"),
+    "Futa No-Balls Solo P43 must preserve 1girl/breasts/x-ray, apply Anti-Pasted-On vulva strip + precum, unblock penis, and block testicles/femboy/oversize"
+  );
+
+  // (c) Futanari With-Balls on Male-on-Futa Receiving POV (P02)
+  const futaWithBallsCfg = {
+    ...povAuditCfg,
+    pos_stage: "💦 2. 射精中 · 内射/迸发瞬间（climax / internal cumshot · 白浊喷涌）",
+    gender_mode: "futa_with_balls" as const,
+    enable_uterus_xray: true,
+  };
+  const [fwDuo] = generateScenePrompts("P02", futaWithBallsCfg, "pov");
+  const spFwDuo = splitPromptPosAndNeg(fwDuo.prompt);
+  const fwDuoNeg = new Set(spFwDuo.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    spFwDuo.posPrompt.includes("1girl") &&
+      spFwDuo.posPrompt.includes("1boy") &&
+      spFwDuo.posPrompt.includes("1.55::futanari::") &&
+      spFwDuo.posPrompt.includes("1.45::futa with balls::") &&
+      spFwDuo.posPrompt.includes("1.25::small testicles::") &&
+      spFwDuo.posPrompt.includes("1.35::precum::") &&
+      !spFwDuo.posPrompt.includes("1.35::pussy::") &&
+      !spFwDuo.posPrompt.includes("labia") &&
+      !spFwDuo.posPrompt.includes("spread pussy") &&
+      !spFwDuo.posPrompt.includes("gaping") &&
+      spFwDuo.posPrompt.includes("vaginal") &&
+      !spFwDuo.posPrompt.includes("1.55::small penis::") &&
+      !spFwDuo.posPrompt.includes("1.35::tiny penis::") &&
+      !fwDuoNeg.has("testicles") &&
+      !fwDuoNeg.has("balls") &&
+      !fwDuoNeg.has("large penis") &&
+      !fwDuoNeg.has("thick penis") &&
+      fwDuoNeg.has("2boys") &&
+      fwDuoNeg.has("hyper penis") &&
+      fwDuoNeg.has("huge testicles"),
+    `Futa With-Balls Male-on-Futa P02 POV check failed:\nPOS: ${spFwDuo.posPrompt}\nNEG: ${spFwDuo.negPrompt}`
+  );
+  const tokFw = countSeparatedT5Tokens({
+    posPrompt: spFwDuo.posPrompt,
+    sceneNegPrompt: spFwDuo.negPrompt,
+    ucPresetMode: "heavy",
+    appendQuality: true,
+  });
+  assert(tokFw.posTokens <= 502, `Futa With-Balls P02 exceeded 502 T5 limit: ${tokFw.posTokens}`);
+
+  // (d) MA7A / MA7B / MA7C / MA7D Archetype E (Orthogonal Belly: Round/Flat × X-Ray: ON/OFF across Femboy & Futa)
+  for (const ma7Id of ["MA7A", "MA7B", "MA7C", "MA7D"] as const) {
+    // Femboy MA7A/B/C/D
+    const [fbMa7] = generateScenePrompts(ma7Id, femboySoloCfg, "3rd");
+    const spFbMa7 = splitPromptPosAndNeg(fbMa7.prompt);
+    const fbMa7Neg = new Set(spFbMa7.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+    assert(
+      spFbMa7.posPrompt.includes("1.45::1boy::") &&
+        spFbMa7.posPrompt.includes("1.55::flat chest::") &&
+        spFbMa7.posPrompt.includes("1.45::precum::") &&
+        spFbMa7.posPrompt.includes("1.4::precum string::") &&
+        spFbMa7.posPrompt.includes("dripping") &&
+        !spFbMa7.posPrompt.includes("spread pussy") &&
+        !spFbMa7.posPrompt.includes("spreading own pussy") &&
+        !spFbMa7.posPrompt.includes(", fingers,") &&
+        !spFbMa7.posPrompt.includes("uterus") &&
+        fbMa7Neg.has("uterus") &&
+        fbMa7Neg.has("extra hands") &&
+        fbMa7Neg.has("extra fingers") &&
+        !fbMa7Neg.has("dripping"),
+      `Femboy ${ma7Id} must strip third-hand spread/fingers, emit precum string, and block uterus/extra hands`
+    );
+    if (ma7Id === "MA7A" || ma7Id === "MA7B") {
+      assert(spFbMa7.posPrompt.includes("1.55::pregnant::"), `Femboy ${ma7Id} must keep round belly`);
+    } else {
+      assert(
+        spFbMa7.posPrompt.includes("hand on hip") && !spFbMa7.posPrompt.includes("1.55::pregnant::"),
+        `Femboy ${ma7Id} must use hand on hip with flat belly`
+      );
+    }
+    if (ma7Id === "MA7B" || ma7Id === "MA7C") {
+      assert(
+        spFbMa7.posPrompt.includes("1.45::intestines::") &&
+          spFbMa7.posPrompt.includes("1.5::cum in ass::") &&
+          !fbMa7Neg.has("x-ray"),
+        `Femboy ${ma7Id} must use male colon cutaway (intestines + cum in ass)`
+      );
+    } else {
+      assert(
+        !spFbMa7.posPrompt.includes("1.45::x-ray::") && fbMa7Neg.has("x-ray"),
+        `Femboy ${ma7Id} (no-xray) must block x-ray cutaway`
+      );
+    }
+
+    // Futanari No-Balls MA7A/B/C/D
+    const [fnMa7] = generateScenePrompts(ma7Id, futaNoBallsCfg, "3rd");
+    const spFnMa7 = splitPromptPosAndNeg(fnMa7.prompt);
+    const fnMa7Neg = new Set(spFnMa7.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+    assert(
+      spFnMa7.posPrompt.includes("1.55::futanari::") &&
+        spFnMa7.posPrompt.includes("1.45::futa without balls::") &&
+        spFnMa7.posPrompt.includes("1.45::precum::") &&
+        spFnMa7.posPrompt.includes("1.4::precum string::") &&
+        spFnMa7.posPrompt.includes("1.35::pussy::") &&
+        spFnMa7.posPrompt.includes("1.45::cum in pussy::") &&
+        !spFnMa7.posPrompt.includes("spread pussy") &&
+        !spFnMa7.posPrompt.includes("spreading own pussy") &&
+        !spFnMa7.posPrompt.includes(", fingers,") &&
+        fnMa7Neg.has("extra hands") &&
+        fnMa7Neg.has("extra fingers") &&
+        fnMa7Neg.has("testicles") &&
+        !fnMa7Neg.has("penis") &&
+        !fnMa7Neg.has("dripping"),
+      `Futa ${ma7Id} must strip third-hand spread/fingers and emit dual-fluid precum + vaginal cum overflow`
+    );
+    if (ma7Id === "MA7C" || ma7Id === "MA7D") {
+      assert(spFnMa7.posPrompt.includes("hand on hip"), `Futa ${ma7Id} must add hand on hip`);
+    }
+    if (ma7Id === "MA7D") {
+      assert(
+        !spFnMa7.posPrompt.includes("1.45::x-ray::") && fnMa7Neg.has("x-ray") && fnMa7Neg.has("pregnant"),
+        "Futa MA7D (flat belly, no-xray) must block both pregnant and x-ray"
+      );
+    }
+  }
+
+  // (e) Dedicated Futa Style Preset (安定萌化mikozin + 0.28::artist:pija (pianiishimo):: tail blend)
+  const futaStyleKey =
+    "⚡🌷 安定萌化futa专用（mikozin 0.66 + kani 0.55 + hori 0.48 + gotyou 0.42 + pija 0.28）";
+  const futaStyleTuple = STYLE_PRESETS[futaStyleKey];
+  assert(
+    Array.isArray(futaStyleTuple) &&
+      futaStyleTuple[0].includes(
+        "0.66::artist:mikozin::, 0.55::artist:kani bonara::, 0.48::artist:hori (hori no su)::, 0.42::artist:gotyou::, 0.28::artist:pija (pianiishimo)::"
+      ) &&
+      futaStyleTuple[0].includes("gradient eyes, no text"),
+    "STYLE_PRESETS must include 安定萌化futa专用 with 0.28::artist:pija (pianiishimo):: at the tail of the 5-artist chain"
+  );
+
   console.log(
-    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts: 55 Positions x2 + MA0~MA10 + Free Action, POV Optical & Gaze Audit Passed, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
+    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts: 55 Positions x2 + MA0~MA10 + Free Action, POV Optical & Gaze Audit + Femboy/Futa Conflict-Free Transform Passed, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
   );
 }
 

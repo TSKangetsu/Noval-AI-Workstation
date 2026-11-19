@@ -528,6 +528,10 @@ export const STYLE_PRESETS: Record<string, [string, string]> = {
     "0.66::artist:mikozin::, 0.55::artist:kani bonara::, 0.48::artist:hori (hori no su)::, 0.42::artist:gotyou::, gradient eyes, no text",
     "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
   ],
+  "⚡🌷 安定萌化futa专用（mikozin 0.66 + kani 0.55 + hori 0.48 + gotyou 0.42 + pija 0.28）": [
+    "0.66::artist:mikozin::, 0.55::artist:kani bonara::, 0.48::artist:hori (hori no su)::, 0.42::artist:gotyou::, 0.28::artist:pija (pianiishimo)::, gradient eyes, no text",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
   "🌿 安定中度萌化淡画风（shouu-kun 0.56 + mikozin 0.40 + gotyou 0.38）": [
     "0.40::artist:mikozin::, 0.56::artist:shouu-kun::, 0.38::artist:gotyou::, clean lineart, soft shading, pastel colors, light colors, no text",
     "oversaturated, neon colors, high contrast, harsh shadows, thick outlines, bold lineart, cel shading, flat color, realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, crosshatching, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
@@ -1323,6 +1327,18 @@ export const MULTI_ANGLE_TEMPLATES: Record<string, { title: string; canvas: stri
     "extra_neg": "covering crotch, covering pussy, covering breasts, censor, mosaic censoring, bar censor, gaping, pregnant, stomach bulge, fetus, baby, embryo, umbilical cord, 1boy, male, penis, phallus, testicles, skeleton, bones, skull, ribcage, gore",
     "default_expr_tags": "1.35::mesugaki::, 1.3::smug::, smirk, evil smile, grin, naughty face, 1.2::half-closed eyes::, jitome, blush"
   },
+  "MA7D": {
+    "title": "MA7 · 派生④ 纤细平腹溢流版 (无透视)",
+    "canvas": "竖图 832x1216",
+    "allow_multi_views": false,
+    "scene": "cowboy shot, 1.35::upper body::, legs apart, head tilt, peace sign near cheek, 1.25::spread pussy::, 1.25::spreading own pussy::, fingers, after vaginal, 1.4::cum::, 1.45::cum in pussy::, 1.35::cumdrip::, looking at viewer, blurred warm indoor background",
+    "prose": "cowboy shot with legs apart, tilting her head with a peace sign near her cheek while spreading her overflowing cum-dripping pussy with her fingers.",
+    "force_nsfw": true,
+    "unlock_belly": false,
+    "builtin_xray": false,
+    "extra_neg": "covering crotch, covering pussy, covering breasts, censor, mosaic censoring, bar censor, gaping, pregnant, stomach bulge, x-ray, cross-section, uterus, cervix, internal cumshot, cutaway, fetus, baby, embryo, umbilical cord, 1boy, male, penis, phallus, testicles",
+    "default_expr_tags": "1.35::mesugaki::, 1.3::smug::, smirk, evil smile, grin, naughty face, 1.2::half-closed eyes::, jitome, blush"
+  },
   "MA8": {
     "title": "MA8 · 盘腿托腮柔毯前倾 (Cross-Legged Chin Rest)",
     "canvas": "竖图 832x1216",
@@ -1761,7 +1777,7 @@ export const ALL_POSITIONS_CHAPTERS: Array<{ id: string; title: string; category
   }
 ];
 
-export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string; category: string; channel: string; canvas: string; pose_pov: string; pose_3rd: string; prose_core: string; pov_visibility?: "front_face_visible" | "rear_no_face" | "top_down_over_shoulder"; prose_pov?: string; extra_pov_neg?: string; lock_scene_env?: boolean; env_tags?: string; env_prose?: string; env_badge?: string; env_neg?: string; unlock_belly?: boolean; builtin_xray?: boolean; raw_action_tags?: string; extra_scene_neg?: string; default_expr_tags?: string }> = {
+export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string; category: string; channel: string; canvas: string; canvas_pov?: string; pose_pov: string; pose_3rd: string; prose_core: string; pov_visibility?: "front_face_visible" | "rear_no_face" | "top_down_over_shoulder" | "ventral_no_eyes"; prose_pov?: string; extra_pov_neg?: string; extra_3rd_neg?: string; lock_scene_env?: boolean; env_tags?: string; env_prose?: string; env_badge?: string; env_neg?: string; unlock_belly?: boolean; builtin_xray?: boolean; raw_action_tags?: string; extra_scene_neg?: string; default_expr_tags?: string }> = {
   "P01": {
     "id": "P01",
     "title": "P01 · 标准仰卧传教士位 (Classic Supine)",
@@ -2133,11 +2149,14 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "6. 口部·上半身特写系",
     "channel": "sixty_nine",
     "canvas": "横图 1216x832",
-    "pose_pov": "1.45::pov::, 1.35::from below::, worm's-eye view, 1.4::sixty-nine::, girl on top, straddling face, thighs straddling face, ass focus, close-up, 1.35::facing away::, hips above",
-    "pose_3rd": "landscape side view, 1.35::sixty-nine::, horizontal opposing posture, kneeling above on all fours, arched hips",
-    "prose_core": "poised horizontally above in a mutual sixty-nine posture with arched hips",
-    "pov_visibility": "rear_no_face",
-    "prose_pov": "straddling above the viewer's face in a close mutual sixty-nine posture facing away with her parted thighs and exposed lower anatomy directly overhead"
+    "canvas_pov": "竖图 832x1216",
+    "pose_pov": "1.5::pov::, pov hands, grabbing ass, spreading another's ass, pov crotch, 1.45::from below::, worm's-eye view, 1.45::sixty-nine::, girl on top, straddling, kneeling above, 1.4::facing away::, foreshortening, thighs framing view, 1.35::ass focus::, bare stomach, underboob, bare breasts, head down, chin",
+    "pose_3rd": "full body, 1.45::from side::, side view, profile, 1.55::sixty-nine::, girl on top, all fours, kneeling astride, straddling head, opposing orientation, head to crotch",
+    "prose_core": "Full-body objective side-profile view: a faceless male lies flat on his back performing cunnilingus on {name} straddling upside-down on all fours above him in a mutual sixty-nine position while she leans down for mutual oral service at the opposite end",
+    "pov_visibility": "ventral_no_eyes",
+    "prose_pov": "First-person mutual 69 POV from underneath looking down {name}'s body: her parted glistening pussy hovers above the camera held open by POV hands, looking past her bare stomach and underboob down to her upside-down chin and mouth at the bottom",
+    "extra_pov_neg": "looking back, looking back over shoulder, looking at viewer, eyes, eyebrows, eyelashes, pupils, front view, profile, vaginal, vaginal penetration, insertion, male back, male head, male shoulders, male face, over-the-shoulder, censor, mosaic censoring, bar censor, panties, leotard, black leotard, covered crotch, covering crotch",
+    "extra_3rd_neg": "pov, first-person, worm's-eye view, front view, straight-on, vaginal, vaginal penetration, insertion, censor, mosaic censoring, bar censor, panties, leotard, black leotard, covered crotch, covering crotch, extra legs, extra arms, fused bodies"
   },
   "P34": {
     "id": "P34",
@@ -2427,180 +2446,6 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "extra_scene_neg": "1boy, male, penis, human hands, extra fingers, extra legs, extra arms, multiple boys, phallus, testicles, fetus, baby, embryo, umbilical cord, skeleton, bones, skull, ribcage, gore, censor, mosaic censoring, bar censor, covering crotch, covering breasts"
   }
 };
-
-export const CAMERA_SHOT_PRESETS: Record<string, string> = {
-  "随原幕景别": "auto",
-  "面部特写 (Close-up)": "extreme_closeup",
-  "近景半身 (Upper Body)": "upper_body",
-  "中景七分 (Cowboy Shot)": "cowboy",
-  "全身全景 (Full Body)": "full_body",
-  "环境远景 (Wide Shot)": "wide_shot"
-};
-
-export const CAMERA_GAZE_PRESETS: Record<string, string> = {
-  "👁️ 始终看镜头（背后自动回眸）": "auto_look",
-  "📌 保持本幕原有视线": "keep_scene",
-  "🙈 自然不看镜头（沉浸旁观感）": "natural_away"
-};
-
-export const CAMERA_QUICK_PRESETS: Array<[string, number, number, string | null, boolean]> = [
-  [
-    "正面平视",
-    0,
-    0,
-    null,
-    false
-  ],
-  [
-    "前侧 3/4",
-    42,
-    12,
-    null,
-    false
-  ],
-  [
-    "正侧 90°",
-    90,
-    0,
-    null,
-    false
-  ],
-  [
-    "高机位俯拍",
-    25,
-    42,
-    null,
-    false
-  ],
-  [
-    "正顶鸟瞰",
-    0,
-    78,
-    null,
-    true
-  ],
-  [
-    "低机位仰拍",
-    0,
-    -34,
-    null,
-    false
-  ],
-  [
-    "贴地大仰角",
-    15,
-    -66,
-    null,
-    true
-  ],
-  [
-    "侧后 3/4",
-    138,
-    16,
-    null,
-    false
-  ],
-  [
-    "正后背影",
-    180,
-    8,
-    null,
-    false
-  ],
-  [
-    "后上方俯视",
-    165,
-    42,
-    null,
-    false
-  ]
-];
-
-export const ANGLE_TAGS_TO_STRIP: string[] = [
-  "angled view",
-  "back",
-  "back view",
-  "bird's-eye view",
-  "close side view",
-  "dutch angle",
-  "extreme low angle",
-  "eye-level",
-  "from above",
-  "from behind",
-  "from below",
-  "from side",
-  "front view",
-  "frontal three-quarter view",
-  "frontal view",
-  "high angle",
-  "landscape side view",
-  "landscape three-quarter view",
-  "landscape view",
-  "low angle",
-  "overhead",
-  "overhead shot",
-  "overhead three-quarter view",
-  "pov",
-  "pov crotch",
-  "pov hands",
-  "profile",
-  "rear close shot",
-  "rear low angle",
-  "rear three-quarter view",
-  "rear view",
-  "side three-quarter close-up",
-  "side three-quarter rear view",
-  "side three-quarter view",
-  "side view",
-  "slight three-quarter angle",
-  "straight-on",
-  "three-quarter close shot",
-  "three-quarter cowboy shot",
-  "three-quarter frontal shot",
-  "three-quarter full-body shot",
-  "three-quarter high angle",
-  "three-quarter high-angle cowboy shot",
-  "three-quarter low angle",
-  "three-quarter rear shot",
-  "three-quarter rear view",
-  "three-quarter side view",
-  "three-quarter view",
-  "tilted frame",
-  "top-down",
-  "top-down view",
-  "worm's-eye view"
-];
-
-export const SHOT_TAGS_TO_STRIP: string[] = [
-  "close cowboy shot",
-  "close shot",
-  "close-up",
-  "cowboy shot",
-  "distant",
-  "eye-level",
-  "eye-level full-body",
-  "face focus",
-  "frontal full-body shot",
-  "full body",
-  "portrait",
-  "upper body",
-  "wide shot"
-];
-
-export const GAZE_TAGS_TO_STRIP: string[] = [
-  "looking at viewer",
-  "looking away",
-  "looking back",
-  "looking back at viewer",
-  "looking back over shoulder",
-  "looking back up",
-  "looking back up at viewer",
-  "looking down",
-  "looking down at viewer",
-  "looking up",
-  "looking up at viewer",
-  "over shoulder"
-];
 
 export const NAI_IMAGE_ENDPOINT = "https://image.novelai.net";
 export const MODEL_V5_FULL = "nai-diffusion-5-full";
