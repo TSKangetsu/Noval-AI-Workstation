@@ -30,6 +30,14 @@ description: >-
    - Use `nai_manage_presets` (`select` | `save` | `delete` | `restore_defaults`) to persist or switch presets in the user's browser `localStorage`.
    - Use `nai_manage_vibes` (`import_file` with an absolute path to `.naiv4vibebundle` / `.naiv4vibe` / NAI PNG, or `update_slot` to tune strengths) to manage Vibe Transfer slots live.
 
-4. **Controlled Generation (`nai_generate` / `nai_get_latest_image`)**:
-   - **Never call `nai_generate` unless the user asks to generate/render an image.** Parameter and prompt updates cost 0 Anlas and apply immediately.
-   - When the user asks to generate and inspect the result, call `nai_generate` (`wait_for_result: true`), then inspect the returned `local_preview_path` with `read_file` to evaluate visual quality and iterate if needed.
+4. **Webpage Gallery & Folder Archiving (`nai_list_files` / `nai_manage_files`)**:
+   - Folders in the webpage are **session-incremental only** (refreshing the page starts with zero stale prior folders). All file operations via MCP are strictly scoped inside the open webpage's gallery & folder organizer (automatically syncing with the user's mounted local directory when mounted).
+   - Call `nai_list_files` first to inspect current session folders, ungrouped images, indices, `image_id`, `scene_id`, `seed`, `is_starred`, and `is_upscaled`.
+   - Call `nai_manage_files` to:
+     - Organize folders: `create_folder` (`open`, `pin`), `rename_folder` (`new_name`, `merge_if_exists`), `dissolve_folder` (non-destructive ungroup), `delete_folder`, `open_folder`, `pin_folder`.
+     - Organize images via `selector` (`image_ids`, `gallery_indices`, `index_range`, `from_folder` (`""` ungrouped / `"*"` all / folder name), `scene_ids`, `scene_prefix`, `seeds`, `starred_only`, `unstarred_only`, `upscaled_only`, `unupscaled_only`, `checked_only`, `selected_only`): `move_images`, `select_image`, `star_images`, `delete_images`, `upscale_images` (only when user requests 2x upscale), and `export_zip`.
+
+5. **Controlled Generation (`nai_generate` / `nai_get_latest_image`)**:
+   - **Never call `nai_generate` unless the user asks to generate/render an image.** Parameter, prompt, and folder organization updates cost 0 Anlas and apply immediately.
+   - Pass optional `target_folder` to `nai_generate` to automatically archive generated images directly into a webpage folder.
+   - When the user asks to generate and inspect the result, call `nai_generate` (`wait_for_result: true`), then inspect the returned `local_preview_path` with `read_file` (or call `nai_get_latest_image` with `image_id` or `gallery_index`) to evaluate visual quality and iterate if needed.

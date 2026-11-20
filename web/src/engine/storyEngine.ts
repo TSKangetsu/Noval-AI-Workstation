@@ -20,6 +20,7 @@ import {
   MORPH_PRESETS,
   MULTI_ANGLE_CHAPTERS,
   MULTI_ANGLE_TEMPLATES,
+  OTHER_ACTION_TEMPLATES,
   OUTFIT_PRESETS,
   OUTFIT_STATE_PRESETS,
   PIGMENT_PRESETS,
@@ -29,6 +30,10 @@ import {
   PUBIC_PRESETS,
   QUALITY_TAGS,
   resolveLightingPresetEntry,
+  SF_BASE_CEL_LIGHT_BACKLIT,
+  SF_BASE_CEL_LIGHT_NO_BACKLIGHT,
+  SF_DIRECT_POV_UC,
+  SF_MIRROR_UC,
   SKIN_PRESETS,
   STYLE_PRESETS,
 } from "../data/engineConstants";
@@ -41,6 +46,7 @@ import type {
   CharacterConfig,
   CharacterGenderMode,
   PerspectiveMode,
+  PixivBarCensorMode,
   ScenePromptItem,
   StageProgressionMode,
   StageProgressionTask,
@@ -1466,6 +1472,10 @@ export function buildCommonModules(
     loc_prose: locProse,
     anat_pos: anatPos,
     common_tail_neg: commonTailNeg,
+    style_neg: isTune2 ? "" : styleNeg,
+    body_neg: bodyFullNeg,
+    comic_line_guard: comicLineGuard,
+    outfit_extra_neg: outfitExtraNeg,
     tune2_inline_neg: isTune2 ? styleNeg : "",
     canon_neg: canonNeg,
     name: engName,
@@ -1927,9 +1937,14 @@ export function generateScenePrompts(
     } else if (lockSceneEnv) {
       const stripDaylightSet = new Set([
         "warm lighting",
+        "warm indoor lighting",
         "sunlight",
+        "sun glare",
+        "daylight",
         "overexposure",
         "light rays",
+        "clear blue sky",
+        "bright sky",
       ]);
       headUsed = m.head_pos
         .split(",")
@@ -3489,6 +3504,442 @@ export function generateScenePrompts(
       canvas: resolvedCanvas,
       prompt: pPos,
     });
+  } else if (sceneId in OTHER_ACTION_TEMPLATES) {
+    const tpl = OTHER_ACTION_TEMPLATES[sceneId];
+    const genderMode: CharacterGenderMode = cfg.gender_mode ?? "normal";
+    const useSceneOutfit = cfg.other_use_scene_outfit !== false;
+    const transBg = Boolean(cfg.pos_transparent_bg);
+    const sfLightEntry = resolveLightingPresetEntry(cfg.lighting_preset);
+    const isAutoLight = sfLightEntry.code === "auto";
+    const isSfCompatibleCelStyle =
+      cfg.enable_style &&
+      !isPixelStyleActive(cfg) &&
+      !isM6SoftMorningSkinActive(cfg) &&
+      !isFigureStyleActive(cfg) &&
+      !cfg.style_preset.includes("无描边柔涂") &&
+      !cfg.style_preset.includes("细棕彩线") &&
+      !cfg.style_preset.includes("黑白网点漫画") &&
+      !cfg.style_preset.includes("Monochrome Manga");
+    const m = buildCommonModules(cfg, !tpl.no_face_pov);
+
+    let headUsed = transBg ? sanitizeStyleForTransparentBg(m.head_pos) : m.head_pos;
+    const headStripSet = new Set<string>();
+    if (!transBg && tpl.lighting_mode !== "sunlit_indoor") {
+      headStripSet.add("sunlight");
+      headStripSet.add("sun glare");
+      headStripSet.add("light rays");
+      headStripSet.add("daylight");
+      headStripSet.add("clear blue sky");
+      headStripSet.add("bright sky");
+    }
+    if (!transBg && tpl.lighting_mode === "flash") {
+      // Direct front camera flash must NEVER fight rear backlighting or muted pastel low-contrast tags
+      for (const fl of [
+        "backlighting",
+        "rim lighting",
+        "warm lighting",
+        "warm indoor lighting",
+        "soft lighting",
+        "diffused lighting",
+        "overexposure",
+        "pastel colors",
+        "soft colors",
+        "muted colors",
+        "muted color",
+        "low contrast",
+      ]) {
+        headStripSet.add(fl);
+      }
+    } else if (!transBg && tpl.lighting_mode === "night_neon") {
+      for (const nn of ["warm lighting", "warm indoor lighting", "overexposure", "pastel colors", "light colors"]) {
+        headStripSet.add(nn);
+      }
+    } else if (!transBg && isAutoLight && isSfCompatibleCelStyle) {
+      for (const st of [
+        "warm lighting",
+        "warm indoor lighting",
+        "soft lighting",
+        "pastel colors",
+        "soft colors",
+        "muted colors",
+        "low contrast",
+      ]) {
+        headStripSet.add(st);
+      }
+    }
+    if (tpl.allow_text_ui) {
+      headStripSet.add("no text");
+    }
+    if (tpl.no_face_pov) {
+      for (const ft of [
+        "gradient eyes",
+        "thick eyelashes",
+        "eyelashes",
+        "eyelid crease",
+        "small white eye highlights",
+        "colored eyelashes",
+        "eyeshadow",
+        "anime face",
+        "dot nose",
+        "small mouth",
+        ":o",
+        "partially shaded face",
+      ]) {
+        headStripSet.add(ft);
+      }
+      if (m.tune2_inline_neg) {
+        m.tune2_inline_neg = "";
+      }
+    }
+    if (headStripSet.size > 0 && headUsed) {
+      headUsed = splitTopLevelCommaSegments(headUsed)
+        .filter((tok) => {
+          const bare = tok.replace(/^-?\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+          return Boolean(bare) && !headStripSet.has(bare);
+        })
+        .join(", ");
+    }
+    // When global lighting_preset is 'auto', automatically inject the skill-calibrated SF base cel-lock & wet specular block!
+    if (!transBg && isAutoLight && isSfCompatibleCelStyle) {
+      const sfBaseLight =
+        tpl.lighting_mode === "flash" ? SF_BASE_CEL_LIGHT_NO_BACKLIGHT : SF_BASE_CEL_LIGHT_BACKLIT;
+      headUsed = joinTags(headUsed, sfBaseLight);
+    }
+
+    let charCoreUsed = m.char_core;
+    if (tpl.strip_slim_waist) {
+      charCoreUsed = splitTopLevelCommaSegments(charCoreUsed)
+        .filter((tok) => {
+          const low = tok.trim().toLowerCase();
+          const bare = tok.replace(/^-?\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+          return (
+            Boolean(bare) &&
+            bare !== "slim waist" &&
+            bare !== "narrow waist" &&
+            low !== "-0.40::plump::" &&
+            low !== "-0.4::plump::"
+          );
+        })
+        .join(", ");
+    }
+    if (tpl.no_face_pov) {
+      const stripCharFaceSet = new Set([
+        "short face",
+        "round face",
+        "tareme",
+        "tsurime",
+        "heterochromia",
+        "glasses",
+        "semi-rimless glasses",
+      ]);
+      charCoreUsed = splitTopLevelCommaSegments(charCoreUsed)
+        .filter((tok) => {
+          const bare = tok.replace(/^-?\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+          if (!bare) return false;
+          if (stripCharFaceSet.has(bare) || /\beyes$/i.test(bare)) return false;
+          return true;
+        })
+        .join(", ");
+    }
+    if (genderMode === "femboy") {
+      charCoreUsed = charCoreUsed
+        .replace(
+          /(?:,\s*)?(?:\d+(?:\.\d+)?::)?(?:small breasts|medium breasts|large breasts|huge breasts|flat chest|breasts|short female|female|1girl)(?:::)?/gi,
+          ""
+        )
+        .replace(/,\s*,+/g, ", ")
+        .replace(/^[ ,]+|[ ,]+$/g, "");
+    }
+
+    const charHasFlatChest = /\bflat chest\b/i.test(charCoreUsed);
+    let actorTags = "1girl, solo";
+    let genderActionTags = tpl.female_tags;
+    let genderProse = tpl.female_prose;
+    let genderNeg = charHasFlatChest
+      ? "1boy, male, penis, phallus, futanari, testicles, male chest"
+      : "1boy, male, penis, phallus, futanari, testicles, flat chest";
+    let genderBadge = "";
+
+    if (genderMode === "femboy") {
+      actorTags =
+        "1.45::1boy::, solo, 1.55::otoko no ko::, 1.45::crossdressing::, 1.35::genderbend::, 1.25::short male::, 1.55::flat chest::, 1.4::flat male chest::, tiny pink nipples, hairless torso";
+      genderActionTags = tpl.femboy_tags;
+      genderProse = tpl.femboy_prose;
+      genderNeg = joinTags(
+        "1girl, female, girl, hetero, breasts, small breasts, medium breasts, large breasts, cleavage, underboob, pussy, vulva, labia, vaginal, uterus, cervix, futanari, muscular male, bara, thick neck, facial hair, mature male, tall male, huge penis, large penis, oversized penis, hyper penis, monster penis, giant penis, huge testicles, large testicles",
+        tpl.femboy_extra_neg || ""
+      );
+      genderBadge = " · [🎀伪娘]";
+    } else if (genderMode === "futa_no_balls") {
+      actorTags = "1girl, solo, 1.55::futanari::, 1.45::futa without balls::";
+      genderActionTags = splitTopLevelCommaSegments(tpl.futa_tags)
+        .filter((tok) => {
+          const bare = tok.replace(/^-?\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+          return (
+            Boolean(bare) &&
+            bare !== "testicles" &&
+            bare !== "small testicles" &&
+            bare !== "balls" &&
+            bare !== "labia" &&
+            bare !== "spread pussy"
+          );
+        })
+        .join(", ");
+      genderProse = tpl.futa_prose;
+      genderNeg = joinTags(
+        "1boy, male, otoko no ko, crossdressing, yaoi, male chest, testicles, balls, scrotum, huge penis, large penis, oversized penis, hyper penis, monster penis, giant penis",
+        charHasFlatChest ? "" : "flat chest"
+      );
+      genderBadge = " · [⚡扶他·无蛋]";
+    } else if (genderMode === "futa_with_balls") {
+      actorTags =
+        "1girl, solo, 1.55::futanari::, 1.45::futa with balls::, 1.3::small testicles::, testicles";
+      genderActionTags = splitTopLevelCommaSegments(tpl.futa_tags)
+        .filter((tok) => {
+          const bare = tok.replace(/^-?\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+          return Boolean(bare) && bare !== "labia" && bare !== "spread pussy";
+        })
+        .join(", ");
+      genderProse = tpl.futa_prose;
+      genderNeg = joinTags(
+        "1boy, male, otoko no ko, crossdressing, yaoi, male chest, huge penis, large penis, oversized penis, hyper penis, monster penis, giant penis, huge testicles, large testicles",
+        charHasFlatChest ? "" : "flat chest"
+      );
+      genderBadge = " · [⚡扶他·有蛋]";
+    }
+
+    let outfitTags = "";
+    let customOutfitSafeNeg = "";
+    if (useSceneOutfit) {
+      outfitTags =
+        genderMode === "femboy" && tpl.femboy_outfit ? tpl.femboy_outfit : tpl.builtin_outfit;
+    } else if (cfg.enable_outfit) {
+      outfitTags = joinTags(m.outfit_pos, m.front_leg_tags);
+      if (genderMode === "femboy") {
+        outfitTags = outfitTags
+          .replace(/(?:,\s*)?(?:\d+(?:\.\d+)?::)?(?:bare breasts|breasts|cleavage|bra|pasties|heart pasties)(?:::)?/gi, "")
+          .replace(/,\s*,+/g, ", ");
+      }
+      const isRearSf = sceneId === "SF06" || sceneId === "SF22" || sceneId === "SF27";
+      if (!isRearSf && outfitTags) {
+        outfitTags = splitTopLevelCommaSegments(outfitTags)
+          .filter((tok) => stripWeightPrefix(tok) !== "rabbit tail")
+          .join(", ");
+      }
+      if (tpl.keep_wet_clothes && outfitTags && !/\bcompletely nude\b/i.test(outfitTags)) {
+        outfitTags = joinTags("1.4::wet clothes::, see-through", outfitTags);
+      }
+      if (m.outfit_extra_neg) {
+        const outfitNegTokens = m.outfit_extra_neg
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => {
+            const low = t.toLowerCase();
+            return (
+              Boolean(low) &&
+              low !== "nude" &&
+              low !== "topless" &&
+              low !== "bottomless" &&
+              low !== "wet clothes" &&
+              low !== "dripping"
+            );
+          });
+        const outfitBlocksNipples = outfitNegTokens.some((t) => t.toLowerCase() === "nipples");
+        if (outfitBlocksNipples && genderMode !== "femboy") {
+          genderActionTags = splitTopLevelCommaSegments(genderActionTags)
+            .filter((tok) => {
+              const bare = stripWeightPrefix(tok);
+              return bare !== "bare breasts" && bare !== "nipples";
+            })
+            .join(", ");
+        }
+        customOutfitSafeNeg = outfitNegTokens.join(", ");
+      }
+      if (tpl.prose_outfit_phrase) {
+        const altClauses = tpl.prose_outfit_phrase.split("|").filter(Boolean);
+        for (const cl of altClauses) {
+          if (genderProse.includes(cl)) {
+            const charWear = m.front_shirt_prose ? m.front_shirt_prose.trim() : "";
+            genderProse = charWear
+              ? genderProse.replace(cl, charWear)
+              : genderProse.replace(new RegExp(`\\s*${cl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`, "g"), " ");
+          }
+        }
+        genderProse = genderProse.replace(/\s{2,}/g, " ");
+      }
+    } else if (tpl.prose_outfit_phrase) {
+      for (const cl of tpl.prose_outfit_phrase.split("|").filter(Boolean)) {
+        genderProse = genderProse.replace(cl, "completely nude");
+      }
+    }
+
+    const useSfDedicatedLight =
+      !transBg &&
+      (isAutoLight || is25dCelLightingCode(sfLightEntry.code) || sfLightEntry.code === "m2_razor_fine_cel");
+    const sfSceneLightTags = transBg
+      ? ""
+      : useSfDedicatedLight
+        ? tpl.light_tags
+        : tpl.lighting_mode === "flash" || tpl.lighting_mode === "night_neon" || tpl.lighting_mode === "warm_spot" || tpl.lighting_mode === "steamy_glass"
+          ? tpl.light_tags
+          : "";
+
+    const envAndPropsUsed = transBg
+      ? joinTags("2.0::transparent background::, has alpha, alpha transparency, no background", tpl.core_prop_tags || "")
+      : joinTags(tpl.env_tags, sfSceneLightTags, tpl.core_prop_tags || "");
+    const transNeg = transBg
+      ? "background, simple background, white background, black background, gradient background, indoors, outdoors, scenery, furniture, bed, couch, sofa, pillow, window, curtains, wall, floor, drop shadow"
+      : "";
+    const camUc =
+      tpl.camera_mode === "mirror"
+        ? SF_MIRROR_UC
+        : tpl.camera_mode === "direct" || tpl.camera_mode === "ui_livestream"
+          ? SF_DIRECT_POV_UC
+          : "";
+    const xrayNeg = cfg.enable_uterus_xray ? "" : "x-ray, cross-section, cutaway, uterus";
+
+    // Build isolated SF tail negative WITHOUT left-column intactNeg / envExtraNeg / anatNeg / conflicting outfitExtraNeg!
+    const sfStyleUnblock = new Set<string>([
+      "dripping",
+      "splash",
+      "body oil",
+      "oily skin",
+      "flying sweatdrops",
+    ]);
+    if (!transBg && isAutoLight && isSfCompatibleCelStyle) {
+      for (const cu of [
+        "cel shading",
+        "cel highlight",
+        "anime coloring",
+        "lineart",
+        "flat color",
+        "high contrast",
+        "harsh shadow",
+        "harsh shadows",
+        "saturated",
+      ]) {
+        sfStyleUnblock.add(cu);
+      }
+    }
+    if (tpl.keep_wet_clothes) {
+      sfStyleUnblock.add("wet clothes");
+    }
+    if (tpl.unblock_multiple_views) {
+      sfStyleUnblock.add("multiple views");
+      sfStyleUnblock.add("inset");
+    }
+    if (tpl.allow_text_ui) {
+      sfStyleUnblock.add("text");
+    }
+    if (!transBg && tpl.lighting_mode !== "sunlit_indoor") {
+      for (const dk of [
+        "dark",
+        "dim lighting",
+        "harsh shadow",
+        "harsh shadows",
+        "high contrast",
+        "overexposed",
+        "bloom",
+        "neon colors",
+        "vibrant colors",
+      ]) {
+        sfStyleUnblock.add(dk);
+      }
+    }
+    const sfStyleNeg = (m.style_neg || "")
+      .split(",")
+      .map((t) => t.trim())
+      .filter((t) => Boolean(t) && !sfStyleUnblock.has(t.toLowerCase()))
+      .join(", ");
+
+    const sfCanonStrip = new Set<string>();
+    if (useSceneOutfit && /\bskirt\b/i.test(outfitTags)) {
+      sfCanonStrip.add("skirt");
+    }
+    if (useSceneOutfit && /\bjacket\b/i.test(outfitTags)) {
+      sfCanonStrip.add("jacket");
+      sfCanonStrip.add("red jacket");
+    }
+    if (useSceneOutfit && tpl.allow_school_canon) {
+      sfCanonStrip.add("serafuku");
+      sfCanonStrip.add("neckerchief");
+      sfCanonStrip.add("plaid");
+      sfCanonStrip.add("skirt");
+    }
+    if (useSceneOutfit && sceneId === "SF21") {
+      sfCanonStrip.add("apron");
+      sfCanonStrip.add("maid");
+    }
+    const sfCanonNeg = (m.canon_neg || "")
+      .split(",")
+      .map((t) => t.trim())
+      .filter((t) => Boolean(t) && !sfCanonStrip.has(t.toLowerCase()))
+      .join(", ");
+
+    const sfBodyNeg = (m.body_neg || "")
+      .split(",")
+      .map((t) => t.trim())
+      .filter((t) => {
+        if (!t) return false;
+        const low = t.toLowerCase();
+        if (tpl.strip_slim_waist && (low === "plump" || low === "curvy" || low === "chubby")) {
+          return false;
+        }
+        if (genderMode === "femboy" && /breasts/i.test(low)) {
+          return false;
+        }
+        return true;
+      })
+      .join(", ");
+
+    const baseTailNeg = joinTags(
+      sfStyleNeg,
+      sfCanonNeg,
+      m.comic_line_guard || "",
+      sfBodyNeg,
+      customOutfitSafeNeg
+    );
+
+    const fullNeg = joinTags(
+      camUc,
+      tpl.extra_neg || "",
+      genderNeg,
+      transNeg,
+      "gaping, censor, mosaic censoring, bar censor",
+      xrayNeg,
+      baseTailNeg
+    );
+
+    const sfLightProseTail = !transBg && useSfDedicatedLight && tpl.light_prose ? ` ${tpl.light_prose}` : "";
+    const proseBody = cfg.enable_t5_prose
+      ? `${m.name} ${genderProse}${sfLightProseTail}${transBg ? " Isolated on a transparent background." : ""}`
+      : "";
+    const camBadge =
+      tpl.camera_mode === "mirror"
+        ? "🪞对镜"
+        : tpl.camera_mode === "direct"
+          ? "📷直拍"
+          : "📱界面";
+    const sfLightBadge = !transBg ? ` · [${tpl.light_badge}]` : " · [🏁透明底]";
+
+    // V5 Golden Positional Order: First-slot camera/mirror/UI framing right after actorTags!
+    const pOther = joinTags(
+      headUsed,
+      actorTags,
+      tpl.framing_tags,
+      charCoreUsed,
+      envAndPropsUsed,
+      outfitTags,
+      "rating:explicit, nsfw, uncensored",
+      genderActionTags,
+      proseBody,
+      wrapTailNeg(m, fullNeg, negOn)
+    );
+    results.push({
+      subTitle: `【${tpl.id} · ${tpl.title} · ${camBadge}${sfLightBadge}${genderBadge}】`,
+      canvas: tpl.canvas,
+      prompt: pOther,
+    });
   } else if (sceneId === "FREE") {
     const m = buildCommonModules(cfg, defEyesOpen);
     const transBg = Boolean(cfg.pos_transparent_bg);
@@ -3636,11 +4087,13 @@ export function generateScenePrompts(
   }
 
   const isPosPovLocked = isPov && sceneId in ALL_POSITIONS_TEMPLATES;
+  const isOtherActionScene = sceneId in OTHER_ACTION_TEMPLATES;
   const suppressPovFacePost =
-    isPosPovLocked &&
-    (ALL_POSITIONS_TEMPLATES[sceneId].pov_visibility === "rear_no_face" ||
-      ALL_POSITIONS_TEMPLATES[sceneId].pov_visibility === "top_down_over_shoulder" ||
-      ALL_POSITIONS_TEMPLATES[sceneId].pov_visibility === "ventral_no_eyes");
+    (isPosPovLocked &&
+      (ALL_POSITIONS_TEMPLATES[sceneId].pov_visibility === "rear_no_face" ||
+        ALL_POSITIONS_TEMPLATES[sceneId].pov_visibility === "top_down_over_shoulder" ||
+        ALL_POSITIONS_TEMPLATES[sceneId].pov_visibility === "ventral_no_eyes")) ||
+    (isOtherActionScene && Boolean(OTHER_ACTION_TEMPLATES[sceneId].no_face_pov));
 
   // Post-pass 0: Global Character Expression Override (skipped on no-face rear/top-down POV to prevent 180° owl head-turn)
   if (exprCtrl.active && !suppressPovFacePost) {
@@ -3706,7 +4159,8 @@ export function generateScenePrompts(
   }
 
   // Post-pass 4.1: Character Gender Mode Transform (Femboy / Futanari No-Balls / Futanari With-Balls)
-  if (activeGenderMode !== "normal") {
+  // Note: OTHER_ACTION_TEMPLATES (SF01..SF30) already perform tailored 3-way gender routing directly during scene assembly.
+  if (activeGenderMode !== "normal" && !isOtherActionScene) {
     const isRearNoFacePos =
       isPosPovLocked && ALL_POSITIONS_TEMPLATES[sceneId]?.pov_visibility === "rear_no_face";
     const genderBadge =
@@ -3731,6 +4185,29 @@ export function generateScenePrompts(
     });
   }
 
+  // Post-pass 4.15: Pixiv Genital-Only Censor (thicker white/black bars or localized square mosaic strictly on genitals, leaving breasts/nipples uncensored)
+  const pixivBarMode: PixivBarCensorMode = cfg.pixiv_bar_censor ?? "off";
+  if (pixivBarMode === "white" || pixivBarMode === "black" || pixivBarMode === "mosaic") {
+    const barBadge =
+      pixivBarMode === "white"
+        ? "⬜Pixiv白条"
+        : pixivBarMode === "black"
+          ? "⬛Pixiv黑条"
+          : "🔲Pixiv马赛克";
+    results = results.map((item) => {
+      const next = applyPixivBarCensorTransform(item.prompt, pixivBarMode, {
+        enableNegatives: negOn,
+        enableProse: cfg.enable_t5_prose,
+      });
+      if (next === item.prompt) return item;
+      return {
+        ...item,
+        subTitle: `${item.subTitle} · [${barBadge}]`,
+        prompt: next,
+      };
+    });
+  }
+
   // Post-pass 4.2: Deduplicate repeated single-tag tokens in positive prefix (recovers 10~25 duplicate tokens cleanly)
   results = results.map((item) => {
     if (item.prompt.startsWith("[Base Prompt]")) return item;
@@ -3745,6 +4222,7 @@ export function generateScenePrompts(
   const rawLimit = cfg.pos_token_limit ?? 502;
   const isSoloOrCreatureScene =
     isCreatureSceneId ||
+    isOtherActionScene ||
     sceneId in MULTI_ANGLE_TEMPLATES ||
     sceneId === "FREE" ||
     POS_MALE_MODE_PRESETS[cfg.pos_male_mode] === "off" ||
@@ -3757,15 +4235,25 @@ export function generateScenePrompts(
   const activeLight = resolveLightingPresetEntry(cfg.lighting_preset);
   const activeEnv =
     ENV_PRESETS[cfg.env_preset] ?? ENV_PRESETS["🔄 随本幕/体位工具栏默认环境"];
-  const isPosTransBg = (sceneId in ALL_POSITIONS_TEMPLATES || sceneId === "FREE") && Boolean(cfg.pos_transparent_bg);
+  const isPosTransBg =
+    (sceneId in ALL_POSITIONS_TEMPLATES || isOtherActionScene || sceneId === "FREE") &&
+    Boolean(cfg.pos_transparent_bg);
   if (activeLight.code !== "auto" && !isPosTransBg && sceneId !== "MA0") {
     const is25dCel = is25dCelLightingCode(activeLight.code);
     results = results.map((item) => {
       let nextPrompt = item.prompt;
       let hasActualClothesForLight = false;
       let hasTankTopForLight = false;
+      const isLockedDarkEnv = Boolean(ALL_POSITIONS_TEMPLATES[sceneId]?.lock_scene_env);
+      const isNonDaylightScene =
+        isLockedDarkEnv ||
+        (isOtherActionScene && OTHER_ACTION_TEMPLATES[sceneId].lighting_mode !== "sunlit_indoor") ||
+        (cfg.enable_background && Boolean(activeEnv?.unblock_dark)) ||
+        ((sceneId in ALL_POSITIONS_TEMPLATES || sceneId === "FREE") &&
+          cfg.enable_background &&
+          Boolean(POS_SCENE_PRESETS[cfg.pos_scene]?.unblock_dark));
       if (is25dCel && !nextPrompt.startsWith("[Base Prompt]")) {
-        // Strip unwanted sweat/splash in non-fluid scenes (unless user explicitly enabled extra sweat) and add 'shiny clothes' only when clothed
+        // Strip unwanted sweat/splash in non-fluid scenes (unless user explicitly enabled extra sweat or scene is steamy/wet) and add 'shiny clothes' only when clothed
         const negBlocks0: string[] = [];
         let posPart = nextPrompt
           .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
@@ -3774,20 +4262,25 @@ export function generateScenePrompts(
           })
           .replace(/^[ ,]+|[ ,]+$/g, "");
         const negSuffix = negBlocks0.length > 0 ? `, ${negBlocks0.join(", ")}` : "";
+        const sceneHasSteamyWet = /\b(steamy|shower|onsen|steam|wet skin)\b/i.test(posPart);
         posPart = posPart
           .split(", ")
           .filter((tok) => {
             const bare = tok.trim().replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
-            if (!cfg.add_extra_sweat && (bare === "sweat" || bare === "flying sweatdrops" || bare === "sweatdrop")) {
+            if (
+              !cfg.add_extra_sweat &&
+              !sceneHasSteamyWet &&
+              (bare === "sweat" || bare === "flying sweatdrops" || bare === "sweatdrop")
+            ) {
               return false;
             }
             return Boolean(bare);
           })
           .join(", ");
         hasActualClothesForLight =
-          cfg.enable_outfit &&
+          (cfg.enable_outfit || (isOtherActionScene && cfg.other_use_scene_outfit !== false)) &&
           !/\bcompletely nude\b/i.test(posPart) &&
-          /\b(shirt|t-shirt|tank top|skirt|dress|leotard|bikini|swimsuit|serafuku|camisole|nightgown|cardigan|shorts|briefs|bra|clothed)\b/i.test(
+          /\b(shirt|t-shirt|tank top|skirt|dress|leotard|bikini|swimsuit|serafuku|camisole|nightgown|cardigan|shorts|briefs|bra|clothed|coat|jacket|hoodie|blouse|sweater|apron|bunnysuit|pantyhose)\b/i.test(
             posPart
           );
         hasTankTopForLight = /\btank top\b/i.test(posPart);
@@ -3804,14 +4297,38 @@ export function generateScenePrompts(
           }
         }
         nextPrompt = `${posPart}${negSuffix}`;
+      } else if (isNonDaylightScene && !nextPrompt.startsWith("[Base Prompt]")) {
+        // Strip outdoor sun/daylight tags injected by non-2.5D lighting presets (Contre-Jour / Front-Lit / Window Sidelight) on enclosed/night/flash scenes
+        const negBlocksSun: string[] = [];
+        let posSun = nextPrompt
+          .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
+            negBlocksSun.push(block.trim());
+            return "";
+          })
+          .replace(/^[ ,]+|[ ,]+$/g, "");
+        const negSunSuffix = negBlocksSun.length > 0 ? `, ${negBlocksSun.join(", ")}` : "";
+        const stripSunSet = new Set(["sunlight", "sun glare", "light rays", "daylight", "clear blue sky", "bright sky"]);
+        posSun = splitTopLevelCommaSegments(posSun)
+          .filter((tok) => {
+            const bare = tok.replace(/^-?\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+            return Boolean(bare) && !stripSunSet.has(bare);
+          })
+          .join(", ");
+        nextPrompt = `${posSun}${negSunSuffix}`;
       }
-      const isLockedDarkEnv = Boolean(ALL_POSITIONS_TEMPLATES[sceneId]?.lock_scene_env);
       const skipDaylightProse =
         isLockedDarkEnv &&
         (activeLight.code === "window_golden_rim" || activeLight.code === "front_luminous_wet");
+      let resolvedCw = activeLight.inline_counterweight || "";
+      if (isNonDaylightScene && resolvedCw) {
+        resolvedCw = resolvedCw
+          .replace(/\bsun glare,\s*/gi, "")
+          .replace(/\bshade,\s*dark,\s*dim lighting,\s*/gi, "")
+          .replace(/,\s*harsh shadows/gi, "");
+      }
       const cwSuffix =
-        activeLight.inline_counterweight && !skipDaylightProse && sceneId !== "MA7E"
-          ? `, ${activeLight.inline_counterweight}`
+        resolvedCw && !skipDaylightProse && sceneId !== "MA7E"
+          ? `, ${resolvedCw}`
           : "";
       if (
         cfg.enable_t5_prose &&
@@ -3821,6 +4338,18 @@ export function generateScenePrompts(
         !nextPrompt.startsWith("[Base Prompt]")
       ) {
         let resolvedLightProse = activeLight.prose;
+        if (isOtherActionScene && (is25dCel || activeLight.code === "m2_razor_fine_cel")) {
+          // SF01~SF30 already inject their exact scene-dedicated light_prose (flash / night skyline / neon ring-light / warm spot / steam);
+          // pair with a concise, conflict-free 2.5D cel skin-specular clause so dedicated SF lighting prose is never diluted or trimmed!
+          resolvedLightProse = suppressPovFacePost
+            ? "Rendered in crisp 2.5D anime cel coloring with soft satin glow cushions and pinprick white skin speculars."
+            : "Rendered in crisp 2.5D anime cel coloring with soft satin glow cushions, diagonal cheek blush lines, and pinprick white skin speculars.";
+        } else if (isNonDaylightScene) {
+          resolvedLightProse = resolvedLightProse
+            .replace(/blinding sun glare behind her/gi, "intense rim backlighting behind her")
+            .replace(/Bright direct front sunlight/g, "Bright direct front lighting")
+            .replace(/Intense overexposed white daylight/g, "Crisp directional rim lighting");
+        }
         if (suppressPovFacePost) {
           resolvedLightProse = resolvedLightProse
             .replace(
@@ -3836,13 +4365,16 @@ export function generateScenePrompts(
             .replace("her camera-facing face and body with", "her bare back and silhouette with");
         }
         if (activeLight.code === "milky_peach_3tier_cel") {
-          if (!hasTankTopForLight) {
-            resolvedLightProse = hasActualClothesForLight
-              ? resolvedLightProse.replace(
-                  ", with cool ice-blue shadows on the white tank top.",
-                  ", with cool ice-blue shadows across pale fabric folds."
-                )
-              : resolvedLightProse.replace(", with cool ice-blue shadows on the white tank top.", ".");
+          if (hasTankTopForLight) {
+            resolvedLightProse = resolvedLightProse.replace(
+              ", with cool ice-blue shadows across pale fabric folds.",
+              ", with cool ice-blue shadows on the white tank top."
+            );
+          } else if (!hasActualClothesForLight) {
+            resolvedLightProse = resolvedLightProse.replace(
+              ", with cool ice-blue shadows across pale fabric folds.",
+              "."
+            );
           }
         }
         const negBlocks1: string[] = [];
@@ -3934,6 +4466,7 @@ export function generateScenePrompts(
     cfg.enable_background &&
     activeEnv.code !== "auto" &&
     !(sceneId in ALL_POSITIONS_TEMPLATES) &&
+    !isOtherActionScene &&
     sceneId !== "FREE" &&
     sceneId !== "MA0"
   ) {
@@ -4138,6 +4671,7 @@ function resolveUterusXraySpec(
       sceneId !== "MA7E" &&
       !MULTI_ANGLE_TEMPLATES[sceneId]?.builtin_xray &&
       (cfg.enable_multi_angle_nsfw || Boolean(MULTI_ANGLE_TEMPLATES[sceneId]?.force_nsfw))) ||
+    sceneId in OTHER_ACTION_TEMPLATES ||
     (sceneId === "FREE" && cfg.free_action_nsfw)
   ) {
     return {
@@ -4188,6 +4722,169 @@ function injectAuxFeatureIntoPrompt(
   }
 
   return negBlocks.length > 0 ? `${posOnly}, ${negBlocks.join(", ")}` : posOnly;
+}
+
+function applyPixivBarCensorTransform(
+  rawPrompt: string,
+  mode: "white" | "black" | "mosaic",
+  options: { enableNegatives: boolean; enableProse: boolean }
+): string {
+  // Only apply on NSFW / explicit prompts (check positive portion ONLY, excluding -2::...:: negative blocks)
+  const posCheckLower = rawPrompt
+    .replace(/-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::/g, "")
+    .toLowerCase();
+  const isNsfwScene =
+    /\b(rating:explicit|nsfw|uncensored|pussy|penis|vaginal|anal|cum|futanari|spread pussy)\b/.test(
+      posCheckLower
+    );
+  if (!isNsfwScene) return rawPrompt;
+
+  const censorTags =
+    mode === "white"
+      ? "censored, 1.55::bar censor::, 1.45::white bar censor::, 1.25::thick bar censor::"
+      : mode === "black"
+        ? "censored, 1.55::bar censor::, 1.45::black bar censor::, 1.25::thick bar censor::"
+        : "censored, 1.5::mosaic censoring::";
+  const censorProse =
+    mode === "white"
+      ? "censored for pixiv with three or four distinct opaque medium-thick horizontal white censor bars strictly over the exposed genitals, leaving breasts and nipples completely bare and unobstructed."
+      : mode === "black"
+        ? "censored for pixiv with three or four distinct opaque medium-thick horizontal black censor bars strictly over the exposed genitals, leaving breasts and nipples completely bare and unobstructed."
+        : "censored for pixiv with clean localized square pixel mosaic censoring strictly over the exposed genitals, leaving breasts, nipples, and surrounding skin sharp and unobstructed.";
+  const antiBloatNeg =
+    mode === "white"
+      ? "uncensored, mosaic censoring, blur censor, pixelated, glowing censor, heart censor, censored nipples, eye censor, black bar censor, hairline bars, full body censor"
+      : mode === "black"
+        ? "uncensored, mosaic censoring, blur censor, pixelated, glowing censor, heart censor, censored nipples, eye censor, white bar censor, hairline bars, huge black box"
+        : "uncensored, bar censor, white bar censor, black bar censor, thick bar censor, glowing censor, heart censor, censored nipples, eye censor, full body mosaic";
+
+  const cleanNegBlockInner = (inner: string): string => {
+    const kept = inner
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => {
+        if (!s) return false;
+        const bare = s.replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+        if (bare === "censor" || bare === "censored") return false;
+        if (mode === "mosaic") {
+          return bare !== "mosaic censoring" && bare !== "pixelated" && bare !== "blur censor";
+        }
+        return bare !== "bar censor";
+      });
+    return kept.join(", ");
+  };
+
+  const stripUncensoredFromPos = (s: string): string =>
+    s
+      .replace(/(?:,\s*)?(?:\d+(?:\.\d+)?::)?\buncensored\b(?:::)?/gi, "")
+      .replace(/,\s*,+/g, ", ")
+      .replace(/^[ ,]+|[ ,]+$/g, "");
+
+  // Handle pre-partitioned multi-block prompts (e.g. MA7E starting with [Base Prompt])
+  if (rawPrompt.startsWith("[Base Prompt]")) {
+    const sections = rawPrompt.split(/\n\n+/);
+    const updated = sections.map((sec, idx) => {
+      if (idx === 0 && sec.startsWith("[Base Prompt]\n")) {
+        const body = sec.slice("[Base Prompt]\n".length);
+        const negBlocks: string[] = [];
+        let posPart = body
+          .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
+            negBlocks.push(block.trim());
+            return "";
+          })
+          .replace(/^[ ,]+|[ ,]+$/g, "");
+        posPart = stripUncensoredFromPos(posPart);
+        const segs = splitTopLevelCommaSegments(posPart);
+        const proseIdx = findTrailingProseIndex(segs);
+        if (proseIdx > 0) {
+          const before = segs.slice(0, proseIdx).join(", ");
+          let after = segs.slice(proseIdx).join(", ");
+          if (options.enableProse) {
+            after = `${after.replace(/\.+\s*$/, "")}, ${censorProse}`;
+          }
+          posPart = `${before}, ${censorTags}, ${after}`;
+        } else {
+          posPart = options.enableProse
+            ? `${posPart}, ${censorTags}, ${censorProse}`
+            : `${posPart}, ${censorTags}`;
+        }
+
+        const rebuiltNegs = negBlocks
+          .map((blk) => {
+            const m = /^(-[1-9]\d*(?:\.\d+)?::)([\s\S]*?)(::)$/.exec(blk);
+            if (!m) return blk;
+            const cleaned = cleanNegBlockInner(m[2]);
+            return cleaned ? `${m[1]}${cleaned}${m[3]}` : "";
+          })
+          .filter(Boolean);
+        if (options.enableNegatives) {
+          const mainIdx = rebuiltNegs.findIndex((b) => b.startsWith("-2::"));
+          if (mainIdx !== -1) {
+            const inner = rebuiltNegs[mainIdx].slice(4, -2).trim();
+            rebuiltNegs[mainIdx] = `-2::${inner ? `${inner}, ${antiBloatNeg}` : antiBloatNeg}::`;
+          } else {
+            rebuiltNegs.unshift(`-2::${antiBloatNeg}::`);
+          }
+        }
+        return `[Base Prompt]\n${rebuiltNegs.length > 0 ? `${posPart}, ${rebuiltNegs.join(", ")}` : posPart}`;
+      }
+      // Also strip any stray 'uncensored' from [Character N] blocks
+      const nl = sec.indexOf("\n");
+      if (nl !== -1) {
+        const header = sec.slice(0, nl);
+        const body = stripUncensoredFromPos(sec.slice(nl + 1));
+        return `${header}\n${body}`;
+      }
+      return sec;
+    });
+    return updated.join("\n\n");
+  }
+
+  // Standard flat prompt path
+  const negBlocks: string[] = [];
+  let posOnly = rawPrompt
+    .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
+      negBlocks.push(block.trim());
+      return "";
+    })
+    .replace(/^[ ,]+|[ ,]+$/g, "");
+
+  posOnly = stripUncensoredFromPos(posOnly);
+  const segments = splitTopLevelCommaSegments(posOnly);
+  const proseIdx = findTrailingProseIndex(segments);
+  if (proseIdx > 0) {
+    const before = segments.slice(0, proseIdx).join(", ");
+    let after = segments.slice(proseIdx).join(", ");
+    if (options.enableProse) {
+      after = `${after.replace(/\.+\s*$/, "")}, ${censorProse}`;
+    }
+    posOnly = `${before}, ${censorTags}, ${after}`;
+  } else {
+    posOnly = options.enableProse
+      ? `${posOnly}, ${censorTags}, ${censorProse}`
+      : `${posOnly}, ${censorTags}`;
+  }
+
+  const rebuiltNegs = negBlocks
+    .map((blk) => {
+      const m = /^(-[1-9]\d*(?:\.\d+)?::)([\s\S]*?)(::)$/.exec(blk);
+      if (!m) return blk;
+      const cleaned = cleanNegBlockInner(m[2]);
+      return cleaned ? `${m[1]}${cleaned}${m[3]}` : "";
+    })
+    .filter(Boolean);
+
+  if (options.enableNegatives) {
+    const mainIdx = rebuiltNegs.findIndex((b) => b.startsWith("-2::"));
+    if (mainIdx !== -1) {
+      const inner = rebuiltNegs[mainIdx].slice(4, -2).trim();
+      rebuiltNegs[mainIdx] = `-2::${inner ? `${inner}, ${antiBloatNeg}` : antiBloatNeg}::`;
+    } else {
+      rebuiltNegs.unshift(`-2::${antiBloatNeg}::`);
+    }
+  }
+
+  return rebuiltNegs.length > 0 ? `${posOnly}, ${rebuiltNegs.join(", ")}` : posOnly;
 }
 
 function splitTopLevelCommaSegments(input: string): string[] {
@@ -5240,12 +5937,13 @@ function applyGenderModeTransform(
     const futaOversizeNeg = hasPartnerBoy
       ? ["hyper penis", "monster penis", "giant penis", "huge testicles"]
       : ANTI_OVERSIZE_ANATOMY_UC;
+    const posHasFlatChest = outTags.some((t) => stripWeightPrefix(t) === "flat chest");
     const futaAddNeg = [
       ...(hasPartnerBoy ? ["2boys"] : ["1boy", "male"]),
       "otoko no ko",
       "crossdressing",
       "yaoi",
-      "flat chest",
+      ...(posHasFlatChest ? [] : ["flat chest"]),
       "male chest",
       "pectorals",
       ...(isMa7Derivative ? ["extra hands", "extra fingers"] : []),
@@ -5321,6 +6019,13 @@ const BASE_PROTECT_TAG_SET = new Set([
   "rating:explicit",
   "nsfw",
   "uncensored",
+  "censored",
+  "bar censor",
+  "thick bar censor",
+  "mosaic censoring",
+  "thin white bars",
+  "white bar censor",
+  "black bar censor",
   "from below",
   "from above",
   "from side",

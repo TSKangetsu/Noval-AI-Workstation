@@ -3,18 +3,7 @@
 export const QUALITY_TAGS = "masterpiece, best quality, 0.8::very aesthetic::, absurdres, year 2025";
 
 export const BUILTIN_CHARACTERS: Record<string, Record<string, string>> = {
-  "标枪 Javelin（碧蓝航线 · 默认）": {
-    "char_tag": "javelin (azur lane)",
-    "eng_name": "Javelin",
-    "canon_neg_tags": "crown, tiara, hair crown, neckerchief, serafuku, plaid, gloves",
-    "canon_outfit": "serafuku, white crop top, neckerchief, purple plaid skirt, pleated skirt, white gloves",
-    "canon_top_only": "serafuku, white crop top, neckerchief, white gloves",
-    "canon_bottom_neg": "skirt, pleated skirt, plaid skirt",
-    "canon_prose": "her canonical sailor crop top and purple plaid skirt",
-    "body_preset": "纤细娇小（原版默认 slender, petite）",
-    "bust_preset": "默认随角色原设"
-  },
-  "拉菲 Laffey（碧蓝航线）": {
+  "拉菲 Laffey（碧蓝航线 · 默认）": {
     "char_tag": "laffey (azur lane)",
     "eng_name": "Laffey",
     "canon_neg_tags": "red jacket, neckerchief, cuffs, skirt",
@@ -24,6 +13,17 @@ export const BUILTIN_CHARACTERS: Record<string, Record<string, string>> = {
     "canon_prose": "her canonical red jacket and white outfit",
     "body_preset": "纤细娇小（原版默认 slender, petite）",
     "bust_preset": "平胸贫乳（flat chest, small breasts）"
+  },
+  "标枪 Javelin（碧蓝航线）": {
+    "char_tag": "javelin (azur lane)",
+    "eng_name": "Javelin",
+    "canon_neg_tags": "crown, tiara, hair crown, neckerchief, serafuku, plaid, gloves",
+    "canon_outfit": "serafuku, white crop top, neckerchief, purple plaid skirt, pleated skirt, white gloves",
+    "canon_top_only": "serafuku, white crop top, neckerchief, white gloves",
+    "canon_bottom_neg": "skirt, pleated skirt, plaid skirt",
+    "canon_prose": "her canonical sailor crop top and purple plaid skirt",
+    "body_preset": "纤细娇小（原版默认 slender, petite）",
+    "bust_preset": "默认随角色原设"
   },
   "绫波 Ayanami（碧蓝航线）": {
     "char_tag": "ayanami (azur lane)",
@@ -532,6 +532,70 @@ export const STYLE_PRESETS: Record<string, [string, string]> = {
     "0.66::artist:mikozin::, 0.55::artist:kani bonara::, 0.48::artist:hori (hori no su)::, 0.42::artist:gotyou::, 0.28::artist:pija (pianiishimo)::, gradient eyes, no text",
     "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
   ],
+  "✨🌷 6号均衡闪亮水润doshimash0（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + doshimash0 0.50）": [
+    "0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.50::artist:doshimash0::, gradient eyes, no text, 1.15::cel shading::, anime coloring, lineart",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "⚡✨ 6号均衡futa专用（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + doshimash0 0.48 + pija 0.25）": [
+    "0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.48::artist:doshimash0::, 0.25::artist:pija (pianiishimo)::, gradient eyes, no text, 1.15::cel shading::, anime coloring, lineart",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "🍬🌸 樱花粉嫩透光软糖mignon混融（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + mignon 0.48）": [
+    "0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.48::artist:mignon::, gradient eyes, no text",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "💧✨ 极致湿润晶莹shiina excel混融（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + shiina excel 0.48）": [
+    "0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.48::artist:shiina excel::, gradient eyes, no text",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "🤍✨ 仙气珍珠白粉透光rurudo混融（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + rurudo 0.48）": [
+    "0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.48::artist:rurudo::, gradient eyes, no text",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "🍑🌸 梦幻柔嫩水蜜桃toosaka asagi混融（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + toosaka asagi 0.48）": [
+    "0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.48::artist:toosaka asagi::, gradient eyes, no text",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "🌺✨ 舒展柔光花瓣henreader混融（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + henreader 0.48）": [
+    "0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.48::artist:henreader::, gradient eyes, no text",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "🍮✨ 真实肉感软弹alp混融（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + alp 0.48）": [
+    "0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.48::artist:alp::, gradient eyes, no text",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "🍼🌸 极白嫩少女软糖komone ushio混融（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + komone ushio 0.48）": [
+    "0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.48::artist:komone ushio::, gradient eyes, no text",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "🎀💧 高饱和拉丝粉瓣marushin混融（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + marushin 0.48）": [
+    "0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.48::artist:marushin (marushin0214)::, gradient eyes, no text",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "💎💧 水润玻璃细线ciloranko混融（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + ciloranko 0.46）": [
+    "0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.46::artist:ciloranko::, gradient eyes, no text",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, multiple views, inset, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "🌹💧 清透红润褶皱kurokoshou混融（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + kurokoshou 0.46）": [
+    "0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.46::artist:kurokoshou (emuburemu123)::, gradient eyes, no text",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, multiple views, inset, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "💦✨ 丰满湿润拉丝m-da s-tarou混融（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + m-da s-tarou 0.46）": [
+    "0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.46::artist:m-da s-tarou::, gradient eyes, no text",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "🖋️✨ 纯正高精细本子nanashi混融（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + nanashi (774) 0.46）": [
+    "0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.46::artist:nanashi (774)::, gradient eyes, no text",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "🌟✨ 星光亮泽赛璐璐nagi ichi混融（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + nagi ichi 0.48）": [
+    "0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.48::artist:nagi ichi::, gradient eyes, no text, 1.15::cel shading::, anime coloring, lineart",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
+  "🌈✨ 明快粉润赛璐璐nanawo + horosuke双融（mikozin 0.52 + kani 0.42 + nanawo 0.42 + horosuke 0.42）": [
+    "0.52::artist:mikozin::, 0.42::artist:kani bonara::, 0.42::artist:nanawo (7nanawo)::, 0.42::artist:horosuke::, gradient eyes, no text, 1.15::cel shading::, anime coloring, lineart",
+    "realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, rough sketch, crosshatching, thick outlines, bold lineart, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
+  ],
   "🌿 安定中度萌化淡画风（shouu-kun 0.56 + mikozin 0.40 + gotyou 0.38）": [
     "0.40::artist:mikozin::, 0.56::artist:shouu-kun::, 0.38::artist:gotyou::, clean lineart, soft shading, pastel colors, light colors, no text",
     "oversaturated, neon colors, high contrast, harsh shadows, thick outlines, bold lineart, cel shading, flat color, realistic, photorealistic, 3d, figure, faux figurine, painterly, oil painting (medium), impasto, visible brushstrokes, crosshatching, monochrome, greyscale, comic, manga, speech bubble, text, watermark, signature, username, blurry, lowres"
@@ -690,9 +754,9 @@ export const LIGHTING_PRESETS: Record<string, LightingPresetEntry> = {
   },
   "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）": {
     code: "cool_warm_25d_cel",
-    tags: "1.15::cel shading::, anime coloring, lineart, 1.2::high contrast::, 1.15::color contrast::, saturated, 1.25::backlighting::, 1.15::sunlight::, light rays, 1.15::subsurface scattering::, 1.18::shiny skin::, sparkle",
+    tags: "1.15::cel shading::, anime coloring, lineart, 1.2::high contrast::, 1.15::color contrast::, saturated, 1.25::backlighting::, 1.15::subsurface scattering::, 1.18::shiny skin::, sparkle",
     prose:
-      "Rich multi-layered 2.5D anime cel coloring with dual-lobe soft-candy skin speculars: wide feathered satin glow cushions on rounded hips, knees, and shoulders accented by tiny broken pinprick white specular dots and short dashed highlight specks along the center of the thighs rather than wide oily streaks; crisp diagonal blush lines on rosy cheeks, a tiny soft white nose-tip triangle highlight, cool periwinkle-to-violet gradient hair, and deep navy accents.",
+      "Rich multi-layered 2.5D anime cel coloring with dual-lobe soft-candy skin speculars: wide feathered satin glow cushions on rounded hips, knees, and shoulders accented by tiny broken pinprick white specular dots and short dashed highlight specks along the center of the thighs rather than wide oily streaks; crisp diagonal blush lines on rosy cheeks, a tiny soft white nose-tip triangle highlight, and cool violet-blue secondary rim reflections along the shadow turns.",
     badge: "💎✨2.5D软糖双瓣高光",
     strip_head_lighting: true,
     strip_style_tags: [
@@ -731,9 +795,9 @@ export const LIGHTING_PRESETS: Record<string, LightingPresetEntry> = {
   },
   "🍑✨ 三阶奶桃柔影 · 锁骨烟粉次级暗部 + 白衣冰蓝冷影（Milky-Peach 3-Tier Cel）": {
     code: "milky_peach_3tier_cel",
-    tags: "cel shading, anime coloring, lineart, 1.15::backlighting::, sunlight, light rays, 1.18::shiny skin::",
+    tags: "cel shading, anime coloring, lineart, 1.15::backlighting::, 1.18::shiny skin::",
     prose:
-      "Crisp anime cel hair and clean lineart paired with slim, delicate proportions and smooth three-tier milky-peach skin shading: gentle warm peach primary shadow across the neck and slim torso turns, deep cocoa chin cast occlusion, and subtle dusty-rose secondary hollows nestled neatly inside the collarbone depressions, shoulder-arm creases, and bent hip-and-knee joints, accented by soft satin glow cushions and tiny pinprick white specular dots along the shoulders and thighs, with cool ice-blue shadows on the white tank top.",
+      "Crisp anime cel hair and clean lineart paired with slim, delicate proportions and smooth three-tier milky-peach skin shading: gentle warm peach primary shadow across the neck and slim torso turns, deep cocoa chin cast occlusion, and subtle dusty-rose secondary hollows nestled neatly inside the collarbone depressions, shoulder-arm creases, and bent hip-and-knee joints, accented by soft satin glow cushions and tiny pinprick white specular dots along the shoulders and thighs, with cool ice-blue shadows across pale fabric folds.",
     badge: "🍑✨三阶奶桃柔影",
     strip_head_lighting: true,
     strip_style_tags: [
@@ -791,6 +855,14 @@ export const LIGHTING_PRESETS: Record<string, LightingPresetEntry> = {
 };
 
 export const STYLE_RECOMMENDED_LIGHTING: Record<string, string> = {
+  "✨🌷 6号均衡闪亮水润doshimash0（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + doshimash0 0.50）":
+    "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）",
+  "⚡✨ 6号均衡futa专用（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + doshimash0 0.48 + pija 0.25）":
+    "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）",
+  "🌟✨ 星光亮泽赛璐璐nagi ichi混融（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + nagi ichi 0.48）":
+    "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）",
+  "🌈✨ 明快粉润赛璐璐nanawo + horosuke双融（mikozin 0.52 + kani 0.42 + nanawo 0.42 + horosuke 0.42）":
+    "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）",
   "🧬✨ M2 单画师极细净线赛璐璐风（mikozin 0.62 + 净黑细线 · 内置3槽Vibe调校）":
     "💎👁️ 极细净黑线 · 丝绒渐变瞳双眼皮睫毛 + 三阶奶桃锁骨柔影（M2 Razor-Fine Cel）",
   "🍑 四画师清透奶桃纤柔赛璐璐风（shouu-kun 0.52 + mikozin 0.36 + gotyou 0.32 + izuoku 0.28）":
@@ -3406,3 +3478,17 @@ export const POSITION_GRID: Record<string, { x: number; y: number }> = {
     "y": 0.9
   }
 };
+
+export {
+  OTHER_ACTION_CATEGORIES,
+  OTHER_ACTION_CHAPTERS,
+  OTHER_ACTION_TEMPLATES,
+  SF_BASE_CEL_LIGHT_BACKLIT,
+  SF_BASE_CEL_LIGHT_NO_BACKLIGHT,
+  SF_DIRECT_POV_UC,
+  SF_MIRROR_UC,
+  type OtherActionChapter,
+  type OtherActionTemplate,
+  type SfCameraMode,
+  type SfLightingMode,
+} from "./otherActionsData";

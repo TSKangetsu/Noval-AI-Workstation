@@ -13,6 +13,8 @@ import {
   MODEL_V5_FULL,
   MODEL_V5_FULL_MEDIUM,
   MULTI_ANGLE_CHAPTERS,
+  OTHER_ACTION_CHAPTERS,
+  OTHER_ACTION_TEMPLATES,
   POS_STAGE_PRESETS,
   resolveLightingForStyle,
   STYLE_BUNDLED_VIBE_PACK,
@@ -32,11 +34,21 @@ import {
   mergePosAndNegToInline,
   splitPromptPosAndNeg,
 } from "../src/engine/t5Tokenizer";
-import { createDefaultCharacterConfig } from "../src/engine/types";
+import {
+  createDefaultCharacterConfig,
+  type GalleryFolderItem,
+  type GeneratedImageRecord,
+} from "../src/engine/types";
+import {
+  buildGalleryFolderSummaries,
+  hasEffectiveGallerySelector,
+  selectGalleryRecordIndices,
+} from "../src/services/galleryFileHelpers";
 import { resolveMcpEndpoints } from "../src/services/mcpBridgeClient";
 import {
   buildNaiGeneratePayload,
   estimateNaiAnlas,
+  formatOpusBatterySummary,
 } from "../src/services/naiApiClient";
 import {
   buildStoreZipBlob,
@@ -96,7 +108,7 @@ async function main(): Promise<void> {
       free_action_nsfw: Boolean(starter.nsfw),
     };
     const [freeItem] = generateScenePrompts("FREE", freeCfg, "3rd");
-    assert(freeItem && freeItem.prompt.includes("javelin (azur lane)"), "FREE mode must inherit character identity");
+    assert(freeItem && freeItem.prompt.includes("laffey (azur lane)"), "FREE mode must inherit default Laffey identity");
     const tok = countPromptT5Tokens(freeItem.prompt);
     assert(tok.api_pos_tokens <= 512, `FREE starter ${starter.label} exceeded 512 tokens`);
     if (starter.nsfw) {
@@ -161,7 +173,7 @@ async function main(): Promise<void> {
     { ...createDefaultCharacterConfig(), enable_identity: false, enable_body: false },
     "3rd"
   )[0].prompt;
-  assert(!noIdPrompt.includes("javelin (azur lane)"), "Identity tag must be omitted when enable_identity=false");
+  assert(!noIdPrompt.includes("laffey (azur lane)"), "Identity tag must be omitted when enable_identity=false");
   assert(noIdPrompt.includes("the girl"), "Generic prose subject 'the girl' must be used when enable_identity=false");
 
   const noOutfitPrompt = generateScenePrompts(
@@ -491,7 +503,7 @@ async function main(): Promise<void> {
   );
   unmarkPresetDeleted("⭐ hood2");
   assert("⭐ hood2" in loadCustomPresets(), "Unmarking deleted preset must allow saving/restoring it");
-  markPresetDeleted("拉菲 Laffey（碧蓝航线）");
+  markPresetDeleted("标枪 Javelin（碧蓝航线）");
   clearDeletedPresets();
   assert.equal(loadDeletedPresets().size, 0, "clearDeletedPresets must clear all tombstones");
 
@@ -817,6 +829,7 @@ async function main(): Promise<void> {
 
   const povAuditCfg = {
     ...createDefaultCharacterConfig(),
+    bust_preset: "默认随角色原设",
     style_preset: "🧬✨ M2 单画师极细净线赛璐璐风（mikozin 0.62 + 净黑细线 · 内置3槽Vibe调校）",
     lighting_preset: "💎👁️ 极细净黑线 · 丝绒渐变瞳双眼皮睫毛 + 三阶奶桃锁骨柔影（M2 Razor-Fine Cel）",
     body_preset: "袖珍娇小窄肩细腰笔直长腿·微Q萌圆脸（0.25 chibi + short slender mini-lady）",
@@ -1814,7 +1827,7 @@ async function main(): Promise<void> {
   assert(
     v5PosBase.includes("-0.95::thick outlines, bold lineart, black outlines, cel shading") &&
       !v5NegBase.includes("cel shading") &&
-      v5NegBase.includes("crown") &&
+      v5NegBase.includes("red jacket") &&
       v5NegBase.includes("figure"),
     "V5 High hybrid router must move brushwork soft-bans into -0.95::...:: in v4_prompt while keeping hard-bans in v4_negative_prompt"
   );
@@ -2076,8 +2089,542 @@ async function main(): Promise<void> {
   assert.equal(tnTasks.length, 1);
   assert.equal(tnTasks[0].stageCode, "");
 
+  // 15. Verify MCP Webpage Gallery File Selector & Folder Summary Helpers
+  const mkMockRec = (
+    id: string,
+    sceneId: string,
+    seed: number,
+    opts?: { group_folder?: string; is_starred?: boolean; is_upscaled?: boolean }
+  ): GeneratedImageRecord => ({
+    id,
+    scene_id: sceneId,
+    mode_label: "positions",
+    filename: `${sceneId}_s${seed}.png`,
+    bytes: new Uint8Array([1, 2, 3]),
+    objectUrl: "",
+    seed,
+    width: 832,
+    height: 1216,
+    elapsed_sec: 1.5,
+    estimated_anlas: 0,
+    created_at: 1000,
+    group_folder: opts?.group_folder,
+    is_starred: opts?.is_starred,
+    is_upscaled: opts?.is_upscaled,
+  });
+  const mcpMockGallery: GeneratedImageRecord[] = [
+    mkMockRec("img_0", "BG01", 101, { group_folder: "bugsex_futa", is_starred: true }),
+    mkMockRec("img_1", "BG02", 102, { group_folder: "bugsex_futa", is_upscaled: true }),
+    mkMockRec("img_2", "BG03", 103),
+    mkMockRec("img_3", "P01", 104, { is_starred: true, is_upscaled: true }),
+    mkMockRec("img_4", "BG04", 105),
+  ];
+  const mcpMockFolders: GalleryFolderItem[] = [
+    { id: "f1", name: "bugsex_futa", created_at: 1 },
+    { id: "f2", name: "bugsex_m", created_at: 2 },
+  ];
+  const mcpMockChecked = new Set<string>(["img_2", "img_4"]);
+
+  assert.equal(hasEffectiveGallerySelector({}), false, "Empty selector must be rejected");
+  assert.deepEqual(
+    selectGalleryRecordIndices(mcpMockGallery, 2, mcpMockChecked, {}),
+    [],
+    "Empty selector must return 0 matches to prevent accidental bulk move/delete"
+  );
+  assert.deepEqual(
+    selectGalleryRecordIndices(mcpMockGallery, 2, mcpMockChecked, { from_folder: "" }),
+    [2, 3, 4],
+    "from_folder:'' must match only ungrouped images"
+  );
+  assert.deepEqual(
+    selectGalleryRecordIndices(mcpMockGallery, 2, mcpMockChecked, {
+      from_folder: "",
+      scene_prefix: "BG",
+    }),
+    [2, 4],
+    "from_folder:'' + scene_prefix:'BG' must match only ungrouped BG images"
+  );
+  assert.deepEqual(
+    selectGalleryRecordIndices(mcpMockGallery, 2, mcpMockChecked, {
+      from_folder: "bugsex_futa",
+      unstarred_only: true,
+    }),
+    [1],
+    "from_folder + unstarred_only intersection must work"
+  );
+  assert.deepEqual(
+    selectGalleryRecordIndices(mcpMockGallery, 2, mcpMockChecked, { index_range: [1, 3] }),
+    [1, 2, 3],
+    "index_range must be inclusive"
+  );
+  assert.deepEqual(
+    selectGalleryRecordIndices(mcpMockGallery, 2, mcpMockChecked, { from_folder: "*" }),
+    [0, 1, 2, 3, 4],
+    "from_folder:'*' must explicitly match all gallery images"
+  );
+  assert.deepEqual(
+    selectGalleryRecordIndices(mcpMockGallery, 2, mcpMockChecked, { checked_only: true }),
+    [2, 4]
+  );
+  assert.deepEqual(
+    selectGalleryRecordIndices(mcpMockGallery, 2, mcpMockChecked, { selected_only: true }),
+    [2]
+  );
+
+  const mockSummary = buildGalleryFolderSummaries(mcpMockGallery, mcpMockFolders, "bugsex_futa", "bugsex_m");
+  assert.equal(mockSummary.total_count, 5);
+  assert.equal(mockSummary.ungrouped_count, 3);
+  assert.equal(mockSummary.starred_count, 2);
+  assert.equal(mockSummary.upscaled_count, 2);
+  assert.deepEqual(
+    mockSummary.folders.map((f) => ({
+      name: f.name,
+      count: f.count,
+      starred: f.starred_count,
+      upscaled: f.upscaled_count,
+      opened: f.is_opened,
+      pinned: f.is_pinned,
+    })),
+    [
+      { name: "bugsex_futa", count: 2, starred: 1, upscaled: 1, opened: true, pinned: false },
+      { name: "bugsex_m", count: 0, starred: 0, upscaled: 0, opened: false, pinned: true },
+    ]
+  );
+
+  // 16. Verify Pixiv Genital Censor Switch (white / black / mosaic / off + SFW isolation + token budgets)
+  for (const barMode of ["white", "black", "mosaic"] as const) {
+    const barCfg = {
+      ...createDefaultCharacterConfig(),
+      style_preset: "⚡🌷 安定萌化futa专用（mikozin 0.66 + kani 0.55 + hori 0.48 + gotyou 0.42 + pija 0.28）",
+      outfit_preset: "🐰 逆兔女郎装 · 无胸贴直露乳首 + 腿环过膝袜（Reverse Bunnysuit · 全露版）",
+      enable_multi_angle_nsfw: true,
+      pixiv_bar_censor: barMode,
+      pos_token_limit: 502,
+    };
+    for (const sid of ["P01", "MA11", "MA7E", "TN01", "BG01", "SF01"]) {
+      const [item] = generateScenePrompts(sid, barCfg, "3rd");
+      assert(item, `Missing prompt for ${sid} under pixiv_bar_censor=${barMode}`);
+      const sp = splitPromptPosAndNeg(item.prompt);
+      assert(
+        !/\buncensored\b/i.test(sp.posPrompt),
+        `${sid} (${barMode}) must strip 'uncensored' from Positive`
+      );
+      const basePart = sp.posPrompt.split("\n\n")[0] || sp.posPrompt;
+      const negTokensList = sp.negPrompt.split(",").map((s) => s.trim().toLowerCase());
+      assert(
+        !negTokensList.includes("censor") && !negTokensList.includes("censored"),
+        `${sid} (${barMode}) must strip contradictory censor/censored tags from Negative`
+      );
+      if (barMode === "white") {
+        assert(
+          basePart.includes("censored") &&
+            basePart.includes("bar censor") &&
+            basePart.includes("1.45::white bar censor::") &&
+            basePart.includes("1.25::thick bar censor::") &&
+            sp.negPrompt.includes("black bar censor") &&
+            sp.negPrompt.includes("mosaic censoring") &&
+            !negTokensList.includes("bar censor"),
+          `${sid} (white) must include thicker white bar censor and block black/mosaic`
+        );
+      } else if (barMode === "black") {
+        assert(
+          basePart.includes("censored") &&
+            basePart.includes("bar censor") &&
+            basePart.includes("1.45::black bar censor::") &&
+            basePart.includes("1.25::thick bar censor::") &&
+            sp.negPrompt.includes("white bar censor") &&
+            sp.negPrompt.includes("mosaic censoring") &&
+            !negTokensList.includes("bar censor"),
+          `${sid} (black) must include thicker black bar censor and block white/mosaic`
+        );
+      } else {
+        assert(
+          basePart.includes("censored") &&
+            basePart.includes("1.5::mosaic censoring::") &&
+            sp.negPrompt.includes("bar censor") &&
+            !negTokensList.includes("mosaic censoring") &&
+            !negTokensList.includes("pixelated"),
+          `${sid} (mosaic) must include localized mosaic censoring and block bar censor`
+        );
+      }
+      assert(
+        sp.negPrompt.includes("censored nipples") && sp.negPrompt.includes("uncensored"),
+        `${sid} (${barMode}) must keep anti-nipple-censor & uncensored UC guards`
+      );
+      const tok = countSeparatedT5Tokens({
+        posPrompt: sp.posPrompt,
+        sceneNegPrompt: sp.negPrompt,
+        ucPresetMode: "heavy",
+        appendQuality: true,
+      });
+      assert(
+        tok.posTokens <= 512 && tok.negTokens <= 512,
+        `${sid} (${barMode}) exceeded 512 T5 token budget: pos=${tok.posTokens}, neg=${tok.negTokens}`
+      );
+    }
+
+    // SFW MA0 must NOT receive censor bars/mosaic even when pixiv_bar_censor is ON
+    const sfwCfg = {
+      ...createDefaultCharacterConfig(),
+      enable_multi_angle_nsfw: false,
+      pixiv_bar_censor: barMode,
+    };
+    const [ma0Item] = generateScenePrompts("MA0", sfwCfg, "3rd");
+    const ma0Sp = splitPromptPosAndNeg(ma0Item.prompt);
+    assert(
+      !ma0Sp.posPrompt.includes("bar censor") && !ma0Sp.posPrompt.includes("mosaic censoring"),
+      `SFW MA0 must not receive censor tags when pixiv_bar_censor=${barMode}`
+    );
+  }
+
+  // 17. Verify Extra Style Presets, Scene-Decoupled Lighting, & Other Actions SF01~SF30 Full Adherence
+  const style6Key =
+    "✨🌷 6号均衡闪亮水润doshimash0（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + doshimash0 0.50）";
+  const style6FutaKey =
+    "⚡✨ 6号均衡futa专用（mikozin 0.56 + kani 0.46 + hori 0.38 + gotyou 0.34 + doshimash0 0.48 + pija 0.25）";
+  assert(style6Key in STYLE_PRESETS && style6FutaKey in STYLE_PRESETS, "Style #6 and Style #6 Futa must exist");
+  assert.equal(
+    resolveLightingForStyle(style6Key),
+    "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）"
+  );
+  assert.equal(
+    resolveLightingForStyle(style6FutaKey),
+    "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）"
+  );
+  for (const [sName, [sPos]] of Object.entries(STYLE_PRESETS)) {
+    if (sName.startsWith("自定义")) continue;
+    assert(sPos.length > 0, `Style preset '${sName}' must have non-empty positive tags`);
+    const [sItem] = generateScenePrompts("MA1", { ...createDefaultCharacterConfig(), style_preset: sName }, "3rd");
+    assert(countPromptT5Tokens(sItem.prompt).api_pos_tokens <= 512, `Style '${sName}' exceeded 512 T5 tokens`);
+  }
+
+  // Verify cool_warm_25d_cel & milky_peach_3tier_cel have zero hardcoded sunlight/light-rays/character-hair bindings
+  const cel25dEntry =
+    LIGHTING_PRESETS["💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）"];
+  const milky3Entry =
+    LIGHTING_PRESETS["🍑✨ 三阶奶桃柔影 · 锁骨烟粉次级暗部 + 白衣冰蓝冷影（Milky-Peach 3-Tier Cel）"];
+  assert(
+    !/\bsunlight\b|\blight rays\b/i.test(cel25dEntry.tags) &&
+      !/periwinkle-to-violet|deep navy accents/i.test(cel25dEntry.prose),
+    "cool_warm_25d_cel must strip hardcoded sunlight/light rays and Javelin hair/navy prose"
+  );
+  assert(
+    !/\bsunlight\b|\blight rays\b/i.test(milky3Entry.tags) &&
+      !/white tank top/i.test(milky3Entry.prose),
+    "milky_peach_3tier_cel must strip hardcoded sunlight/light rays and white tank top from base definition"
+  );
+
+  // Verify non-daylight scenes (SF05 night hallway, SF18 night park flash, TN01 cavern) strip sunlight/sun glare across ALL lighting presets
+  for (const nonDaySid of ["SF05", "SF18", "TN01"]) {
+    for (const lKey of Object.keys(LIGHTING_PRESETS)) {
+      const [ndItem] = generateScenePrompts(
+        nonDaySid,
+        { ...createDefaultCharacterConfig(), lighting_preset: lKey },
+        "3rd"
+      );
+      const ndSp = splitPromptPosAndNeg(ndItem.prompt);
+      assert(
+        !/\bsunlight\b|\bsun glare\b|\blight rays\b|\bdaylight\b/i.test(ndSp.posPrompt),
+        `Non-daylight scene ${nonDaySid} under '${lKey}' leaked outdoor sun/daylight: ${ndSp.posPrompt}`
+      );
+    }
+  }
+
+  assert.equal(OTHER_ACTION_CHAPTERS.length, 30, "Expected 30 Other Actions (SF01..SF30)");
+  assert.equal(OTHER_ACTION_TEMPLATES["SF06"].canvas, "横图 1216x832", "SF06 must use landscape canvas");
+
+  // Verify SF Dedicated Lighting Engine across both 'auto' (随画风默认) and 'cool_warm_25d_cel':
+  // 1) 'auto' lighting automatically injects SF_BASE_CEL_LIGHT_* + per-scene light_tags + light_prose + light_badge
+  const autoSfCfg = {
+    ...createDefaultCharacterConfig(),
+    style_preset: "🌷 安定萌化mikozin（mikozin 0.66 + kani 0.55 + hori 0.48 + gotyou 0.42）",
+    lighting_preset: "🔄 随画风与本幕默认光影（不额外覆盖）",
+  };
+  const [sf18Auto] = generateScenePrompts("SF18", autoSfCfg, "3rd");
+  const spSf18Auto = splitPromptPosAndNeg(sf18Auto.prompt);
+  assert(
+    sf18Auto.subTitle.includes("[⚡夜园闪光]") &&
+      spSf18Auto.posPrompt.includes("1.15::cel shading::") &&
+      spSf18Auto.posPrompt.includes("1.18::shiny skin::") &&
+      spSf18Auto.posPrompt.includes("1.55::camera flash::") &&
+      !/\bbacklighting\b/i.test(spSf18Auto.posPrompt),
+    "SF18 under 'auto' lighting must auto-inject SF wet-cel base, camera flash, and strip conflicting backlighting"
+  );
+  // 2) Even under cool_warm_25d_cel (which carries 1.25::backlighting::), flash scenes SF14/SF18/SF30 must strip backlighting!
+  for (const flashSid of ["SF14", "SF18", "SF30"] as const) {
+    const [flItem] = generateScenePrompts(
+      flashSid,
+      {
+        ...createDefaultCharacterConfig(),
+        style_preset: style6Key,
+        lighting_preset: "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）",
+      },
+      "3rd"
+    );
+    const spFl = splitPromptPosAndNeg(flItem.prompt);
+    assert(
+      spFl.posPrompt.includes("camera flash") && !/\bbacklighting\b/i.test(spFl.posPrompt),
+      `${flashSid} under cool_warm_25d_cel must strip backlighting so direct frontal flash dominates`
+    );
+  }
+  // 3) Verify per-scene dedicated light overrides on SF02 (warm spotlight), SF16 (1.5::city lights at night::), SF19 (ring light reflection in pupils), SF22 (sunlit dressing room), SF26 (warm yellow lighting)
+  assert(
+    generateScenePrompts("SF02", autoSfCfg, "3rd")[0].prompt.includes("1.4::warm spotlight::") &&
+      generateScenePrompts("SF16", autoSfCfg, "3rd")[0].prompt.includes("1.5::city lights at night::") &&
+      generateScenePrompts("SF19", autoSfCfg, "3rd")[0].prompt.includes("ring light reflection in pupils") &&
+      generateScenePrompts("SF22", autoSfCfg, "3rd")[0].prompt.includes("sunlit dressing room, 1.2::sunlight::") &&
+      generateScenePrompts("SF26", autoSfCfg, "3rd")[0].prompt.includes("1.4::warm yellow lighting::"),
+    "SF02/16/19/22/26 must emit their exact skill-calibrated per-scene dedicated light tags"
+  );
+
+  // Verify zero >=8-word unweighted tag segments in otherActionsData.ts (prevents findTrailingProseIndex false positives)
+  for (const ch of OTHER_ACTION_CHAPTERS) {
+    const tpl = OTHER_ACTION_TEMPLATES[ch.id];
+    for (const fieldVal of [
+      tpl.framing_tags,
+      tpl.env_tags,
+      tpl.light_tags,
+      tpl.core_prop_tags || "",
+      tpl.builtin_outfit,
+      tpl.femboy_outfit || "",
+      tpl.female_tags,
+      tpl.femboy_tags,
+      tpl.futa_tags,
+    ]) {
+      for (const rawSeg of fieldVal.split(",")) {
+        const seg = rawSeg.trim();
+        if (!seg || seg.includes("::")) continue;
+        assert(
+          seg.split(/\s+/).length < 8,
+          `${ch.id} has >=8-word unweighted tag '${seg}' that could be misclassified as trailing prose`
+        );
+      }
+    }
+  }
+
+  // Verify hostile left-column config (Reverse Bunnysuit + Intact state + Sunlit Bedroom env + M2 multiple-views UC) NEVER poisons SF scenes!
+  const hostileSfCfg = {
+    ...createDefaultCharacterConfig(),
+    style_preset: "🧬✨ M2 单画师极细净线赛璐璐风（mikozin 0.62 + 净黑细线 · 内置3槽Vibe调校）",
+    lighting_preset: "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）",
+    body_preset: "袖珍娇小窄肩细腰笔直长腿·微Q萌圆脸（0.25 chibi + short slender mini-lady）",
+    outfit_preset: "🐰 逆兔女郎装 · 经典黑爱心胸贴 + 腿环过膝袜（Reverse Bunnysuit · 胸贴版）",
+    outfit_state_mode: "🔒 全程保持原装完整（不撩衣/不脱衣 · 仅自然露肤）",
+    env_preset: "🪟 晨光纱帘白床明亮卧室（bright window, curtains, sunlit bedroom, white bedsheet）",
+    other_use_scene_outfit: true,
+  };
+  const [sf24Hostile] = generateScenePrompts("SF24", hostileSfCfg, "3rd");
+  const spSf24H = splitPromptPosAndNeg(sf24Hostile.prompt);
+  const sf24HNegSet = new Set(spSf24H.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  for (const forbiddenBleed of [
+    "pantyhose",
+    "full pantyhose",
+    "bra",
+    "nude",
+    "topless",
+    "bottomless",
+    "covered torso",
+    "outdoors",
+    "nipples",
+    "dripping",
+  ]) {
+    assert(
+      !sf24HNegSet.has(forbiddenBleed),
+      `SF24 (useSceneOutfit=true) must isolate Negative from left-column '${forbiddenBleed}'`
+    );
+  }
+  // First-slot framing check: camera/selfie framing must precede character identity!
+  assert(
+    spSf24H.posPrompt.indexOf("1.5::selfie::") < spSf24H.posPrompt.indexOf("laffey (azur lane)"),
+    "SF24 must place V5 camera/framing tags in early slot before character identity"
+  );
+
+  // Dual-view SF06/SF22 & viewfinder SF13 must unblock 'multiple views' even on M2 style; SF04/SF13/SF19 must unblock 'text' and strip 'no text'
+  for (const mvSid of ["SF06", "SF13", "SF22"]) {
+    const [mvItem] = generateScenePrompts(mvSid, hostileSfCfg, "3rd");
+    const mvNeg = new Set(splitPromptPosAndNeg(mvItem.prompt).negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+    assert(!mvNeg.has("multiple views"), `${mvSid} must unblock 'multiple views' in Negative`);
+  }
+  for (const txtSid of ["SF04", "SF13", "SF19"]) {
+    const [txtItem] = generateScenePrompts(txtSid, hostileSfCfg, "3rd");
+    const spTxt = splitPromptPosAndNeg(txtItem.prompt);
+    const txtNeg = new Set(spTxt.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+    assert(
+      !/\bno text\b/i.test(spTxt.posPrompt) && !txtNeg.has("text") && txtNeg.has("watermark"),
+      `${txtSid} must strip 'no text' and unblock 'text' while preserving 'watermark' guard`
+    );
+  }
+  // School-outfit SF27 & SF29 must strip Javelin's serafuku/neckerchief/plaid from canonNeg
+  for (const schSid of ["SF27", "SF29"]) {
+    const [schItem] = generateScenePrompts(schSid, hostileSfCfg, "3rd");
+    const schNeg = new Set(splitPromptPosAndNeg(schItem.prompt).negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+    assert(
+      !schNeg.has("serafuku") && !schNeg.has("plaid") && !schNeg.has("neckerchief"),
+      `${schSid} must strip serafuku/plaid/neckerchief from canon_neg_tags`
+    );
+  }
+  // Character-outfit mode (other_use_scene_outfit=false) must retain core fetish props & avoid conflicting nipple/prose tags
+  const [sf28CustomOut] = generateScenePrompts("SF28", { ...hostileSfCfg, other_use_scene_outfit: false }, "3rd");
+  const spSf28Co = splitPromptPosAndNeg(sf28CustomOut.prompt);
+  assert(
+    spSf28Co.posPrompt.includes("1.55::round glasses::") &&
+      spSf28Co.posPrompt.includes("1.5::reverse bunnysuit::") &&
+      spSf28Co.posPrompt.includes("1.4::heart pasties::") &&
+      !spSf28Co.posPrompt.includes("1.3::nipples::"),
+    "SF28 with other_use_scene_outfit=false + heart pasties must retain round glasses + reverse bunnysuit and strip conflicting bare nipples"
+  );
+  const [sf05CustomOut] = generateScenePrompts("SF05", { ...hostileSfCfg, other_use_scene_outfit: false }, "3rd");
+  assert(
+    sf05CustomOut.prompt.includes("1.55::egg vibrator::") && !sf05CustomOut.prompt.includes("beige trench coat"),
+    "SF05 with other_use_scene_outfit=false must keep egg vibrator prop and remove trench coat from prose"
+  );
+
+  const sfGenders = ["normal", "femboy", "futa_no_balls", "futa_with_balls"] as const;
+  for (const ch of OTHER_ACTION_CHAPTERS) {
+    const tpl = OTHER_ACTION_TEMPLATES[ch.id];
+    for (const gm of sfGenders) {
+      const sfCfg = {
+        ...createDefaultCharacterConfig(),
+        gender_mode: gm,
+        style_preset: gm.startsWith("futa") ? style6FutaKey : style6Key,
+        lighting_preset: "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）",
+        body_preset: "袖珍娇小窄肩细腰笔直长腿·微Q萌圆脸（0.25 chibi + short slender mini-lady）",
+        pos_token_limit: 502,
+      };
+      const [item] = generateScenePrompts(ch.id, sfCfg, "3rd");
+      assert(item, `Missing prompt for ${ch.id} (${gm})`);
+      const sp = splitPromptPosAndNeg(item.prompt);
+      assert(!sp.posPrompt.includes("::::"), `${ch.id} (${gm}) malformed ::::`);
+      const negLower = sp.negPrompt.toLowerCase();
+      const negSet = new Set(negLower.split(",").map((s) => s.trim()));
+
+      if (tpl.camera_mode === "mirror") {
+        assert(negLower.includes("pov hands"), `${ch.id} mirror mode must block pov hands`);
+      } else if (tpl.camera_mode === "direct" || tpl.camera_mode === "ui_livestream") {
+        assert(
+          negLower.includes("holding phone") && negLower.includes("smartphone"),
+          `${ch.id} direct/livestream mode must block holding phone & smartphone`
+        );
+      } else if (tpl.camera_mode === "ui_viewfinder") {
+        assert(
+          !negSet.has("smartphone"),
+          `${ch.id} viewfinder mode must NOT block smartphone`
+        );
+      }
+
+      if (ch.id === "SF03" || ch.id === "SF07" || ch.id === "SF20") {
+        assert(negLower.includes("upside-down"), `${ch.id} must block upside-down`);
+      }
+      if (ch.id === "SF10") {
+        assert(
+          !/\bslim waist\b/i.test(sp.posPrompt) &&
+            !sp.posPrompt.includes("-0.40::plump::") &&
+            !negSet.has("plump") &&
+            !negSet.has("curvy"),
+          "SF10 must strip slim waist + -0.40::plump:: in Pos and plump/curvy in Neg"
+        );
+      }
+      if (ch.id === "SF15") {
+        assert(
+          negSet.has("face") && negSet.has("head") && !/\bgradient eyes\b/i.test(sp.posPrompt),
+          "SF15 must block face & head and strip gradient eyes"
+        );
+      }
+      if (ch.id === "SF25") {
+        assert(
+          negLower.includes("multiple dildos") && negLower.includes("double dildo"),
+          "SF25 must block multiple dildos & double dildo"
+        );
+      }
+      if (ch.id === "SF26") {
+        assert(negLower.includes("towel covering crotch"), "SF26 must block towel covering crotch");
+      }
+      if (ch.id === "SF27") {
+        assert(negLower.includes("selfie stick"), "SF27 must block selfie stick");
+      }
+
+      if (gm === "femboy") {
+        assert(
+          sp.posPrompt.includes("otoko no ko") && sp.posPrompt.includes("flat chest"),
+          `${ch.id} femboy must include otoko no ko + flat chest`
+        );
+        assert(!/\bpussy\b/i.test(sp.posPrompt), `${ch.id} femboy must not contain pussy in Positive`);
+        if (ch.id === "SF24") {
+          assert(negSet.has("bra"), "SF24 femboy must block bra in UC");
+        }
+      } else if (gm === "futa_no_balls") {
+        assert(
+          sp.posPrompt.includes("futa without balls") &&
+            negSet.has("testicles") &&
+            !/\blabia\b|\bspread pussy\b/i.test(sp.posPrompt),
+          `${ch.id} futa_no_balls must include futa without balls, block testicles, and strip labia/spread pussy`
+        );
+      } else if (gm === "futa_with_balls") {
+        assert(
+          sp.posPrompt.includes("futa with balls") &&
+            sp.posPrompt.includes("small testicles") &&
+            !/\blabia\b|\bspread pussy\b/i.test(sp.posPrompt),
+          `${ch.id} futa_with_balls must include futa with balls + small testicles and strip labia/spread pussy`
+        );
+      }
+
+      const tok = countSeparatedT5Tokens({
+        posPrompt: sp.posPrompt,
+        sceneNegPrompt: sp.negPrompt,
+        ucPresetMode: "heavy",
+        appendQuality: true,
+      });
+      assert(
+        tok.posTokens <= 512 && tok.negTokens <= 512,
+        `${ch.id} (${gm}) exceeded 512 T5 budget: pos=${tok.posTokens}, neg=${tok.negTokens}`
+      );
+    }
+  }
+
+  // 18. Verify Opus Battery Percentage & Recharge Formatter
+  const mockSubBase = {
+    tier: 3,
+    tier_name: "Opus",
+    active: true,
+    anlas_left: 9541,
+    fixed_anlas: 9541,
+    purchased_anlas: 0,
+    opus_usage_percent: 47,
+    opus_purchased_percent: 0,
+    opus_usage_negative: false,
+    opus_time_until_next_sec: 7888,
+    unlimited_max_priority: true,
+    expires_at: 1797095674,
+  };
+  const battMid = formatOpusBatterySummary(mockSubBase);
+  assert.equal(battMid.hasBattery, true);
+  assert.equal(battMid.percentText, "47%");
+  assert.equal(battMid.fillPercent, 47);
+  assert.equal(battMid.level, "mid");
+  assert(battMid.rechargeHint.includes("2小时12分恢复+1%"));
+
+  const battPurchased = formatOpusBatterySummary({
+    ...mockSubBase,
+    opus_usage_percent: 82,
+    opus_purchased_percent: 100,
+  });
+  assert.equal(battPurchased.percentText, "82%+100%");
+  assert.equal(battPurchased.fillPercent, 100);
+  assert.equal(battPurchased.level, "high");
+
+  const battNeg = formatOpusBatterySummary({
+    ...mockSubBase,
+    opus_usage_percent: 4,
+    opus_usage_negative: true,
+    opus_time_until_next_sec: 900,
+  });
+  assert.equal(battNeg.percentText, "-4%");
+  assert.equal(battNeg.fillPercent, 0);
+  assert.equal(battNeg.level, "low");
+  assert.equal(battNeg.rechargeHint, "约15分恢复+1%");
+
   console.log(
-    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts: 83 Positions x2 + MA0~MA11 + Free Action, 2-to-3-Col Folder Organizer + Stage Progression Verified, POV Optical & Gaze Audit + Femboy/Futa/TN01~TN12/BG01~BG20 Conflict-Free Transform Passed, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
+    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts + 120 SF01~SF30 Other-Action prompts: 83 Positions x2 + MA0~MA11 + 30 SF + Free Action, 2-to-3-Col Folder Organizer + Stage Progression + MCP File Manager + Pixiv Bar/Mosaic Censor Verified, POV Optical & Gaze Audit + Femboy/Futa/TN01~TN12/BG01~BG20/SF01~SF30 Conflict-Free Transform Passed, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
   );
 }
 

@@ -808,11 +808,25 @@ export async function fetchSubscriptionInfo(rawToken: string): Promise<Subscript
   const purchasedAnlas = Number(stepsLeft.purchasedTrainingSteps ?? 0);
 
   let opusPct: number | null = null;
+  let opusPurchasedPct = 0;
   let opusNeg = false;
+  let opusNextSec: number | null = null;
   if (data.usage && typeof data.usage === "object") {
     const usage = data.usage as Record<string, unknown>;
-    opusPct = Number(usage.percent ?? 0);
+    if (usage.percent !== undefined && usage.percent !== null && Number.isFinite(Number(usage.percent))) {
+      opusPct = Math.round(Number(usage.percent));
+    }
+    if (Number.isFinite(Number(usage.purchasedPercent))) {
+      opusPurchasedPct = Math.max(0, Math.round(Number(usage.purchasedPercent)));
+    }
     opusNeg = Boolean(usage.isNegative);
+    if (
+      usage.timeUntilNextPercent !== undefined &&
+      usage.timeUntilNextPercent !== null &&
+      Number.isFinite(Number(usage.timeUntilNextPercent))
+    ) {
+      opusNextSec = Math.max(0, Math.round(Number(usage.timeUntilNextPercent)));
+    }
   }
   const perks = (data.perks as Record<string, unknown>) || {};
   const unlimitedMaxPriority = Boolean(perks.unlimitedMaxPriority ?? (tier === 3 && active));
@@ -826,9 +840,52 @@ export async function fetchSubscriptionInfo(rawToken: string): Promise<Subscript
     fixed_anlas: fixedAnlas,
     purchased_anlas: purchasedAnlas,
     opus_usage_percent: opusPct,
+    opus_purchased_percent: opusPurchasedPct,
     opus_usage_negative: opusNeg,
+    opus_time_until_next_sec: opusNextSec,
     unlimited_max_priority: unlimitedMaxPriority,
     expires_at: expiresAt,
+  };
+}
+
+export function formatOpusBatterySummary(sub: SubscriptionInfo | null): {
+  hasBattery: boolean;
+  percentText: string;
+  fillPercent: number;
+  level: "high" | "mid" | "low";
+  rechargeHint: string;
+} {
+  if (!sub || sub.opus_usage_percent === null || sub.opus_usage_percent === undefined) {
+    return {
+      hasBattery: false,
+      percentText: "",
+      fillPercent: 0,
+      level: "high",
+      rechargeHint: "",
+    };
+  }
+  const rawAbs = Math.abs(Math.round(sub.opus_usage_percent));
+  const isNeg = Boolean(sub.opus_usage_negative);
+  const purchased = Math.max(0, Math.round(sub.opus_purchased_percent ?? 0));
+  const baseText = isNeg && rawAbs > 0 ? `-${rawAbs}%` : `${rawAbs}%`;
+  const percentText = purchased > 0 ? `${baseText}+${purchased}%` : baseText;
+  const effectiveCharge = isNeg ? 0 : Math.max(0, Math.min(100, rawAbs + purchased));
+  const level: "high" | "mid" | "low" =
+    isNeg || effectiveCharge < 20 ? "low" : effectiveCharge < 50 ? "mid" : "high";
+
+  let rechargeHint = "";
+  const sec = sub.opus_time_until_next_sec;
+  if ((isNeg || rawAbs < 100) && typeof sec === "number" && sec > 0) {
+    const hrs = Math.floor(sec / 3600);
+    const mins = Math.max(1, Math.ceil((sec % 3600) / 60));
+    rechargeHint = hrs > 0 ? `约${hrs}小时${mins}分恢复+1%` : `约${mins}分恢复+1%`;
+  }
+  return {
+    hasBattery: true,
+    percentText,
+    fillPercent: effectiveCharge,
+    level,
+    rechargeHint,
   };
 }
 

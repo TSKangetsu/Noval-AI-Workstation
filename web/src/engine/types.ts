@@ -1,10 +1,11 @@
 export type PerspectiveMode = "pov" | "3rd";
-export type ActionMode = "positions" | "multi_angle" | "free";
+export type ActionMode = "positions" | "multi_angle" | "other" | "free";
 export type CharacterGenderMode =
   | "normal"
   | "femboy"
   | "futa_no_balls"
   | "futa_with_balls";
+export type PixivBarCensorMode = "off" | "white" | "black" | "mosaic";
 
 export interface CharacterConfig {
   preset_name: string;
@@ -57,6 +58,8 @@ export interface CharacterConfig {
   enable_multi_angle_nsfw: boolean;
   enable_uterus_xray: boolean;
   enable_condom: boolean;
+  pixiv_bar_censor?: PixivBarCensorMode;
+  other_use_scene_outfit?: boolean;
 
   pos_transparent_bg: boolean;
   pos_scene: string;
@@ -78,19 +81,20 @@ export interface CharacterConfig {
   custom_expression_tags: string;
   pos_token_limit?: number;
   wb_v2_migrated?: boolean;
+  default_laffey_migrated_v1?: boolean;
 }
 
 export function createDefaultCharacterConfig(): CharacterConfig {
   return {
-    preset_name: "标枪 Javelin（碧蓝航线 · 默认）",
-    char_tag: "javelin (azur lane)",
-    eng_name: "Javelin",
-    canon_neg_tags: "neckerchief, serafuku, plaid, gloves, crown",
+    preset_name: "拉菲 Laffey（碧蓝航线 · 默认）",
+    char_tag: "laffey (azur lane)",
+    eng_name: "Laffey",
+    canon_neg_tags: "red jacket, neckerchief, cuffs, skirt",
     extra_char_tags: "",
     gender_mode: "normal",
 
     body_preset: "纤细娇小（原版默认 slender, petite）",
-    bust_preset: "默认随角色原设",
+    bust_preset: "平胸贫乳（flat chest, small breasts）",
     skin_preset: "自然暖透肤（原版默认）",
     outfit_preset: "宽松滑肩白T恤·下身真空（故事线默认）",
     outfit_state_mode: "🔄 智能适配穿脱（原设/裙装自动撩裙拨内裤 · 单件上衣自动真空）",
@@ -132,6 +136,8 @@ export function createDefaultCharacterConfig(): CharacterConfig {
     enable_multi_angle_nsfw: false,
     enable_uterus_xray: false,
     enable_condom: false,
+    pixiv_bar_censor: "off",
+    other_use_scene_outfit: true,
 
     pos_transparent_bg: false,
     pos_scene: "🛋️ 默认暖光室内沙发（indoors, couch, lamp）",
@@ -152,6 +158,7 @@ export function createDefaultCharacterConfig(): CharacterConfig {
     expr_tears: false,
     custom_expression_tags: "",
     wb_v2_migrated: true,
+    default_laffey_migrated_v1: true,
   };
 }
 
@@ -263,7 +270,9 @@ export interface SubscriptionInfo {
   fixed_anlas: number;
   purchased_anlas: number;
   opus_usage_percent: number | null;
+  opus_purchased_percent: number;
   opus_usage_negative: boolean;
+  opus_time_until_next_sec: number | null;
   unlimited_max_priority: boolean;
   expires_at: number;
 }

@@ -136,3 +136,15 @@ description: >-
 | **`artist:nagi ichi`** ⭐ | **星光亮泽鲜嫩赛璐璐系** | 清晰明快的鲜嫩粉红双瓣配闪亮高光水丝与精致细腻放射纹，二次元净线感极强 |
 | `artist:tofuubear` / `artist:nyuu (manekin-eko)` / `artist:tsukudani (coke-buta)` | **软萌桃粉 / 成熟花边深色褶皱参考系** | `tofuubear` 偏软萌透白桃粉；`nyuu` 专精极端繁复深边花瓣肉褶（适合重度写实熟感）；`tsukudani` 偏高反差同人本解剖 |
 | `artist:shiratama (shiratamaco)` / `artist:karory` / `artist:mimonel` | **白嫩柔光 / 细线辅融系** | 白粉通透质感佳，但单用在极端微距分镜顶部易出小分身头像，**仅推荐作中低权重混融** |
+
+### 6 号均衡画风（`mikozin + doshimash0 0.50`）配套光影与室内/夜景调校方案
+
+- **常驻赛璐璐净线 + 冷暖水润光影底座**（基于工作台 `💎✨ 2.5D 冷暖撞色水润高反差光影` / `cool_warm_25d_cel` 调校）：
+  ```text
+  masterpiece, best quality, very aesthetic, absurdres, year 2025, 0.56::artist:mikozin::, 0.46::artist:kani bonara::, 0.38::artist:hori (hori no su)::, 0.34::artist:gotyou::, 0.50::artist:doshimash0::, gradient eyes, no text, 1.15::cel shading::, anime coloring, lineart, 1.2::high contrast::, saturated, 1.25::backlighting::, 1.15::subsurface scattering::, 1.18::shiny skin::, sparkle
+  ```
+  *(扶他版将尾部调整为 `0.48::artist:doshimash0::, 0.25::artist:pija (pianiishimo)::`)*
+- **核心防偏与动态光源调整规则**：
+  1. **防厚涂油腻锁死**：混入 `0.50::artist:doshimash0::` 时必须同步保留 `1.15::cel shading::, anime coloring, lineart`（并在 UC 锁死 `painterly, photorealistic, 3d`），既完整保留星光湿润高光与精致黏膜细节，又确保面部与发丝维持清爽二次元细线。
+  2. **室内/密闭/夜间场景去白昼阳光**：从原版 `cool_warm_25d_cel` 中**剥离固定的 `1.15::sunlight::, light rays`**，避免无窗隔间、昏暗卧室或深夜户外误出白天阳光束；改按具体场景叠加局部光源（夜间/自缚直打闪光灯 `+ 1.45~1.55::camera flash::`；试衣间/温泉暖光 `+ warm spotlight / warm yellow lighting`；高层夜景/直播间 `+ 1.5::city lights at night::` 或 `neon-lit bedroom, ring light reflection in pupils`）。
+  3. **V5 Full 黄金采样与 2x 放大参数**：`nai-diffusion-5-full`，`Steps = 28`，`CFG Scale = 6.8`，`CFG Rescale = 0`；成图后调用官方 `/ai/upscale`（`nai-diffusion-5-full-medium`, `declared_blur_sigma: 0`）直出 `1664×2432` / `2432×1664` 超清细线大图。

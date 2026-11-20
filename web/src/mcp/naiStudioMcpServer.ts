@@ -19,6 +19,7 @@ import {
   MORPH_PRESETS,
   MULTI_ANGLE_CHAPTERS,
   NAI_MODEL_OPTIONS,
+  OTHER_ACTION_CHAPTERS,
   OUTFIT_PRESETS,
   OUTFIT_STATE_PRESETS,
   PIGMENT_PRESETS,
@@ -593,10 +594,13 @@ class BridgeHub {
       );
     }
 
-    // Never 6s-timeout or fail over long-running generation RPCs ("trigger_generate" / "generate"),
-    // otherwise a normal 7s+ image render gets aborted and resent to a stale background tab!
-    const isLongGeneration = method === "trigger_generate" || method === "generate";
-    const allowFailover = !isLongGeneration && candidates.length > 1;
+    // Never 6s-timeout or fail over long-running generation/upscale RPCs,
+    // otherwise a normal 7s+ image render or batch upscale gets aborted and resent to a stale background tab!
+    const isLongOperation =
+      method === "trigger_generate" ||
+      method === "generate" ||
+      (method === "manage_files" && params.action === "upscale_images");
+    const allowFailover = !isLongOperation && candidates.length > 1;
     let lastErr: Error | null = null;
     for (let i = 0; i < candidates.length; i++) {
       const cli = candidates[i];
@@ -674,6 +678,24 @@ function lookupPresetCatalog(category: string, query = ""): Record<string, unkno
     multi_angle: MULTI_ANGLE_CHAPTERS.filter(
       (c) => !q || c.id.toLowerCase().includes(q) || c.title.toLowerCase().includes(q)
     ).map((c) => ({ id: c.id, title: c.title })),
+    other_actions: [
+      ...ALL_POSITIONS_CHAPTERS.filter(
+        (c) =>
+          (c.id.startsWith("TN") || c.id.startsWith("BG")) &&
+          (!q || c.id.toLowerCase().includes(q) || c.title.toLowerCase().includes(q))
+      ).map((c) => ({
+        id: c.id,
+        title: c.title,
+        category: c.id.startsWith("TN") ? "1. 触手缠缚" : "2. 异形虫巢",
+      })),
+      ...OTHER_ACTION_CHAPTERS.filter(
+        (c) =>
+          !q ||
+          c.id.toLowerCase().includes(q) ||
+          c.title.toLowerCase().includes(q) ||
+          c.sub.toLowerCase().includes(q)
+      ).map((c) => ({ id: c.id, title: c.title, category: c.category, camera_mode: c.camera_mode })),
+    ],
   };
 
   if (!category || category === "all") {
@@ -710,7 +732,7 @@ const MCP_TOOLS = [
         category: {
           type: "string",
           description:
-            "Category to inspect: 'all' | 'models' | 'canvases' | 'characters' | 'body' | 'bust' | 'skin' | 'outfits' | 'outfit_states' | 'legwear' | 'styles' | 'lighting' | 'env' | 'morph' | 'pubic' | 'pigment' | 'expressions' | 'pos_male_modes' | 'pos_stages' | 'pos_scenes' | 'poses' | 'multi_angle'",
+            "Category to inspect: 'all' | 'models' | 'canvases' | 'characters' | 'body' | 'bust' | 'skin' | 'outfits' | 'outfit_states' | 'legwear' | 'styles' | 'lighting' | 'env' | 'morph' | 'pubic' | 'pigment' | 'expressions' | 'pos_male_modes' | 'pos_stages' | 'pos_scenes' | 'poses' | 'multi_angle' | 'other_actions'",
         },
         query: {
           type: "string",
@@ -722,7 +744,7 @@ const MCP_TOOLS = [
   {
     name: "nai_update_config",
     description:
-      "Directly push configuration changes to the open NovelAI_Workbench.html webpage in real time. Supports updating any CharacterConfig field (char_tag, extra_char_tags, gender_mode: 'normal'|'femboy'|'futa_no_balls'|'futa_with_balls', body_preset, bust_preset, outfit_preset, custom_outfit_tags, outfit_state_mode, style_preset, lighting_preset, pos_stage, pos_male_mode, pos_scene, enable_condom, enable_uterus_xray, free_action_tags, free_action_prose, free_action_nsfw, etc.), NaiApiSettings (model, steps, scale, cfg_rescale, canvas_preset, seed, batch_count, auto_upscale_replace), action_mode ('positions' | 'multi_angle' | 'free'), and active_scene_id ('P01'..'P51' | 'MP01'..'MP15' | 'TN01'..'TN12' | 'BG01'..'BG20' | 'MA0'..'MA11' | 'MA7A'..'MA7E' | 'FREE').",
+      "Directly push configuration changes to the open NovelAI_Workbench.html webpage in real time. Supports updating any CharacterConfig field (char_tag, extra_char_tags, gender_mode: 'normal'|'femboy'|'futa_no_balls'|'futa_with_balls', body_preset, bust_preset, outfit_preset, custom_outfit_tags, outfit_state_mode, style_preset, lighting_preset, pos_stage, pos_male_mode, pos_scene, enable_condom, enable_uterus_xray, pixiv_bar_censor: 'off'|'white'|'black'|'mosaic', other_use_scene_outfit, free_action_tags, free_action_prose, free_action_nsfw, etc.), NaiApiSettings (model, steps, scale, cfg_rescale, canvas_preset, seed, batch_count, auto_upscale_replace), action_mode ('positions' | 'multi_angle' | 'other' | 'free'), and active_scene_id ('P01'..'P51' | 'MP01'..'MP15' | 'TN01'..'TN12' | 'BG01'..'BG20' | 'MA0'..'MA11' | 'MA7A'..'MA7E' | 'SF01'..'SF30' | 'FREE').",
     inputSchema: {
       type: "object",
       properties: {
@@ -737,17 +759,22 @@ const MCP_TOOLS = [
         },
         action_mode: {
           type: "string",
-          enum: ["positions", "multi_angle", "free"],
+          enum: ["positions", "multi_angle", "other", "free"],
           description: "Right-column action mode to switch to.",
         },
         active_scene_id: {
           type: "string",
-          description: "Scene ID to activate, e.g. 'P22', 'MA10', or 'FREE'.",
+          description: "Scene ID to activate, e.g. 'P22', 'MA10', 'SF01', or 'FREE'.",
         },
         checked_position_ids: {
           type: "array",
           items: { type: "string" },
           description: "Optional batch-checked position IDs.",
+        },
+        checked_other_action_ids: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional batch-checked SF01..SF30 other-action IDs.",
         },
       },
     },
@@ -848,6 +875,157 @@ const MCP_TOOLS = [
     },
   },
   {
+    name: "nai_list_files",
+    description:
+      "Read-only inventory of the open NovelAI_Workbench.html webpage's in-session gallery images and grouping folders (including folder counts, ungrouped count, opened/pinned folder state, starred/2x status, seeds, and scene IDs). Call this before nai_manage_files to inspect IDs, indices, and folder names.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        folder: {
+          type: "string",
+          description:
+            "Optional folder filter: omit or '*' for all images, '' (empty string) for ungrouped images only, or a specific folder name.",
+        },
+        scene_id: {
+          type: "string",
+          description: "Optional exact scene ID filter, e.g. 'BG01' or 'P22'.",
+        },
+        scene_prefix: {
+          type: "string",
+          description: "Optional scene ID prefix filter, e.g. 'BG', 'TN', 'MA', 'P'.",
+        },
+        starred_only: {
+          type: "boolean",
+          description: "If true, only list starred images.",
+        },
+        upscaled_only: {
+          type: "boolean",
+          description: "If true, only list 2x upscaled images.",
+        },
+        include_prompts: {
+          type: "boolean",
+          description: "If true, include prompt_pos and prompt_neg per image (default false).",
+        },
+        offset: {
+          type: "number",
+          description: "Pagination offset (default 0).",
+        },
+        limit: {
+          type: "number",
+          description: "Max number of image entries to return (1..200, default 100).",
+        },
+      },
+    },
+  },
+  {
+    name: "nai_manage_files",
+    description:
+      "Organize and archive gallery images and incremental folders strictly inside the open NovelAI_Workbench.html webpage (auto-syncing to the browser's mounted local output directory when mounted). Supports creating/renaming/dissolving/deleting/opening/pinning folders, moving images between folders and the ungrouped pool, selecting/starring/deleting/upscaling images via flexible selectors, and triggering browser ZIP export.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: [
+            "create_folder",
+            "rename_folder",
+            "dissolve_folder",
+            "delete_folder",
+            "open_folder",
+            "pin_folder",
+            "move_images",
+            "select_image",
+            "star_images",
+            "delete_images",
+            "upscale_images",
+            "export_zip",
+          ],
+          description: "Webpage file/folder management action to execute.",
+        },
+        folder_name: {
+          type: "string",
+          description:
+            "Target folder name for create_folder / rename_folder / dissolve_folder / delete_folder / open_folder / pin_folder / export_zip. Pass empty string or omit for open_folder/pin_folder to close/unpin.",
+        },
+        new_name: {
+          type: "string",
+          description: "For rename_folder: new folder name.",
+        },
+        merge_if_exists: {
+          type: "boolean",
+          description:
+            "For rename_folder: merge into existing folder of the same name (default true).",
+        },
+        open: {
+          type: "boolean",
+          description: "For create_folder: set true to expand organizer and open the folder.",
+        },
+        pin: {
+          type: "boolean",
+          description:
+            "For create_folder: set true to pin the folder as the default destination for new generations.",
+        },
+        expanded: {
+          type: "boolean",
+          description: "For open_folder: explicitly expand or collapse the multi-column archive bar.",
+        },
+        target_folder: {
+          type: "string",
+          description:
+            "For move_images: destination folder name (auto-created if new). Pass '' or omit to move back to ungrouped pool.",
+        },
+        open_target_folder: {
+          type: "boolean",
+          description: "For move_images: expand organizer and open the destination folder after moving.",
+        },
+        image_id: {
+          type: "string",
+          description: "For select_image: exact image record ID.",
+        },
+        gallery_index: {
+          type: "number",
+          description: "For select_image: 0-based gallery index.",
+        },
+        starred: {
+          type: "boolean",
+          description: "For star_images: true to star (default), false to unstar.",
+        },
+        label: {
+          type: "string",
+          description: "For export_zip: optional filename prefix label.",
+        },
+        selector: {
+          type: "object",
+          description:
+            "Image selector (intersection of all provided fields) for move_images / star_images / delete_images / upscale_images / export_zip. Must provide at least one field; use from_folder: '*' to match all images.",
+          properties: {
+            image_ids: { type: "array", items: { type: "string" } },
+            gallery_indices: { type: "array", items: { type: "number" } },
+            index_range: {
+              type: "array",
+              items: { type: "number" },
+              description: "Inclusive [startIndex, endIndex], e.g. [0, 19].",
+            },
+            from_folder: {
+              type: "string",
+              description: "'' for ungrouped only, '*' for all, or exact folder name.",
+            },
+            scene_ids: { type: "array", items: { type: "string" } },
+            scene_prefix: { type: "string" },
+            seeds: { type: "array", items: { type: "number" } },
+            starred_only: { type: "boolean" },
+            unstarred_only: { type: "boolean" },
+            upscaled_only: { type: "boolean" },
+            unupscaled_only: { type: "boolean" },
+            checked_only: { type: "boolean" },
+            selected_only: { type: "boolean" },
+          },
+        },
+      },
+      required: ["action"],
+    },
+  },
+  {
     name: "nai_generate",
     description:
       "Trigger image generation directly inside the open NovelAI_Workbench.html webpage! Only call this when the user explicitly asks to generate/render an image on the webpage. When wait_for_result is true (default), waits for generation (and auto 2x upscale if enabled) and saves a local preview copy in outputs/_mcp_live_preview/ so you can inspect it.",
@@ -868,6 +1046,11 @@ const MCP_TOOLS = [
           type: "boolean",
           description: "Set true to force random seed (-1) even if webpage has a locked seed.",
         },
+        target_folder: {
+          type: "string",
+          description:
+            "Optional webpage folder name to automatically archive the generated images into (auto-created if it does not exist yet).",
+        },
         wait_for_result: {
           type: "boolean",
           description: "Wait for generation to finish and return saved local_preview_path (default true).",
@@ -878,10 +1061,14 @@ const MCP_TOOLS = [
   {
     name: "nai_get_latest_image",
     description:
-      "Fetch the currently selected (or latest) generated image from the open webpage's gallery into outputs/_mcp_live_preview/ so you can inspect it with read_file.",
+      "Fetch the currently selected, latest, or specified generated image from the open webpage's gallery into outputs/_mcp_live_preview/ so you can inspect it with read_file.",
     inputSchema: {
       type: "object",
       properties: {
+        image_id: {
+          type: "string",
+          description: "Optional exact gallery image ID from nai_list_files.",
+        },
         gallery_index: {
           type: "number",
           description: "Optional 0-based gallery index; omit for currently selected image.",
@@ -959,6 +1146,13 @@ async function executeToolCall(
       );
     }
     return await hub.callBrowser("manage_vibes", args);
+  }
+  if (name === "nai_list_files") {
+    return await hub.callBrowser("list_files", args, 20000);
+  }
+  if (name === "nai_manage_files") {
+    const isLong = String(args.action || "") === "upscale_images";
+    return await hub.callBrowser("manage_files", args, isLong ? 300000 : 30000);
   }
   if (name === "nai_generate") {
     return await hub.callBrowser("trigger_generate", args, 180000);

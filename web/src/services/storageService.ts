@@ -398,8 +398,34 @@ export function loadActiveConfig(): CharacterConfig {
     if (merged.preset_name === "原创白发猫娘 OC（无需作品Tag）") {
       merged.preset_name = "原创角色 OC（无需作品Tag · 用额外常驻Tag定义外貌）";
     }
+    if (merged.preset_name === "拉菲 Laffey（碧蓝航线）") {
+      merged.preset_name = "拉菲 Laffey（碧蓝航线 · 默认）";
+    }
+    let needsCfgSave = false;
+    if (!parsed.default_laffey_migrated_v1) {
+      if (
+        !parsed.preset_name ||
+        parsed.preset_name === "标枪 Javelin（碧蓝航线 · 默认）" ||
+        parsed.preset_name === "拉菲 Laffey（碧蓝航线）"
+      ) {
+        merged.preset_name = def.preset_name;
+        merged.char_tag = def.char_tag;
+        merged.eng_name = def.eng_name;
+        merged.canon_neg_tags = def.canon_neg_tags;
+        merged.body_preset = def.body_preset;
+        merged.bust_preset = def.bust_preset;
+      }
+      merged.default_laffey_migrated_v1 = true;
+      needsCfgSave = true;
+    } else if (merged.preset_name === "标枪 Javelin（碧蓝航线 · 默认）") {
+      merged.preset_name = "标枪 Javelin（碧蓝航线）";
+      needsCfgSave = true;
+    }
     if (merged.lighting_preset) {
       merged.lighting_preset = normalizeLightingPresetName(merged.lighting_preset);
+    }
+    if (merged.other_use_scene_outfit === undefined) {
+      merged.other_use_scene_outfit = true;
     }
     delete (merged as unknown as Record<string, unknown>).eye_color;
     delete (merged as unknown as Record<string, unknown>).hair_tags;
@@ -414,6 +440,9 @@ export function loadActiveConfig(): CharacterConfig {
       merged.enable_t5_prose = true;
       merged.enable_negatives = true;
       merged.wb_v2_migrated = true;
+      needsCfgSave = true;
+    }
+    if (needsCfgSave) {
       saveActiveConfig(merged);
     }
     return merged;
