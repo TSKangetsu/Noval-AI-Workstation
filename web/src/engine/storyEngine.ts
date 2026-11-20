@@ -16,7 +16,7 @@ import {
   EXPRESSION_MOUTH_PRESETS,
   EXPRESSION_PRESETS,
   LEGWEAR_PRESETS,
-  LIGHTING_PRESETS,
+  type LightAxisMode,
   MORPH_PRESETS,
   MULTI_ANGLE_CHAPTERS,
   MULTI_ANGLE_TEMPLATES,
@@ -28,6 +28,7 @@ import {
   POS_STAGE_PRESETS,
   PUBIC_PRESETS,
   QUALITY_TAGS,
+  resolveLightingPresetEntry,
   SKIN_PRESETS,
   STYLE_PRESETS,
 } from "../data/engineConstants";
@@ -173,6 +174,238 @@ export function isMilkyPeachCelStyleActive(cfg: CharacterConfig): boolean {
 
 function is25dCelLightingCode(code: string | undefined): boolean {
   return code === "cool_warm_25d_cel" || code === "milky_peach_3tier_cel";
+}
+
+/**
+ * Scene × Light-Axis Camera & Stage Resolver:
+ * Rotates background stage geometry and camera orientation so the scene physically matches
+ * any lighting preset's `light_axis` ("backlit" | "front_lit" | "side_lit" | "moody_dim" | "auto").
+ * - front_lit: camera stands with its back to the window/sun looking INWARD toward room walls/shoreline,
+ *   stripping background windows/suns behind the subject and guarding them in negative prompt.
+ * - backlit: camera faces outward toward the bright window/horizon/alley-exit behind the subject.
+ * - side_lit: camera angles parallel to the light source with the window/sun off to one side.
+ */
+function adaptSceneStageForLightAxis(
+  sceneCode: string,
+  rawTags: string,
+  rawProse: string,
+  rawExtraNeg: string,
+  lightAxis: LightAxisMode | undefined
+): { tags: string; prose: string; extraNeg: string } {
+  const axis: LightAxisMode = lightAxis ?? "auto";
+  if (axis === "auto") {
+    return { tags: rawTags, prose: rawProse, extraNeg: rawExtraNeg };
+  }
+
+  const mergeNeg = (...parts: string[]): string =>
+    parts
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .join(", ");
+
+  if (sceneCode === "sunlit_rug_floor_window") {
+    if (axis === "front_lit") {
+      return {
+        tags: "indoors, living room interior, 1.25::furry beige rug::, rug, warm wooden floor, wooden wall, bookshelf, sofa in background, potted plant",
+        prose:
+          " on a soft furry beige rug over a warm wooden floor with the camera facing inward toward the cozy living room wall, bookshelf, and potted plant while window daylight streams from behind the viewer",
+        extraNeg: mergeNeg(
+          rawExtraNeg,
+          "window, windowpane, floor-to-ceiling window, glass window, sky, clear blue sky, clouds, looking outside, outdoors"
+        ),
+      };
+    }
+    if (axis === "backlit") {
+      return {
+        tags: "indoors, 1.25::furry beige rug::, rug, wooden floor, 1.3::large floor-to-ceiling window::, window in background, bright sky outside, potted plant",
+        prose:
+          " on a soft furry beige rug over a wooden floor right in front of a blazing sunlit floor-to-ceiling window and potted plant",
+        extraNeg: rawExtraNeg,
+      };
+    }
+    if (axis === "side_lit") {
+      return {
+        tags: "indoors, living room interior, 1.25::furry beige rug::, rug, wooden floor, window to the side, indoor wall, potted plant",
+        prose:
+          " on a soft furry beige rug over a wooden floor with the floor-to-ceiling window angled to one side and warm indoor room depth behind her",
+        extraNeg: rawExtraNeg,
+      };
+    }
+  }
+
+  if (sceneCode === "sunlit_window_bedroom") {
+    if (axis === "front_lit") {
+      return {
+        tags: "indoors, bedroom interior, bed, white bedsheet, pillows, wooden headboard, bedroom wall, nightstand, warm room depth",
+        prose:
+          " on crisp white bedsheets with the camera facing inward toward the wooden headboard and cozy bedroom interior wall, bathed in morning window light from behind the viewer",
+        extraNeg: mergeNeg(
+          rawExtraNeg,
+          "window, windowpane, bright window, curtains behind, sky, clouds, looking outside, outdoors"
+        ),
+      };
+    }
+    if (axis === "backlit") {
+      return {
+        tags: "indoors, bedroom, bed, white bedsheet, 1.3::bright window::, window in background, sheer curtains",
+        prose: " in a bedroom right in front of a bright sunlit window and glowing sheer curtains",
+        extraNeg: rawExtraNeg,
+      };
+    }
+    if (axis === "side_lit") {
+      return {
+        tags: "indoors, bedroom, bed, white bedsheet, window to the side, sheer curtains, bedroom wall",
+        prose: " on white bedsheets with sheer window curtains off to one side and cozy bedroom depth behind her",
+        extraNeg: rawExtraNeg,
+      };
+    }
+  }
+
+  if (sceneCode === "default_couch") {
+    if (axis === "front_lit") {
+      return {
+        tags: "indoors, living room interior, couch, cushions, interior wall, bookshelf, warm room background",
+        prose: " on the cozy living room couch with the camera facing inward toward the interior wall",
+        extraNeg: mergeNeg(rawExtraNeg, "window, windowpane, sky, outdoors, lamp glare"),
+      };
+    }
+    if (axis === "backlit") {
+      return {
+        tags: "indoors, living room, couch, large window behind sofa, sheer curtains",
+        prose: " on the living room couch in front of a bright sunlit window",
+        extraNeg: mergeNeg(rawExtraNeg, "lamp"),
+      };
+    }
+    if (axis === "side_lit") {
+      return {
+        tags: "indoors, living room, couch, window to the side, sheer curtains, interior wall",
+        prose: " on the living room couch beside a sunlit side window",
+        extraNeg: rawExtraNeg,
+      };
+    }
+  }
+
+  if (sceneCode === "cherry_shallow_water") {
+    // Mandatory water-ripple & caustic reflection tags stay active across ALL light axes!
+    if (axis === "front_lit") {
+      return {
+        tags: "outdoors, 1.35::shallow water::, deep cyan water, in water, ripples, 1.32::water reflection::, 1.32::caustics::, cherry blossoms, sakura trees in background, falling petals, pink sky, bright sky, shiny skin, 1.25::wet skin::, water droplets",
+        prose:
+          " in shallow rippling deep-cyan water with lush cherry blossom trees behind her under a bright pink sky, as luminous water-ripple caustics, water droplets, and shimmering reflections dance across her wet skin",
+        extraNeg: mergeNeg(rawExtraNeg, "sun in background, sun orb"),
+      };
+    }
+    if (axis === "backlit") {
+      return {
+        tags: "outdoors, 1.35::shallow water::, in water, ripples, 1.32::water reflection::, 1.32::caustics::, cherry blossoms, falling petals, pink sky, shiny skin, 1.25::wet skin::, water droplets",
+        prose:
+          " in shallow rippling water beneath falling cherry blossom petals and a pink sky, with luminous water-ripple caustics and shimmering reflections dancing across her wet skin",
+        extraNeg: rawExtraNeg,
+      };
+    }
+    if (axis === "side_lit") {
+      return {
+        tags: "outdoors, 1.35::shallow water::, in water, ripples, 1.32::water reflection::, 1.32::caustics::, cherry blossoms, overhanging sakura branches, falling petals, pink sky, shiny skin, 1.25::wet skin::, water droplets",
+        prose:
+          " in shallow rippling cyan water beneath overhanging cherry blossom branches and falling petals, with lateral water-ripple caustics and shimmering reflections across her wet skin",
+        extraNeg: rawExtraNeg,
+      };
+    }
+  }
+
+  if (sceneCode === "jp_dark_alley_trash") {
+    if (axis === "front_lit") {
+      return {
+        tags: "outdoors, 1.35::alley::, enclosed back-alley corner, concrete wall behind, brick wall, 1.35::trash can::, garbage bag, cardboard box, air conditioner, asphalt",
+        prose:
+          " in an enclosed Japanese urban back-alley corner with concrete walls, trash cans, and black garbage bags behind her, illuminated from the street entrance behind the viewer",
+        extraNeg: mergeNeg(rawExtraNeg, "sky, bright sky, alley exit behind"),
+      };
+    }
+    if (axis === "backlit") {
+      return {
+        tags: "outdoors, 1.35::alley::, backstreet, narrow street, bright alley exit in background, 1.35::trash can::, garbage bag, cardboard box, air conditioner, utility pole, concrete wall, asphalt",
+        prose:
+          " in a narrow Japanese urban back-alley beside trash cans and black garbage bags with the bright sunlit main-street opening behind her",
+        extraNeg: rawExtraNeg,
+      };
+    }
+  }
+
+  return { tags: rawTags, prose: rawProse, extraNeg: rawExtraNeg };
+}
+
+function adaptMultiAngleBuiltInSceneForLightAxis(
+  sceneId: string,
+  rawScene: string,
+  rawProse: string,
+  rawTailNeg: string,
+  lightAxis: LightAxisMode | undefined
+): { scene: string; prose: string; tailNeg: string } {
+  const axis: LightAxisMode = lightAxis ?? "auto";
+  if (axis === "auto" || sceneId === "MA0" || sceneId === "MA11") {
+    return { scene: rawScene, prose: rawProse, tailNeg: rawTailNeg };
+  }
+
+  let scene = rawScene;
+  let prose = rawProse;
+  let tailNeg = rawTailNeg;
+  const appendNeg = (extra: string): void => {
+    tailNeg = tailNeg ? `${tailNeg}, ${extra}` : extra;
+  };
+
+  if (sceneId === "MA9" || sceneId === "MA10") {
+    if (axis === "front_lit") {
+      scene = scene.replace(
+        /indoors,\s*furry beige rug,\s*wooden floor,\s*large floor-to-ceiling window,\s*clear blue sky,\s*daylight,\s*backlighting,\s*sunlight,\s*potted plant/i,
+        "indoors, living room interior, furry beige rug, warm wooden floor, wooden wall, bookshelf, sofa in background, potted plant"
+      );
+      prose = prose.replace(
+        /beside a large sunlit floor-to-ceiling window and potted plant/i,
+        "with the camera facing inward toward the cozy living room wall, bookshelf, and potted plant while window daylight streams from behind the viewer"
+      );
+      appendNeg("window, windowpane, floor-to-ceiling window, glass window, sky, clear blue sky, clouds, looking outside, outdoors");
+    } else if (axis === "backlit") {
+      scene = scene.replace(
+        /large floor-to-ceiling window,\s*clear blue sky,\s*daylight,\s*backlighting,\s*sunlight/i,
+        "1.3::large floor-to-ceiling window::, window in background, bright sky outside"
+      );
+      prose = prose.replace(
+        /beside a large sunlit floor-to-ceiling window/i,
+        "right in front of a blazing sunlit floor-to-ceiling window"
+      );
+    } else if (axis === "side_lit") {
+      scene = scene.replace(
+        /large floor-to-ceiling window,\s*clear blue sky,\s*daylight,\s*backlighting,\s*sunlight/i,
+        "window to the side, indoor wall"
+      );
+    }
+  } else if (sceneId === "MA3") {
+    if (axis === "front_lit") {
+      scene = scene
+        .replace(/standing beside sunlit window/i, "standing inside cozy bedroom interior, wooden wall, bookshelf")
+        .replace(/gazing out the window,\s*soft golden afternoon glow/i, "looking at viewer");
+      prose = prose
+        .replace(/standing beside a sunlit window/i, "standing inside a cozy bedroom interior facing the window behind the viewer")
+        .replace(/in soft golden glow\./i, "while looking toward the viewer.");
+      appendNeg("window behind, glass pane, sky, outdoors");
+    }
+  } else if (sceneId === "MA1" || sceneId === "MA5" || sceneId === "MA8") {
+    if (axis === "front_lit") {
+      scene = scene
+        .replace(/cozy sunlit bedroom/i, "bedroom interior, wooden wall, headboard")
+        .replace(/sunlit bedroom/i, "bedroom interior, wooden wall")
+        .replace(/cozy sunlit living room/i, "living room interior, wooden wall, bookshelf");
+      appendNeg("window behind, sky, outdoors");
+    } else if (axis === "backlit") {
+      scene = scene
+        .replace(/cozy sunlit bedroom/i, "bedroom, 1.3::bright window::, sheer curtains")
+        .replace(/sunlit bedroom/i, "bedroom, 1.3::bright window::, sheer curtains")
+        .replace(/cozy sunlit living room/i, "living room, 1.3::large floor-to-ceiling window::");
+    }
+  }
+
+  return { scene, prose, tailNeg };
 }
 
 const EXPR_EYE_CONFLICT_SET = new Set(EXPR_EYE_CONFLICT_TAGS);
@@ -572,9 +805,9 @@ export function proseIf(
   if (!cfg.enable_t5_prose) return "";
   let body = text.trim();
   if (!body) return "";
-  const hasCustomLight =
-    (LIGHTING_PRESETS[cfg.lighting_preset]?.code ?? "auto") !== "auto";
-  const is25dCelLight = is25dCelLightingCode(LIGHTING_PRESETS[cfg.lighting_preset]?.code);
+  const resolvedLight = resolveLightingPresetEntry(cfg.lighting_preset);
+  const hasCustomLight = resolvedLight.code !== "auto";
+  const is25dCelLight = is25dCelLightingCode(resolvedLight.code);
   if (isPocketMiniLadyBodyActive(cfg) && !is25dCelLight) {
     body =
       (suppressFaceProse
@@ -633,9 +866,7 @@ export function buildCommonModules(
 ): Record<string, string> {
   const pixelMode = isPixelStyleActive(cfg);
   const m6Mode = isM6SoftMorningSkinActive(cfg);
-  const lightInfo =
-    LIGHTING_PRESETS[cfg.lighting_preset] ??
-    LIGHTING_PRESETS["🔄 随画风与本幕默认光影（不额外覆盖）"];
+  const lightInfo = resolveLightingPresetEntry(cfg.lighting_preset);
   const envInfo =
     ENV_PRESETS[cfg.env_preset] ?? ENV_PRESETS["🔄 随本幕/体位工具栏默认环境"];
   const is25dCelLight = is25dCelLightingCode(lightInfo.code);
@@ -700,6 +931,12 @@ export function buildCommonModules(
         const bareLt = lt.trim().replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
         if (bareLt) stripLightSet.add(bareLt);
       }
+      const replaceStyleMap = new Map<string, string>();
+      if (lightInfo.replace_style_tags) {
+        for (const [k, v] of Object.entries(lightInfo.replace_style_tags)) {
+          replaceStyleMap.set(k.toLowerCase(), v);
+        }
+      }
       styleOnlyPos = styleOnlyPos
         .split(",")
         .map((t) => t.trim())
@@ -708,6 +945,25 @@ export function buildCommonModules(
           const bare = t.replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
           return !stripLightSet.has(bare);
         })
+        .map((t) => {
+          const bare = t.replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+          return replaceStyleMap.get(bare) ?? t;
+        })
+        .join(", ");
+    } else if (lightInfo.replace_style_tags && styleOnlyPos) {
+      const replaceStyleMap = new Map<string, string>();
+      for (const [k, v] of Object.entries(lightInfo.replace_style_tags)) {
+        replaceStyleMap.set(k.toLowerCase(), v);
+      }
+      styleOnlyPos = styleOnlyPos
+        .split(",")
+        .map((t) => {
+          const trimmed = t.trim();
+          if (!trimmed) return "";
+          const bare = trimmed.replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+          return replaceStyleMap.get(bare) ?? trimmed;
+        })
+        .filter(Boolean)
         .join(", ");
     }
     if (lightInfo.unblock_neg?.length && styleNeg) {
@@ -1090,8 +1346,18 @@ export function buildCommonModules(
           .map((t) => t.trim().replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase())
           .filter(Boolean)
       );
-      let rawEnvTags = envInfo.tags;
-      if (is25dCelLight && envInfo.code === "sunlit_rug_floor_window") {
+      for (const sb of lightInfo.strip_bg_tags ?? []) {
+        lightTagSet.add(sb.toLowerCase());
+      }
+      const adaptedEnv = adaptSceneStageForLightAxis(
+        envInfo.code,
+        envInfo.tags,
+        envInfo.prose,
+        envInfo.extra_neg || "",
+        lightInfo.light_axis
+      );
+      let rawEnvTags = adaptedEnv.tags;
+      if (is25dCelLight && envInfo.code === "sunlit_rug_floor_window" && (lightInfo.light_axis ?? "auto") === "auto") {
         rawEnvTags = rawEnvTags.replace(
           "large floor-to-ceiling window,",
           "large floor-to-ceiling window, clear blue sky,"
@@ -1108,16 +1374,26 @@ export function buildCommonModules(
         .join(", ");
       bgCouch = dedupEnv;
       bgSleepCouch = dedupEnv;
-      locProse = envInfo.prose;
-      envExtraNeg = envInfo.extra_neg || "";
+      locProse = adaptedEnv.prose;
+      envExtraNeg = adaptedEnv.extraNeg;
     } else if (m6Mode) {
       bgCouch = "indoors, beige couch, window, cream sheer curtains";
       bgSleepCouch = "indoors, beige couch, pillow, window, cream sheer curtains";
       locProse = " by cream sheer curtains";
     } else {
-      bgCouch = "indoors, couch, lamp";
-      bgSleepCouch = "indoors, couch, pillow, lamp";
-      locProse = " on the warm-lit couch";
+      const adaptedCouch = adaptSceneStageForLightAxis(
+        "default_couch",
+        "indoors, couch, lamp",
+        " on the warm-lit couch",
+        "",
+        lightInfo.light_axis
+      );
+      bgCouch = adaptedCouch.tags;
+      bgSleepCouch = adaptedCouch.tags.includes("couch")
+        ? adaptedCouch.tags.replace("couch", "couch, pillow")
+        : `${adaptedCouch.tags}, pillow`;
+      locProse = adaptedCouch.prose;
+      envExtraNeg = adaptedCouch.extraNeg;
     }
   }
   const onCouchTag = !cfg.enable_background
@@ -1351,29 +1627,66 @@ export function generateScenePrompts(
     } else if (!nsfwOn && !maHasInherentNsfwOutfit) {
       maTailNeg = "nsfw";
     }
+    const curLightEntry = resolveLightingPresetEntry(cfg.lighting_preset);
     let maScene = isMa7Nsfw
       ? "cowboy shot, 1.35::upper body::, legs apart, head tilt, peace sign near cheek, playful cheerful expression, one eye slightly narrowed, looking at viewer, blurred warm indoor background"
       : String(tpl.scene);
+    let maBaseProse = isMa7Nsfw
+      ? "in a thighs-up shot tilting her head and making a playful peace sign near her cheek with one hand while her other hand reaches down to spread her pussy open toward the camera with a cheerful expression."
+      : tpl.prose;
     const hasCustomGlobalEnv =
       cfg.enable_background &&
       Boolean(m.bg_couch) &&
       (ENV_PRESETS[cfg.env_preset]?.code ?? "auto") !== "auto";
-    if (hasCustomGlobalEnv && maScene.includes("blurred warm indoor background")) {
-      maScene = maScene.replace("blurred warm indoor background", m.bg_couch);
+    if (hasCustomGlobalEnv) {
+      const activeEnvCode = ENV_PRESETS[cfg.env_preset]?.code ?? "auto";
+      if (maScene.includes("blurred warm indoor background")) {
+        maScene = maScene.replace("blurred warm indoor background", m.bg_couch);
+      } else if ((sceneId === "MA9" || sceneId === "MA10") && /furry beige rug,\s*wooden floor,\s*large floor-to-ceiling window/i.test(maScene)) {
+        maScene = maScene.replace(
+          /indoors,\s*furry beige rug,\s*wooden floor,\s*large floor-to-ceiling window,\s*clear blue sky,\s*daylight,\s*backlighting,\s*sunlight,\s*potted plant/i,
+          m.bg_couch
+        );
+        if (activeEnvCode !== "sunlit_rug_floor_window" || (curLightEntry.light_axis ?? "auto") !== "auto") {
+          maBaseProse = maBaseProse.replace(
+            /\s+on a furry beige rug over a wooden floor beside a large sunlit floor-to-ceiling window and potted plant/i,
+            m.loc_prose
+          );
+          if (activeEnvCode === "cherry_shallow_water") {
+            maScene = maScene.replace(/\blying on rug,\s*/gi, "").replace(/\bon floor\b/gi, "in shallow water");
+          }
+        }
+      } else if (activeEnvCode === "cherry_shallow_water" && sceneId !== "MA0" && sceneId !== "MA11") {
+        maScene = maScene
+          .replace(/indoors,\s*cozy sunlit bedroom/i, m.bg_couch)
+          .replace(/indoors,\s*sunlit bedroom/i, m.bg_couch)
+          .replace(/cozy sunlit living room/i, m.bg_couch)
+          .replace(/,\s*indoors,\s*cozy room/i, `, ${m.bg_couch}`)
+          .replace(/,\s*indoors,\s*soft cushions/i, `, ${m.bg_couch}`);
+        maBaseProse = `${maBaseProse.replace(/\.+\s*$/, "")}${m.loc_prose}.`;
+      }
+      if (forceNsfw && m.loc_prose && !maBaseProse.includes(m.loc_prose.trim())) {
+        maBaseProse = `${maBaseProse.replace(/\.+\s*$/, "")}${m.loc_prose}.`;
+      }
+    } else {
+      const adaptedMa = adaptMultiAngleBuiltInSceneForLightAxis(
+        sceneId,
+        maScene,
+        maBaseProse,
+        maTailNeg,
+        curLightEntry.light_axis
+      );
+      maScene = adaptedMa.scene;
+      maBaseProse = adaptedMa.prose;
+      maTailNeg = adaptedMa.tailNeg;
     }
-    if (is25dCelLightingCode(LIGHTING_PRESETS[cfg.lighting_preset]?.code)) {
-      if ((sceneId === "MA9" || sceneId === "MA10") && !/\bclear blue sky\b/i.test(maScene)) {
+    if (is25dCelLightingCode(curLightEntry.code)) {
+      if ((sceneId === "MA9" || sceneId === "MA10") && /\blarge floor-to-ceiling window\b/i.test(maScene) && !/\bclear blue sky\b/i.test(maScene)) {
         maScene = maScene.replace("large floor-to-ceiling window,", "large floor-to-ceiling window, clear blue sky,");
       }
       maScene = maScene
         .replace(/(?:,\s*)?backlighting\b/gi, "")
         .replace(/(?:,\s*)?sunlight\b/gi, "");
-    }
-    let maBaseProse = isMa7Nsfw
-      ? "in a thighs-up shot tilting her head and making a playful peace sign near her cheek with one hand while her other hand reaches down to spread her pussy open toward the camera with a cheerful expression."
-      : tpl.prose;
-    if (hasCustomGlobalEnv && m.loc_prose && forceNsfw) {
-      maBaseProse = `${maBaseProse.replace(/\.+\s*$/, "")}${m.loc_prose}.`;
     }
     if (exprCtrl.active) {
       for (const baked of [
@@ -1649,6 +1962,7 @@ export function generateScenePrompts(
           .join(", ");
       }
     } else if (cfg.enable_background && scenePreset.code !== "default_couch") {
+      const curLightEntry = resolveLightingPresetEntry(cfg.lighting_preset);
       headUsed = scenePreset.unblock_dark
         ? m.head_pos.replace(/,\s*warm lighting\b/gi, "")
         : m.head_pos;
@@ -1658,10 +1972,21 @@ export function generateScenePrompts(
           .map((t) => t.trim().replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase())
           .filter(Boolean)
       );
-      let rawSceneTags = scenePreset.tags;
+      for (const sb of curLightEntry.strip_bg_tags ?? []) {
+        headSet.add(sb.toLowerCase());
+      }
+      const adaptedScene = adaptSceneStageForLightAxis(
+        scenePreset.code,
+        scenePreset.tags,
+        scenePreset.prose,
+        scenePreset.extra_neg || "",
+        curLightEntry.light_axis
+      );
+      let rawSceneTags = adaptedScene.tags;
       if (
-        is25dCelLightingCode(LIGHTING_PRESETS[cfg.lighting_preset]?.code) &&
-        scenePreset.code === "sunlit_rug_floor_window"
+        is25dCelLightingCode(curLightEntry.code) &&
+        scenePreset.code === "sunlit_rug_floor_window" &&
+        (curLightEntry.light_axis ?? "auto") === "auto"
       ) {
         rawSceneTags = rawSceneTags.replace(
           "large floor-to-ceiling window,",
@@ -1677,11 +2002,13 @@ export function generateScenePrompts(
           return !headSet.has(bare);
         })
         .join(", ");
-      bgProse = scenePreset.prose;
+      bgProse = (curLightEntry.strip_bg_tags ?? []).includes("bright sky")
+        ? adaptedScene.prose.replace(/\bbright pink sky\b/gi, "pink sky")
+        : adaptedScene.prose;
       poseUsed = scenePreset.strip_indoor_pose
         ? poseRaw.replace(", head on pillow", "").replace(", hands gripping sheet", "")
         : poseRaw;
-      transNeg = scenePreset.extra_neg || "";
+      transNeg = adaptedScene.extraNeg;
       if (scenePreset.unblock_dark && tailNegUsed) {
         tailNegUsed = tailNegUsed
           .split(",")
@@ -2123,13 +2450,36 @@ export function generateScenePrompts(
               af ? wtag("pussy juice", 1.2, f) : ""
             );
             organProse = condomOn ? ", wearing a snug translucent condom" : "";
+          } else if (isRearPosture) {
+            const cleanRearAnatPos = m.anat_pos
+              .split(",")
+              .map((t) => t.trim())
+              .filter((t) => {
+                const bare = t.replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+                return Boolean(bare) && bare !== "spread pussy";
+              })
+              .join(", ");
+            organTags = joinTags(
+              cleanRearAnatPos,
+              "parted labia",
+              af ? wtag("pussy juice, cumdrip", 1.2, f) : ""
+            );
+            organProse = "";
+            partnerNeg = joinTags(
+              partnerNeg,
+              "motion lines, emphasis lines, speed lines",
+              maleCode === "off"
+                ? "spread pussy, hands between legs, hands on pussy, fingers on labia, extra arms, extra hands"
+                : ""
+            );
           } else {
             organTags = joinTags(
               m.anat_pos,
-              "0.8::spread pussy::, twitching",
+              "0.8::spread pussy::",
               af ? wtag("pussy juice, cumdrip", 1.2, f) : ""
             );
             organProse = ", keeping her lower anatomy actively parted";
+            partnerNeg = joinTags(partnerNeg, "motion lines, emphasis lines, speed lines");
           }
         } else if (stageCode === "during") {
           if (condomOn) {
@@ -2989,6 +3339,7 @@ export function generateScenePrompts(
     } else if (cfg.enable_background) {
       sceneBadge = scenePreset.badge || " · [🛋️室内沙发]";
       if (scenePreset.code !== "default_couch") {
+        const curLightEntry = resolveLightingPresetEntry(cfg.lighting_preset);
         headUsed = scenePreset.unblock_dark
           ? m.head_pos.replace(/,\s*warm lighting\b/gi, "")
           : m.head_pos;
@@ -2998,10 +3349,21 @@ export function generateScenePrompts(
             .map((t) => t.trim().replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase())
             .filter(Boolean)
         );
-        let rawSceneTags = scenePreset.tags;
+        for (const sb of curLightEntry.strip_bg_tags ?? []) {
+          headSet.add(sb.toLowerCase());
+        }
+        const adaptedScene = adaptSceneStageForLightAxis(
+          scenePreset.code,
+          scenePreset.tags,
+          scenePreset.prose,
+          scenePreset.extra_neg || "",
+          curLightEntry.light_axis
+        );
+        let rawSceneTags = adaptedScene.tags;
         if (
-          is25dCelLightingCode(LIGHTING_PRESETS[cfg.lighting_preset]?.code) &&
-          scenePreset.code === "sunlit_rug_floor_window"
+          is25dCelLightingCode(curLightEntry.code) &&
+          scenePreset.code === "sunlit_rug_floor_window" &&
+          (curLightEntry.light_axis ?? "auto") === "auto"
         ) {
           rawSceneTags = rawSceneTags.replace(
             "large floor-to-ceiling window,",
@@ -3017,7 +3379,9 @@ export function generateScenePrompts(
             return !headSet.has(bare);
           })
           .join(", ");
-        bgProse = scenePreset.prose;
+        bgProse = (curLightEntry.strip_bg_tags ?? []).includes("bright sky")
+          ? adaptedScene.prose.replace(/\bbright pink sky\b/gi, "pink sky")
+          : adaptedScene.prose;
         if (scenePreset.unblock_dark && tailNegUsed) {
           tailNegUsed = tailNegUsed
             .split(",")
@@ -3025,8 +3389,8 @@ export function generateScenePrompts(
             .filter((t) => t && !["dark", "harsh shadows", "high contrast"].includes(t.toLowerCase()))
             .join(", ");
         }
-        if (scenePreset.extra_neg) {
-          tailNegUsed = joinTags(tailNegUsed, scenePreset.extra_neg);
+        if (adaptedScene.extraNeg) {
+          tailNegUsed = joinTags(tailNegUsed, adaptedScene.extraNeg);
         }
       } else {
         bgUsed = m.bg_couch;
@@ -3100,7 +3464,7 @@ export function generateScenePrompts(
 
   // Post-pass 2: M6 sweat-stripping pass (skipped if active global lighting explicitly requests sweat)
   if (isM6SoftMorningSkinActive(cfg)) {
-    const activeLightTags = LIGHTING_PRESETS[cfg.lighting_preset]?.tags ?? "";
+    const activeLightTags = resolveLightingPresetEntry(cfg.lighting_preset).tags;
     const wantsSweat =
       cfg.add_extra_sweat ||
       (SKIN_PRESETS[cfg.skin_preset] || "").includes("shiny skin") ||
@@ -3190,9 +3554,7 @@ export function generateScenePrompts(
   const maxPosBudget = Math.max(280, Math.min(504, cfg.pos_token_limit ?? 502));
 
   // Post-pass 4.5: Global Lighting Prose & Badge pass (preserves activeLight.prose 100% intact even when trimming scene prose)
-  const activeLight =
-    LIGHTING_PRESETS[cfg.lighting_preset] ??
-    LIGHTING_PRESETS["🔄 随画风与本幕默认光影（不额外覆盖）"];
+  const activeLight = resolveLightingPresetEntry(cfg.lighting_preset);
   const activeEnv =
     ENV_PRESETS[cfg.env_preset] ?? ENV_PRESETS["🔄 随本幕/体位工具栏默认环境"];
   const isPosTransBg = (sceneId in ALL_POSITIONS_TEMPLATES || sceneId === "FREE") && Boolean(cfg.pos_transparent_bg);
@@ -3244,7 +3606,13 @@ export function generateScenePrompts(
         nextPrompt = `${posPart}${negSuffix}`;
       }
       const isLockedDarkEnv = Boolean(ALL_POSITIONS_TEMPLATES[sceneId]?.lock_scene_env);
-      const skipDaylightProse = isLockedDarkEnv && activeLight.code === "window_golden_rim";
+      const skipDaylightProse =
+        isLockedDarkEnv &&
+        (activeLight.code === "window_golden_rim" || activeLight.code === "front_luminous_wet");
+      const cwSuffix =
+        activeLight.inline_counterweight && !skipDaylightProse && sceneId !== "MA7E"
+          ? `, ${activeLight.inline_counterweight}`
+          : "";
       if (
         cfg.enable_t5_prose &&
         activeLight.prose &&
@@ -3263,7 +3631,9 @@ export function generateScenePrompts(
               "paired with soft velvety gradient eyes, delicate double-eyelid creases, thick curved upper eyelashes, ",
               "paired with "
             )
-            .replace("her camera-facing face and body are", "her silhouette is");
+            .replace("her camera-facing face and body are", "her silhouette is")
+            .replace("her camera-facing face and body rest", "her silhouette rests")
+            .replace("her camera-facing face and body with", "her bare back and silhouette with");
         }
         if (activeLight.code === "milky_peach_3tier_cel") {
           if (!hasTankTopForLight) {
@@ -3285,14 +3655,14 @@ export function generateScenePrompts(
         const negTail = negBlocks1.length > 0 ? `, ${negBlocks1.join(", ")}` : "";
         const buildWithLightProse = (prefixStr: string): string => {
           const sep = prefixStr.endsWith(".") ? " " : ", ";
-          return `${prefixStr}${sep}${resolvedLightProse}${negTail}`;
+          return `${prefixStr}${sep}${resolvedLightProse}${cwSuffix}${negTail}`;
         };
         let candidate = buildWithLightProse(rawPrefix);
         if (countPromptT5Tokens(candidate).api_pos_tokens <= maxPosBudget) {
           nextPrompt = candidate;
         } else {
-          // Trim scene prose first while keeping 100% of Danbooru tags AND resolvedLightProse intact!
-          const overhead = countPromptT5Tokens(resolvedLightProse).api_pos_tokens + 2;
+          // Trim scene prose first while keeping 100% of Danbooru tags, resolvedLightProse, and inline_counterweight intact!
+          const overhead = countPromptT5Tokens(`${resolvedLightProse}${cwSuffix}`).api_pos_tokens + 2;
           const trimmedSceneOnly = enforcePositiveTokenBudget(
             `${rawPrefix}${negTail}`,
             Math.max(240, maxPosBudget - overhead),
@@ -3307,6 +3677,20 @@ export function generateScenePrompts(
               ? candidate
               : enforcePositiveTokenBudget(candidate, maxPosBudget);
         }
+      } else if (cwSuffix && !nextPrompt.startsWith("[Base Prompt]")) {
+        const negBlocks1: string[] = [];
+        const rawPrefix = nextPrompt
+          .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
+            negBlocks1.push(block.trim());
+            return "";
+          })
+          .replace(/^[ ,]+|[ ,]+$/g, "");
+        const negTail = negBlocks1.length > 0 ? `, ${negBlocks1.join(", ")}` : "";
+        const cand = `${rawPrefix}${cwSuffix}${negTail}`;
+        nextPrompt =
+          countPromptT5Tokens(cand).api_pos_tokens <= maxPosBudget
+            ? cand
+            : enforcePositiveTokenBudget(cand, maxPosBudget);
       }
       return {
         ...item,
@@ -3600,13 +3984,17 @@ function splitTopLevelCommaSegments(input: string): string[] {
 }
 
 function findTrailingProseIndex(segments: string[]): number {
+  let endIdx = segments.length;
+  while (endIdx > 0 && /^-0\.\d+::[\s\S]*?::$/.test(segments[endIdx - 1]?.trim() ?? "")) {
+    endIdx--;
+  }
   let lastWeightedIdx = -1;
-  for (let i = 0; i < segments.length; i++) {
+  for (let i = 0; i < endIdx; i++) {
     if (segments[i] && segments[i].includes("::")) {
       lastWeightedIdx = i;
     }
   }
-  for (let i = lastWeightedIdx + 1; i < segments.length; i++) {
+  for (let i = lastWeightedIdx + 1; i < endIdx; i++) {
     const seg = segments[i];
     if (!seg || seg.includes("::")) continue;
     if (/^[A-Z]|^the girl\b/.test(seg) || seg.split(/\s+/).length >= 8) {
@@ -3765,20 +4153,31 @@ function enforcePositiveTokenBudget(
   }
 
   const negBlocks: string[] = [];
-  const posOnly = rawPrompt
+  const rawPosWithCw = rawPrompt
     .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
       negBlocks.push(block.trim());
       return "";
     })
     .replace(/^[ ,]+|[ ,]+$/g, "");
 
-  const rebuild = (candidatePos: string): string => {
+  const rawPosSegs = splitTopLevelCommaSegments(rawPosWithCw);
+  const trailingCwBlocks: string[] = [];
+  while (rawPosSegs.length > 0 && /^-0\.\d+::[\s\S]*?::$/.test(rawPosSegs[rawPosSegs.length - 1]?.trim() ?? "")) {
+    const popped = rawPosSegs.pop();
+    if (popped) trailingCwBlocks.unshift(popped.trim());
+  }
+  const posOnly = rawPosSegs.join(", ");
+
+  const rebuild = (candidatePos: string, includeCw = true): string => {
     const cleanP = candidatePos.replace(/^[ ,]+|[ ,]+$/g, "");
-    return negBlocks.length > 0 ? `${cleanP}, ${negBlocks.join(", ")}` : cleanP;
+    const parts = [cleanP];
+    if (includeCw && trailingCwBlocks.length > 0) parts.push(...trailingCwBlocks);
+    if (negBlocks.length > 0) parts.push(...negBlocks);
+    return parts.filter(Boolean).join(", ");
   };
 
   // Locate start of trailing T5 prose sentence (strictly AFTER the last weighted :: tag)
-  const segments = splitTopLevelCommaSegments(posOnly);
+  const segments = rawPosSegs;
   const proseIdx = findTrailingProseIndex(segments);
 
   if (proseIdx > 0) {
@@ -3827,11 +4226,17 @@ function enforcePositiveTokenBudget(
     if (!allowTagTrim || measureEffectivePosTokens(tagsOnlyCand) <= maxPosTokens) {
       return tagsOnlyCand;
     }
+    if (trailingCwBlocks.length > 0) {
+      const tagsWithoutCw = rebuild(tagsPart, false);
+      if (measureEffectivePosTokens(tagsWithoutCw) <= maxPosTokens) {
+        return tagsWithoutCw;
+      }
+    }
     // Extreme custom-tag overflow fallback: trim trailing unessential tags until within budget
-    const tagTokens = tagsPart.split(/,\s+/);
+    const tagTokens = splitTopLevelCommaSegments(tagsPart);
     while (tagTokens.length > 10) {
       tagTokens.pop();
-      const shrunk = rebuild(tagTokens.join(", "));
+      const shrunk = rebuild(tagTokens.join(", "), false);
       if (measureEffectivePosTokens(shrunk) <= maxPosTokens) {
         return shrunk;
       }
@@ -3839,12 +4244,18 @@ function enforcePositiveTokenBudget(
     return tagsOnlyCand;
   }
 
-  // No trailing T5 prose present: if tags alone still exceed maxPosTokens, trim trailing unessential tags
+  // No trailing T5 prose present: if tags alone still exceed maxPosTokens, drop trailing cw first, then trim tags
   if (allowTagTrim) {
-    const tagTokens = posOnly.split(/,\s+/);
+    if (trailingCwBlocks.length > 0) {
+      const noCw = rebuild(posOnly, false);
+      if (measureEffectivePosTokens(noCw) <= maxPosTokens) {
+        return noCw;
+      }
+    }
+    const tagTokens = splitTopLevelCommaSegments(posOnly);
     while (tagTokens.length > 10) {
       tagTokens.pop();
-      const shrunk = rebuild(tagTokens.join(", "));
+      const shrunk = rebuild(tagTokens.join(", "), false);
       if (measureEffectivePosTokens(shrunk) <= maxPosTokens) {
         return shrunk;
       }
@@ -4897,13 +5308,17 @@ function distributePromptToCharacterCaptions(rawPrompt: string, cfg: CharacterCo
   for (const seg of tagSegs) {
     const bare = stripWeightPrefix(seg);
     if (!bare) continue;
-    // Keep fractional positive-space body counterweights (e.g. -0.45::wide hips::) with Character 1
-    const isFractionalCounterweight = /^-0\.\d+::/.test(seg.trim());
+    // Keep single-tag fractional positive-space body counterweights (e.g. -0.45::wide hips::) with Character 1;
+    // leave multi-tag lighting/style counterweights in [Base Prompt].
+    const isBodyCounterweight =
+      /^-0\.\d+::/.test(seg.trim()) &&
+      !seg.includes(",") &&
+      (bare === "wide hips" || bare === "thick thighs" || bare === "plump");
     if (
       !bare.startsWith("artist:") &&
       !bare.startsWith("year ") &&
       !BASE_PROTECT_TAG_SET.has(bare) &&
-      (char1TagSet.has(bare) || isFractionalCounterweight)
+      (char1TagSet.has(bare) || isBodyCounterweight)
     ) {
       char1Tags.push(seg);
     } else {

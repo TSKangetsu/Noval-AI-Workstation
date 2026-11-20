@@ -1633,6 +1633,203 @@ async function main(): Promise<void> {
     "Rear P17 pull_out must use tight 0.95::spread pussy:: + 1.45::creampie:: + pussy from behind, zero positive gaping, and unblock dripping"
   );
 
+  // (o) Scene-Decoupled Water Ripples + Scene×Light-Axis Camera Rotation + V5 High Hybrid Routing Audit
+  const fiveArtistStyle = "🌸 五画师无描边柔涂厚彩风（shirabi + gomashio + dino + waterring + riichu）";
+  const contreJourLight = "🌅✨ 强逆光过曝眩光 · 深邃暗面 HDR 光比（Contre-Jour HDR Backlight）";
+  const frontLuminousLight = "☀️💧 正面清亮直打光 · 亮白瓷桃水光肌 + 纯白高光（Front-Lit Luminous Skin）";
+  const windowSideLight = "☀️ 窗边过曝白昼侧逆光 · 暖金轮廓柔光（Window Sidelight & Golden Rim）";
+  const cherryWaterScene = "🌸 落樱浅滩水波·粉霞晴空焦散（shallow water, cherry blossoms, caustics, pink sky）";
+  const rugWindowScene = "🪴 落地窗日光绿植 · 绒毛米色地毯木地板（furry beige rug, floor-to-ceiling window, potted plant）";
+
+  // 1) Water-ripple & caustic reflections must be enforced by the water scene across ALL lighting presets
+  for (const lKey of [
+    "🔄 随画风与本幕默认光影（不额外覆盖）",
+    contreJourLight,
+    frontLuminousLight,
+    windowSideLight,
+    "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）",
+  ]) {
+    const [waterItem] = generateScenePrompts(
+      "P22",
+      {
+        ...createDefaultCharacterConfig(),
+        style_preset: fiveArtistStyle,
+        lighting_preset: lKey,
+        pos_scene: cherryWaterScene,
+        pos_male_mode: "🚫 关闭男方（纯单人 1girl, solo · 保留姿势）",
+        pos_show_penis: false,
+      },
+      "3rd"
+    );
+    const spW = splitPromptPosAndNeg(waterItem.prompt);
+    assert(
+      spW.posPrompt.includes("1.32::water reflection::") &&
+        spW.posPrompt.includes("1.32::caustics::") &&
+        spW.posPrompt.includes("1.25::wet skin::") &&
+        spW.posPrompt.includes("water droplets") &&
+        countPromptT5Tokens(waterItem.prompt).api_pos_tokens <= 512,
+      `Water scene must enforce water reflection, caustics, wet skin, and droplets under lighting '${lKey}'`
+    );
+  }
+
+  // 2) Dry indoor scenes must NEVER leak water caustics/reflections from Contre-Jour or Front-Lit lighting
+  for (const lKey of [contreJourLight, frontLuminousLight]) {
+    const [dryItem] = generateScenePrompts(
+      "P22",
+      {
+        ...createDefaultCharacterConfig(),
+        style_preset: fiveArtistStyle,
+        lighting_preset: lKey,
+        pos_scene: rugWindowScene,
+        pos_male_mode: "🚫 关闭男方（纯单人 1girl, solo · 保留姿势）",
+        pos_show_penis: false,
+      },
+      "3rd"
+    );
+    const spD = splitPromptPosAndNeg(dryItem.prompt);
+    assert(
+      !spD.posPrompt.includes("caustics") &&
+        !spD.posPrompt.includes("water reflection") &&
+        !spD.posPrompt.includes("water droplets"),
+      `Lighting '${lKey}' on indoor rug scene must not leak water caustics/reflections`
+    );
+  }
+
+  // 3) Scene × Light-Axis Camera Rotation:
+  //    - Backlit on sunlit_rug_floor_window looks OUTWARD toward blazing floor-to-ceiling window
+  //    - Front-Lit on sunlit_rug_floor_window (both P22 pos_scene and built-in MA10) rotates camera INWARD into room interior!
+  const [rugBacklit] = generateScenePrompts(
+    "P22",
+    {
+      ...createDefaultCharacterConfig(),
+      style_preset: fiveArtistStyle,
+      lighting_preset: contreJourLight,
+      pos_scene: rugWindowScene,
+      pos_male_mode: "🚫 关闭男方（纯单人 1girl, solo · 保留姿势）",
+      pos_show_penis: false,
+    },
+    "3rd"
+  );
+  const spRugBack = splitPromptPosAndNeg(rugBacklit.prompt);
+  assert(
+    spRugBack.posPrompt.includes("1.3::large floor-to-ceiling window::") &&
+      spRugBack.posPrompt.includes("window in background"),
+    "Backlit rug scene must face outward toward the floor-to-ceiling window"
+  );
+
+  const [rugFrontLit] = generateScenePrompts(
+    "P22",
+    {
+      ...createDefaultCharacterConfig(),
+      style_preset: fiveArtistStyle,
+      lighting_preset: frontLuminousLight,
+      pos_scene: rugWindowScene,
+      pos_male_mode: "🚫 关闭男方（纯单人 1girl, solo · 保留姿势）",
+      pos_show_penis: false,
+    },
+    "3rd"
+  );
+  const spRugFront = splitPromptPosAndNeg(rugFrontLit.prompt);
+  assert(
+    spRugFront.posPrompt.includes("living room interior") &&
+      spRugFront.posPrompt.includes("wooden wall, bookshelf") &&
+      !spRugFront.posPrompt.includes("floor-to-ceiling window") &&
+      spRugFront.negPrompt.includes("floor-to-ceiling window") &&
+      spRugFront.negPrompt.includes("looking outside"),
+    "Front-Lit rug scene must rotate camera inward to living room interior and block window behind subject"
+  );
+
+  const [ma10FrontLit] = generateScenePrompts(
+    "MA10",
+    {
+      ...createDefaultCharacterConfig(),
+      style_preset: fiveArtistStyle,
+      lighting_preset: frontLuminousLight,
+    },
+    "3rd"
+  );
+  const spMa10Front = splitPromptPosAndNeg(ma10FrontLit.prompt);
+  assert(
+    spMa10Front.posPrompt.includes("living room interior") &&
+      spMa10Front.posPrompt.includes("wooden wall, bookshelf") &&
+      !spMa10Front.posPrompt.includes("floor-to-ceiling window") &&
+      spMa10Front.negPrompt.includes("floor-to-ceiling window"),
+    "Built-in MA10 window rug scene must also auto-rotate inward to room interior under Front-Lit lighting"
+  );
+
+  const [p22Contre] = generateScenePrompts(
+    "P22",
+    {
+      ...createDefaultCharacterConfig(),
+      style_preset: fiveArtistStyle,
+      lighting_preset: contreJourLight,
+      pos_scene: cherryWaterScene,
+      pos_male_mode: "🚫 关闭男方（纯单人 1girl, solo · 保留姿势）",
+      pos_show_penis: false,
+    },
+    "3rd"
+  );
+  const spP22Contre = splitPromptPosAndNeg(p22Contre.prompt);
+  assert(
+    spP22Contre.posPrompt.includes("0.7::soft shading::") &&
+      spP22Contre.posPrompt.includes("2.05::backlighting::") &&
+      spP22Contre.posPrompt.includes("2.0::shade::, 1.5::dim lighting::, 1.3::dark::") &&
+      spP22Contre.posPrompt.includes("arms folded under chin") &&
+      spP22Contre.posPrompt.includes("parted labia") &&
+      !spP22Contre.posPrompt.includes("bright sky") &&
+      !spP22Contre.posPrompt.includes("spread pussy") &&
+      spP22Contre.posPrompt.includes("-0.92::front lighting, flat lighting, low contrast, washed out::"),
+    "Contre-Jour P22 must apply 0.7::soft shading::, HDR shadow triad, arms folded under chin, parted labia, strip bright sky, and inline counterweight"
+  );
+  assert(
+    !spP22Contre.negPrompt.includes("photorealistic") &&
+      spP22Contre.negPrompt.includes("figure") &&
+      spP22Contre.negPrompt.includes("spread pussy"),
+    "Contre-Jour P22 must unblock photorealistic while keeping figure & spread pussy guarded in UC"
+  );
+
+  const v5HybridPayload = buildNaiGeneratePayload({
+    model: MODEL_V5_FULL,
+    rawPrompt: spP22Contre.posPrompt,
+    customNegPrompt: spP22Contre.negPrompt,
+  });
+  const v5HybridParams = v5HybridPayload.payload.parameters as Record<string, unknown>;
+  const v5PosBase = ((v5HybridParams.v4_prompt as Record<string, unknown>).caption as Record<string, unknown>)
+    .base_caption as string;
+  const v5NegBase = ((v5HybridParams.v4_negative_prompt as Record<string, unknown>).caption as Record<string, unknown>)
+    .base_caption as string;
+  assert.equal(v5HybridParams.scale, 6.5, "V5 High default scale should be 6.5");
+  assert(
+    v5PosBase.includes("-0.95::thick outlines, bold lineart, black outlines, cel shading") &&
+      !v5NegBase.includes("cel shading") &&
+      v5NegBase.includes("crown") &&
+      v5NegBase.includes("figure"),
+    "V5 High hybrid router must move brushwork soft-bans into -0.95::...:: in v4_prompt while keeping hard-bans in v4_negative_prompt"
+  );
+  assert(countPromptT5Tokens(v5PosBase).api_pos_tokens <= 512, "V5 High hybrid positive caption must stay <= 512 T5 tokens");
+
+  const [p22Front] = generateScenePrompts(
+    "P22",
+    {
+      ...createDefaultCharacterConfig(),
+      style_preset: fiveArtistStyle,
+      lighting_preset: frontLuminousLight,
+      pos_scene: cherryWaterScene,
+      pos_male_mode: "🚫 关闭男方（纯单人 1girl, solo · 保留姿势）",
+      pos_show_penis: false,
+    },
+    "3rd"
+  );
+  const spP22Front = splitPromptPosAndNeg(p22Front.prompt);
+  assert(
+    spP22Front.posPrompt.includes("1.85::front lighting::") &&
+      spP22Front.posPrompt.includes("1.42::shiny skin::, 1.24::glossy highlights::") &&
+      spP22Front.posPrompt.includes("1.32::water reflection::, 1.32::caustics::") &&
+      spP22Front.posPrompt.includes("-0.95::backlighting, sun glare") &&
+      countPromptT5Tokens(p22Front.prompt).api_pos_tokens <= 512,
+    "Front-Lit Luminous Skin + Water Scene must combine pure optical lighting with water scene caustics within 512 T5 tokens"
+  );
+
   console.log(
     `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts: 83 Positions x2 + MA0~MA11 + Free Action, POV Optical & Gaze Audit + Femboy/Futa/TN01~TN12/BG01~BG20 Conflict-Free Transform Passed, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
   );

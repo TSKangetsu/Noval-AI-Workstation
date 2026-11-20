@@ -106,6 +106,31 @@ export type NaiSamplerId =
   | "k_dpmpp_2s_ancestral"
   | "k_euler";
 
+const V5_HIGH_INLINE_STYLE_SOFT_NEG_SET = new Set([
+  "thick outlines",
+  "bold lineart",
+  "black outlines",
+  "cel shading",
+  "cel highlight",
+  "flat color",
+  "monochrome",
+  "greyscale",
+  "comic",
+  "manga",
+  "rough sketch",
+  "sketch",
+  "sketchy",
+  "painterly",
+  "oil painting",
+  "oil painting (medium)",
+  "watercolor (medium)",
+  "impasto",
+  "visible brushstrokes",
+  "crosshatching",
+  "hatching (texture)",
+  "screentones",
+]);
+
 export function buildNaiGeneratePayload(options: {
   model?: NaiModelId;
   rawPrompt: string;
@@ -146,7 +171,7 @@ export function buildNaiGeneratePayload(options: {
     : 14;
   const width = options.width ?? 832;
   const height = options.height ?? 1216;
-  const scale = options.scale ?? (supportsCustomStepsAndUc ? 7.0 : 6.0);
+  const scale = options.scale ?? (isV45 ? 7.0 : isV5High ? 6.5 : 6.0);
   const cfgRescale = supportsCustomStepsAndUc ? (options.cfgRescale ?? 0.0) : 0.0;
   const seed = options.seed ?? -1;
   const extraUc = options.extraUc ?? "";
@@ -270,6 +295,80 @@ export function buildNaiGeneratePayload(options: {
     });
   }
 
+  let routedCustomNeg = customNegPrompt;
+  if (isV5High && !keepInlineNegs) {
+    // V5 Full High Dual-Channel Hybrid Routing:
+    // Route brushwork/lineart/shading soft-ban tags into inline -0.95::...:: inside v4_prompt (preventing harsh
+    // brown cel outlines on lineless/soft styles), while keeping structural/entity/anatomy/canon hard-bans in v4_negative_prompt.
+    const existingInlineCwSet = new Set<string>();
+    const cwScanRe = /-0\.\d+::([\s\S]*?)::/g;
+    let mCw: RegExpExecArray | null;
+    while ((mCw = cwScanRe.exec(baseCaption)) !== null) {
+      for (const tok of mCw[1].split(",")) {
+        const cleanTok = tok.trim().toLowerCase();
+        if (cleanTok) existingInlineCwSet.add(cleanTok);
+      }
+    }
+
+    const combinedSceneNeg = deduplicateCommaTags(
+      [customNegPrompt, ...baseInlineNegs].filter(Boolean).join(", ")
+    );
+    if (combinedSceneNeg) {
+      const softCandidates: string[] = [];
+      const hardKept: string[] = [];
+      const wantsLineless = /\b(no lineart|lineless)\b/i.test(baseCaption);
+      for (const rawTok of combinedSceneNeg.split(",")) {
+        const tok = rawTok.trim();
+        if (!tok) continue;
+        const low = tok.toLowerCase();
+        if (V5_HIGH_INLINE_STYLE_SOFT_NEG_SET.has(low)) {
+          if (!existingInlineCwSet.has(low)) {
+            softCandidates.push(tok);
+            existingInlineCwSet.add(low);
+          }
+          if (
+            wantsLineless &&
+            low === "bold lineart" &&
+            !existingInlineCwSet.has("black outlines")
+          ) {
+            softCandidates.push("black outlines");
+            existingInlineCwSet.add("black outlines");
+          }
+        } else {
+          hardKept.push(tok);
+        }
+      }
+
+      baseInlineNegs = [];
+      if (softCandidates.length > 0) {
+        const posCheckPrompt =
+          charCaptions.length > 0
+            ? `[Base Prompt]\n${baseCaption}\n` +
+              charCaptions.map((c, idx) => `[Character ${idx + 1}]\n${c.char_caption}`).join("\n")
+            : baseCaption;
+        const currentPosTokens = countPromptT5Tokens(posCheckPrompt).api_pos_tokens;
+        const softBudget = Math.max(0, 504 - currentPosTokens);
+        const fittedSoft: string[] = [];
+        const overflowToHard: string[] = [];
+        for (const st of softCandidates) {
+          const cand = fittedSoft.length > 0 ? `${fittedSoft.join(", ")}, ${st}` : st;
+          if (softBudget >= 4 && encodeT5Len(cand) <= softBudget) {
+            fittedSoft.push(st);
+          } else if (st.toLowerCase() !== "black outlines") {
+            overflowToHard.push(st);
+          }
+        }
+        if (fittedSoft.length > 0) {
+          baseCaption = `${baseCaption.replace(/[, ]+$/g, "")}, -0.95::${fittedSoft.join(", ")}::`;
+        }
+        if (overflowToHard.length > 0) {
+          hardKept.push(...overflowToHard);
+        }
+      }
+      routedCustomNeg = hardKept.join(", ");
+    }
+  }
+
   const lowerCheck = baseCaption.trim().replace(/[, ]+$/g, "").toLowerCase();
   const suppressAnimeQuality = [
     "pixel art",
@@ -310,8 +409,8 @@ export function buildNaiGeneratePayload(options: {
     if (!wantsNsfw) ucParts.push("nsfw");
     ucParts.push(V4_5_HUMAN_FOCUS_UC_BASE);
   }
-  if (!keepInlineNegs && customNegPrompt) {
-    ucParts.push(customNegPrompt);
+  if (!keepInlineNegs && routedCustomNeg) {
+    ucParts.push(routedCustomNeg);
   }
   if (baseInlineNegs.length > 0) {
     ucParts.push(...baseInlineNegs);

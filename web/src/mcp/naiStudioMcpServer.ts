@@ -63,6 +63,8 @@ class WsBrowserClient {
   public connectedUrl = "";
   public connectedAt = Date.now();
   public lastSeenAt = Date.now();
+  public visible = true;
+  public focusedAt = Date.now();
   private socket: Socket;
   private rxBuf: Buffer = Buffer.alloc(0);
   private fragOpcode = 0;
@@ -236,6 +238,7 @@ class WsBrowserClient {
 // Primary Hub / Relay Bridge Coordinator
 // ============================================================================
 interface PendingRpc {
+  clientId: string;
   resolve: (val: unknown) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -289,8 +292,19 @@ class BridgeHub {
     this.heartbeatTimer.unref?.();
   }
 
+  private rejectPendingForClient(clientId: string, reason: string): void {
+    for (const [reqId, entry] of this.pending.entries()) {
+      if (entry.clientId === clientId) {
+        clearTimeout(entry.timer);
+        this.pending.delete(reqId);
+        entry.reject(new Error(reason));
+      }
+    }
+  }
+
   private evictClient(cli: WsBrowserClient): void {
     this.clients = this.clients.filter((c) => c !== cli);
+    this.rejectPendingForClient(cli.id, "网页连接已断开或超时被重置，请重试");
     cli.destroy();
   }
 
@@ -305,16 +319,19 @@ class BridgeHub {
   private getOrderedClients(): WsBrowserClient[] {
     const alive = this.clients.filter((c) => c.isAlive());
     if (alive.length !== this.clients.length) {
+      const deadIds = new Set(this.clients.filter((c) => !c.isAlive()).map((c) => c.id));
       this.clients = alive;
+      for (const deadId of deadIds) {
+        this.rejectPendingForClient(deadId, "网页连接已断开");
+      }
     }
-    const locals: WsBrowserClient[] = [];
-    const remotes: WsBrowserClient[] = [];
-    for (let i = alive.length - 1; i >= 0; i--) {
-      const c = alive[i];
-      if (c.isLocalClient()) locals.push(c);
-      else remotes.push(c);
-    }
-    return [...locals, ...remotes];
+    return [...alive].sort((a, b) => {
+      const aScore = (a.isLocalClient() ? 2 : 0) + (a.visible ? 1 : 0);
+      const bScore = (b.isLocalClient() ? 2 : 0) + (b.visible ? 1 : 0);
+      if (aScore !== bScore) return bScore - aScore;
+      if (a.focusedAt !== b.focusedAt) return b.focusedAt - a.focusedAt;
+      return b.connectedAt - a.connectedAt;
+    });
   }
 
   private getActiveClient(): WsBrowserClient | null {
@@ -498,6 +515,7 @@ class BridgeHub {
       (cli, msg) => this.onClientMessage(cli, msg),
       (cli) => {
         this.clients = this.clients.filter((c) => c !== cli);
+        this.rejectPendingForClient(cli.id, "网页标签页已刷新或关闭，请重新执行命令");
       }
     );
     this.clients.push(client);
@@ -506,6 +524,19 @@ class BridgeHub {
   private onClientMessage(client: WsBrowserClient, msg: Record<string, unknown>): void {
     if (msg.type === "hello") {
       client.connectedUrl = String(msg.url || "");
+      if (typeof msg.visible === "boolean") client.visible = msg.visible;
+      if (typeof msg.focusedAt === "number" && Number.isFinite(msg.focusedAt)) {
+        client.focusedAt = msg.focusedAt;
+      }
+      return;
+    }
+    if (msg.type === "presence") {
+      if (typeof msg.visible === "boolean") client.visible = msg.visible;
+      if (typeof msg.focusedAt === "number" && Number.isFinite(msg.focusedAt)) {
+        client.focusedAt = msg.focusedAt;
+      } else if (client.visible) {
+        client.focusedAt = Date.now();
+      }
       return;
     }
     if (msg.type === "rpc_response" && typeof msg.id === "string") {
@@ -538,7 +569,7 @@ class BridgeHub {
         reject(new Error(`等待网页响应超时 (${Math.round(timeoutMs / 1000)}s): ${method}`));
       }, timeoutMs);
 
-      this.pending.set(reqId, { resolve, reject, timer });
+      this.pending.set(reqId, { clientId: client.id, resolve, reject, timer });
       client.sendJson({
         type: "rpc_request",
         id: reqId,
@@ -562,8 +593,10 @@ class BridgeHub {
       );
     }
 
-    // For non-generation RPCs with multiple connected clients, fail over swiftly if a background/sleeping tab hangs
-    const allowFailover = method !== "generate" && candidates.length > 1;
+    // Never 6s-timeout or fail over long-running generation RPCs ("trigger_generate" / "generate"),
+    // otherwise a normal 7s+ image render gets aborted and resent to a stale background tab!
+    const isLongGeneration = method === "trigger_generate" || method === "generate";
+    const allowFailover = !isLongGeneration && candidates.length > 1;
     let lastErr: Error | null = null;
     for (let i = 0; i < candidates.length; i++) {
       const cli = candidates[i];
@@ -596,6 +629,7 @@ class BridgeHub {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ method, params, timeoutMs }),
+      signal: AbortSignal.timeout(timeoutMs + 5000),
     });
     const data = (await resp.json()) as { ok: boolean; result?: unknown; error?: string };
     if (!data.ok) {

@@ -97,6 +97,7 @@ export class McpBridgeClient {
   private onCommand: McpCommandHandler;
   private onStatusChange: (status: McpBridgeStatus) => void;
   private clientId = `wb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  private lifecycleBound = false;
 
   constructor(options: {
     enabled: boolean;
@@ -108,6 +109,29 @@ export class McpBridgeClient {
     this.customEndpoint = (options.customEndpoint || "").trim();
     this.onCommand = options.onCommand;
     this.onStatusChange = options.onStatusChange;
+    this.bindLifecycleListeners();
+  }
+
+  private bindLifecycleListeners(): void {
+    if (this.lifecycleBound || typeof window === "undefined" || typeof document === "undefined") {
+      return;
+    }
+    this.lifecycleBound = true;
+    const sendPresence = () => {
+      this.sendJson({
+        type: "presence",
+        clientId: this.clientId,
+        visible: document.visibilityState === "visible",
+        focusedAt: Date.now(),
+      });
+    };
+    document.addEventListener("visibilitychange", sendPresence);
+    window.addEventListener("focus", sendPresence);
+    const closeQuietly = () => {
+      this.cleanupSocket();
+    };
+    window.addEventListener("beforeunload", closeQuietly);
+    window.addEventListener("pagehide", closeQuietly);
   }
 
   public start(): void {
@@ -217,6 +241,8 @@ export class McpBridgeClient {
         clientId: this.clientId,
         url: window.location.href,
         userAgent: navigator.userAgent,
+        visible: typeof document !== "undefined" ? document.visibilityState === "visible" : true,
+        focusedAt: Date.now(),
         connectedAt: Date.now(),
       });
     };
@@ -304,16 +330,23 @@ export class McpBridgeClient {
         height: String(options.height),
         upscaled: options.isUpscaled ? "1" : "0",
       });
-      const resp = await fetch(`${uploadUrl}?${query.toString()}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/octet-stream",
-        },
-        body: new Blob([copy], { type: "image/png" }),
-      });
-      if (!resp.ok) return null;
-      const data = (await resp.json()) as { savedPath?: string };
-      return data.savedPath ?? null;
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 10000);
+      try {
+        const resp = await fetch(`${uploadUrl}?${query.toString()}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/octet-stream",
+          },
+          body: new Blob([copy], { type: "image/png" }),
+          signal: controller.signal,
+        });
+        if (!resp.ok) return null;
+        const data = (await resp.json()) as { savedPath?: string };
+        return data.savedPath ?? null;
+      } finally {
+        window.clearTimeout(timer);
+      }
     } catch {
       return null;
     }

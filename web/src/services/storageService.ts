@@ -1,4 +1,4 @@
-import { BUNDLED_CUSTOM_PRESETS } from "../data/engineConstants";
+import { BUNDLED_CUSTOM_PRESETS, normalizeLightingPresetName } from "../data/engineConstants";
 import {
   createDefaultCharacterConfig,
   createDefaultNaiApiSettings,
@@ -257,6 +257,9 @@ export function loadActiveConfig(): CharacterConfig {
     }
     if (merged.preset_name === "原创白发猫娘 OC（无需作品Tag）") {
       merged.preset_name = "原创角色 OC（无需作品Tag · 用额外常驻Tag定义外貌）";
+    }
+    if (merged.lighting_preset) {
+      merged.lighting_preset = normalizeLightingPresetName(merged.lighting_preset);
     }
     delete (merged as unknown as Record<string, unknown>).eye_color;
     delete (merged as unknown as Record<string, unknown>).hair_tags;

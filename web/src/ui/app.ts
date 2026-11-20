@@ -19,6 +19,7 @@ import {
   MORPH_PRESETS,
   MULTI_ANGLE_CHAPTERS,
   MULTI_ANGLE_TEMPLATES,
+  normalizeLightingPresetName,
   OUTFIT_PRESETS,
   OUTFIT_STATE_PRESETS,
   PIGMENT_PRESETS,
@@ -1352,7 +1353,12 @@ export class WorkbenchApp {
     const btnResetScale = this.el("button", "btn btn-xs", "↺ 推荐值");
     btnResetScale.title = "恢复当前模型的官方默认 Scale 与 Rescale";
     btnResetScale.addEventListener("click", () => {
-      this.apiSettings.scale = this.apiSettings.model === MODEL_V5_FULL_MEDIUM ? 6.0 : 7.0;
+      this.apiSettings.scale =
+        this.apiSettings.model === MODEL_V5_FULL_MEDIUM
+          ? 6.0
+          : this.apiSettings.model === MODEL_V5_FULL
+            ? 6.5
+            : 7.0;
       this.apiSettings.cfg_rescale = 0.0;
       saveApiSettings(this.apiSettings);
       this.syncApiControls();
@@ -3127,10 +3133,20 @@ export class WorkbenchApp {
     this.apiSettings.model = nextModel;
     if (prev !== nextModel) {
       const curScale = Number(this.apiSettings.scale.toFixed(1));
-      if ((nextModel === MODEL_V4_5_FULL || nextModel === MODEL_V5_FULL) && curScale === 6.0) {
+      if (nextModel === MODEL_V4_5_FULL && (curScale === 6.0 || curScale === 6.5)) {
         this.apiSettings.scale = 7.0;
-      } else if (nextModel === MODEL_V5_FULL_MEDIUM && curScale === 7.0) {
-        this.apiSettings.scale = 6.0;
+      } else if (nextModel === MODEL_V5_FULL) {
+        if (curScale <= 6.0 || curScale === 7.0) {
+          this.apiSettings.scale = 6.5;
+        }
+        if (prev === MODEL_V4_5_FULL && this.apiSettings.cfg_rescale > 0) {
+          this.apiSettings.cfg_rescale = 0.0;
+        }
+      } else if (nextModel === MODEL_V5_FULL_MEDIUM) {
+        if (curScale >= 6.5 || curScale === 5.0) {
+          this.apiSettings.scale = 6.0;
+        }
+        this.apiSettings.cfg_rescale = 0.0;
       }
     }
     saveApiSettings(this.apiSettings);
@@ -4014,7 +4030,11 @@ export class WorkbenchApp {
       for (const [k, v] of Object.entries(cfgPatch)) {
         if (k === "eye_color" || k === "hair_tags" || v === undefined) continue;
         if (k in this.cfg) {
-          (this.cfg as unknown as Record<string, unknown>)[k] = v;
+          const nextVal =
+            k === "lighting_preset" && typeof v === "string"
+              ? normalizeLightingPresetName(v)
+              : v;
+          (this.cfg as unknown as Record<string, unknown>)[k] = nextVal;
           changedNotes.push(k);
         }
       }

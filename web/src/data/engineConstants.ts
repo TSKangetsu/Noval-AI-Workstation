@@ -598,33 +598,49 @@ export const STYLE_PRESETS: Record<string, [string, string]> = {
   ]
 };
 
-export const LIGHTING_PRESETS: Record<
-  string,
-  {
-    code: string;
-    tags: string;
-    prose: string;
-    badge: string;
-    strip_head_lighting?: boolean;
-    strip_style_tags?: string[];
-    unblock_neg?: string[];
-    extra_neg?: string;
-  }
-> = {
+export type LightAxisMode = "auto" | "backlit" | "front_lit" | "side_lit" | "moody_dim";
+
+export interface LightingPresetEntry {
+  code: string;
+  light_axis?: LightAxisMode;
+  tags: string;
+  prose: string;
+  badge: string;
+  strip_head_lighting?: boolean;
+  strip_style_tags?: string[];
+  replace_style_tags?: Record<string, string>;
+  strip_bg_tags?: string[];
+  inline_counterweight?: string;
+  unblock_neg?: string[];
+  extra_neg?: string;
+}
+
+export const LIGHTING_PRESETS: Record<string, LightingPresetEntry> = {
   "🔄 随画风与本幕默认光影（不额外覆盖）": {
     code: "auto",
+    light_axis: "auto",
     tags: "",
     prose: "",
     badge: "",
   },
-  "🌅🌊 强逆光过曝眩光 · 自然暗面 + 水波焦散反射（Contre-Jour + Water Caustics）": {
+  "🌅✨ 强逆光过曝眩光 · 深邃暗面 HDR 光比（Contre-Jour HDR Backlight）": {
     code: "contre_jour_caustics",
-    tags: "2.0::backlighting::, 1.75::sun glare::, 1.65::overexposure::, 1.55::bloom::, 1.35::lens flare::, sunbeam, light rays, 1.35::shade::, partially shaded face, dim lighting, 1.35::caustics::, water reflection, depth of field, blurry background",
+    light_axis: "backlit",
+    tags: "2.05::backlighting::, 1.72::sun glare::, 1.55::overexposure::, 1.38::bloom::, 1.28::lens flare::, sunbeam, light rays, 2.0::shade::, 1.5::dim lighting::, 1.3::dark::, 0.96::chiaroscuro::, 0.8::high contrast::, 1.22::partially shaded face::, 1.3::shiny skin::, depth of field, blurry background",
     prose:
-      "Intense contre-jour lighting with a blinding overexposed sun glare behind her; her camera-facing face and body are submerged in natural shadow against the bright light, with glowing halation on her upper silhouette edges and bright water caustics reflecting onto her shaded skin and hair.",
-    badge: "🌅🌊逆光焦散",
+      "High-contrast HDR contre-jour lighting with blinding sun glare behind her; her camera-facing face and body rest in deep dark shadow, accented by bright rim halation and crisp white specular highlights.",
+    badge: "🌅✨强逆光HDR",
     strip_head_lighting: true,
+    replace_style_tags: {
+      "soft shading": "0.7::soft shading::",
+    },
+    strip_bg_tags: ["bright sky"],
+    inline_counterweight:
+      "-0.92::front lighting, flat lighting, low contrast, washed out::, -0.52::purple skin, blue skin, grey skin, dull colors, matte skin::",
     unblock_neg: [
+      "3d",
+      "photorealistic",
+      "realistic",
       "bloom",
       "overexposed",
       "blown out",
@@ -639,8 +655,32 @@ export const LIGHTING_PRESETS: Record<
       "hazy",
     ],
   },
+  "☀️💧 正面清亮直打光 · 亮白瓷桃水光肌 + 纯白高光（Front-Lit Luminous Skin）": {
+    code: "front_luminous_wet",
+    light_axis: "front_lit",
+    tags: "1.85::front lighting::, 1.48::sunlight::, 1.35::bright::, direct lighting, well-lit, 1.15::bloom::, 1.42::shiny skin::, 1.24::glossy highlights::",
+    prose:
+      "Bright direct front sunlight from behind the viewer fully illuminates her camera-facing face and body with creamy luminous warm-peach skin and broad pure-white specular highlights.",
+    badge: "☀️💧正面水光直打",
+    strip_head_lighting: true,
+    inline_counterweight:
+      "-0.95::backlighting, sun glare, lens flare, shade, dark, dim lighting, partially shaded face, silhouette, harsh shadows, underexposed::, -0.6::purple skin, blue skin, grey skin, tan, dark skin, dull colors, matte skin::",
+    unblock_neg: [
+      "3d",
+      "photorealistic",
+      "realistic",
+      "bloom",
+      "overexposed",
+      "blown out",
+      "shiny ass",
+      "light spots",
+      "wet clothes",
+      "glossy highlights",
+    ],
+  },
   "☀️ 窗边过曝白昼侧逆光 · 暖金轮廓柔光（Window Sidelight & Golden Rim）": {
     code: "window_golden_rim",
+    light_axis: "side_lit",
     tags: "1.35::backlighting::, 1.3::sidelighting::, 1.25::sunlight::, overexposure, depth of field, blurry background",
     prose:
       "Intense overexposed white daylight casts a crisp warm golden-white rim light along her slender waist and fingers while bathing her creamy porcelain skin and airy translucent hair in soft diffused light.",
@@ -764,6 +804,26 @@ export const STYLE_BUNDLED_VIBE_PACK: Record<string, string> = {
     "m2_mikozin062_triple",
 };
 
+export const LEGACY_LIGHTING_PRESET_MAP: Record<string, string> = {
+  "🌅🌊 强逆光过曝眩光 · 自然暗面 + 水波焦散反射（Contre-Jour + Water Caustics）":
+    "🌅✨ 强逆光过曝眩光 · 深邃暗面 HDR 光比（Contre-Jour HDR Backlight）",
+  "☀️💧 正面清亮直打光 · 亮白瓷桃水光肌 + 纯白高光焦散（Front-Lit Luminous Wet Skin）":
+    "☀️💧 正面清亮直打光 · 亮白瓷桃水光肌 + 纯白高光（Front-Lit Luminous Skin）",
+};
+
+export function normalizeLightingPresetName(rawName: string | undefined): string {
+  if (!rawName) return "🔄 随画风与本幕默认光影（不额外覆盖）";
+  return LEGACY_LIGHTING_PRESET_MAP[rawName] ?? rawName;
+}
+
+export function resolveLightingPresetEntry(rawName: string | undefined): LightingPresetEntry {
+  const norm = normalizeLightingPresetName(rawName);
+  return (
+    LIGHTING_PRESETS[norm] ??
+    LIGHTING_PRESETS["🔄 随画风与本幕默认光影（不额外覆盖）"]
+  );
+}
+
 export function resolveLightingForStyle(stylePreset: string): string {
   return (
     STYLE_RECOMMENDED_LIGHTING[stylePreset] ??
@@ -797,8 +857,9 @@ export const ENV_PRESETS: Record<
   },
   "🌸 落樱浅滩水波·粉霞晴空焦散（shallow water, cherry blossoms, caustics, pink sky）": {
     code: "cherry_shallow_water",
-    tags: "outdoors, 1.35::shallow water::, in water, ripples, water reflection, 1.35::caustics::, cherry blossoms, falling petals, pink sky, bright sky, shiny skin, wet skin",
-    prose: " in shallow rippling water beneath falling cherry blossom petals and a bright pink sky",
+    tags: "outdoors, 1.35::shallow water::, in water, ripples, 1.32::water reflection::, 1.32::caustics::, cherry blossoms, falling petals, pink sky, bright sky, shiny skin, 1.25::wet skin::, water droplets",
+    prose:
+      " in shallow rippling cyan water beneath falling cherry blossom petals and a bright pink sky, with luminous water-ripple caustics and shimmering reflections dancing across her wet skin",
     badge: "🌸落樱浅滩",
     extra_neg: "indoors, bedroom, bed, couch, sofa, pillow, bedsheet, curtains, ceiling, lamp",
   },
@@ -1430,9 +1491,9 @@ export const POS_SCENE_PRESETS: Record<
   },
   "🌸 落樱浅滩水波·粉霞晴空焦散（shallow water, cherry blossoms, caustics, pink sky）": {
     code: "cherry_shallow_water",
-    tags: "outdoors, 1.35::shallow water::, in water, ripples, water reflection, 1.35::caustics::, cherry blossoms, falling petals, pink sky, bright sky, shiny skin, wet skin",
+    tags: "outdoors, 1.35::shallow water::, in water, ripples, 1.32::water reflection::, 1.32::caustics::, cherry blossoms, falling petals, pink sky, bright sky, shiny skin, 1.25::wet skin::, water droplets",
     prose:
-      " in shallow rippling water beneath falling cherry blossom petals and a bright pink sky, with cyan water caustics reflecting onto her wet skin",
+      " in shallow rippling cyan water beneath falling cherry blossom petals and a bright pink sky, with luminous water-ripple caustics and shimmering reflections dancing across her wet skin",
     badge: " · [🌸落樱浅滩]",
     strip_indoor_pose: true,
     extra_neg: "indoors, bedroom, bed, couch, sofa, pillow, bedsheet, curtains, ceiling, lamp",
@@ -2220,8 +2281,8 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "channel": "vaginal",
     "canvas": "横图 1216x832",
     "pose_pov": "1.45::pov::, 1.35::from above::, high angle, 1.5::from behind::, 1.35::back::, 1.35::facing away::, lying on stomach, bent knees spread wide, soles upward, back of head, bare back, spine",
-    "pose_3rd": "three-quarter overhead rear view, lying on stomach, frog-leg bent knees apart, looking back",
-    "prose_core": "lying prone on her stomach with both knees bent outward to the sides",
+    "pose_3rd": "three-quarter overhead rear view, lying on stomach, arms folded under chin, frog-leg bent knees apart, looking back",
+    "prose_core": "lying prone on her stomach with her arms folded beneath her chin and both knees bent outward to the sides",
     "pov_visibility": "rear_no_face",
     "prose_pov": "lying prone on her stomach facing away with both knees bent wide outward, showing the back of her head and bare back"
   },
