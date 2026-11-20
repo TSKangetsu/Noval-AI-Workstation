@@ -1,0 +1,48 @@
+# P33 · 上下交叠互侍 69 位 (Mutual 69) 精确校准版提示词（POV + 3RD 实测通过）
+
+====================================================================
+一、第一人称 69 POV（男下女上 · 正上方扶臀开胯 + 越过小腹下乳看底部倒置口部）
+实测出图：outputs/_mcp_live_preview/075153_P33_s2506080865.png
+推荐画布：📱 竖图 832x1216 (标准 Portrait) —— 竖构图才能完整拉开「上方近景臀胯 → 中段纤腰下乳 → 底部口侍」纵深！
+====================================================================
+
+【核心校准关键点（为什么之前会画黑布/画成后背？）】
+1. 竖图纵深：69 的 POV 是沿身体纵轴从上到下铺开的，必须用 `832x1216` 竖图（横图会把身体压扁贴合）。
+2. 腹侧朝下（不能剥离前胸前腹！）：女方四肢跪跨在男方身上时，男方从正下方往腿间看过去，看到的是她的 **小腹 (`bare stomach`) + 垂落的下乳 (`underboob, bare breasts`) + 倒置的下巴与嘴唇 (`head down, chin, open mouth, lips around penis`)**！如果套用普通后入的 `rear_no_face` 把 `bare breasts, bare stomach` 删掉并在负面禁掉 `face`，AI 就会把躯干画成怪异反拧的后背，并把嘴画成无五官肉球。
+3. 只禁「眼睛/眉睫」，保留「下巴/嘴唇」：负面用 `eyes, eyebrows, eyelashes, pupils` 代替一刀切的 `face`，既 100% 杜绝扭头看镜头，又让底部的倒置下巴与口含动作清晰自然。
+4. 负面禁 `vaginal, vaginal penetration, insertion`：防止 AI 把底部口侍与上方近景跨骑混淆成普通插入位，同时彻底消除黑色挡裆幻觉布。
+
+【1. P33 POV 模板核心动作段 (pose_pov)】
+1.5::pov::, pov hands, grabbing ass, spreading another's ass, pov crotch, 1.45::from below::, worm's-eye view, 1.45::sixty-nine::, girl on top, straddling, kneeling above, 1.4::facing away::, foreshortening, thighs framing view, 1.35::ass focus::, bare stomach, underboob, bare breasts, head down, chin
+
+【2. P33 POV 双通道解剖段 (sixty_nine organTags)】
+groin, 1.45::pussy::, 1.4::pussy from behind::, 1.35::spread pussy::, labia, 1.45::pussy juice::, 1.45::oral::, 1.45::fellatio::, open mouth, lips around penis, 1.35::penis::, erection, saliva, 1.35::cum::, cum overflow
+
+【3. P33 POV T5 自然语言锚点 (prose_pov)】
+First-person mutual 69 POV from underneath looking down her body: her parted glistening pussy hovers above the camera held open by POV hands, looking past her bare stomach and underboob down to her upside-down chin and mouth sucking his erect penis at the bottom.
+
+【4. P33 POV 专属负面锁 (extraNeg)】
+looking back, looking back over shoulder, looking at viewer, eyes, eyebrows, eyelashes, pupils, front view, profile, vaginal, vaginal penetration, insertion, male back, male head, male shoulders, male face, over-the-shoulder, censor, mosaic censoring, bar censor, panties, leotard, black leotard, covered crotch, covering crotch
+
+
+====================================================================
+二、第三人称客观 69 3RD（男仰卧女上跪跨 · 横向正侧面全身双端清晰互侍）
+实测出图：outputs/_mcp_live_preview/075331_P33_s51671365.png
+推荐画布：🖥️ 横图 1216x832 (标准 Landscape)
+====================================================================
+
+【核心校准关键点】
+1. 锁定纯正侧视全身：`full body, 1.45::from side::, side view, profile, 1.55::sixty-nine::, girl on top, all fours, kneeling astride, straddling head, opposing orientation, head to crotch`。
+2. 双端动作明确配对：同时写明右端 `1.45::cunnilingus::, licking pussy, tongue on pussy` 与左端 `1.45::oral::, 1.45::fellatio::, open mouth, penis in mouth`，并在负面禁掉 `pov, first-person, worm's-eye view, front view, straight-on, vaginal, vaginal penetration, insertion, extra legs, extra arms, fused bodies`，两端动作一次成型零错位。
+
+【1. P33 3RD 模板核心动作段 (pose_3rd)】
+full body, 1.45::from side::, side view, profile, 1.55::sixty-nine::, girl on top, all fours, kneeling astride, straddling head, opposing orientation, head to crotch
+
+【2. P33 3RD 双通道解剖段】
+groin, 1.35::pussy::, 1.45::cunnilingus::, licking pussy, tongue on pussy, 1.45::oral::, 1.45::fellatio::, open mouth, penis in mouth, penis, erection, saliva, saliva trail, 1.35::cum::, cum in mouth, cum overflow, 1.4::pussy juice::
+
+【3. P33 3RD T5 自然语言锚点 (prose_core)】
+Full-body objective side-profile view: a faceless male lies flat on his back performing cunnilingus on petite Javelin straddling upside-down on all fours above him in a mutual sixty-nine position while she leans down sucking his erect penis at the opposite end.
+
+【4. P33 3RD 专属负面锁 (extraNeg)】
+pov, first-person, worm's-eye view, front view, straight-on, vaginal, vaginal penetration, insertion, censor, mosaic censoring, bar censor, panties, leotard, black leotard, covered crotch, covering crotch, extra legs, extra arms, fused bodies

@@ -1,0 +1,52 @@
+# MA7 歪头比耶 + 单手展示 · 孕肚与内部透视纯动作增量词速查
+（已剥离角色外貌、画风与逆兔服装词，换任意角色/穿搭均可直接粘贴到右侧「✍️ 自由手写动作 (FREE)」面板复用）
+推荐画布：📱 竖图 832x1216 (标准 Portrait)
+推荐默认表情：💢 雌小鬼嘲讽·嚣张挑衅（mesugaki, smug, evil smile, jitome, naughty face, blush）
+前置开关：勾选右侧「🔞 自由动作启用 R-18 下半身解剖与汁液」
+
+====================================================================
+一、MA7 歪头比耶 + 单手展示 + 饱满孕肚溢流版（无透视 · 实测原版）
+实测预览：outputs/_mcp_live_preview/193029_FREE_s1368140660.png
+====================================================================
+【1. 自由动作 Tag 框 (free_action_tags)】
+1.55::pregnant::, 1.45::stomach bulge::, 1.35::cum inflation::, round pregnant belly, protruding navel, 1.25::spread pussy::, 1.25::spreading own pussy::, fingers, after vaginal, 1.4::cum::, 1.45::cum in pussy::, 1.4::cumdrip::, cowboy shot, legs apart, head tilt, peace sign near cheek, hand on belly, looking at viewer
+
+【2. 自由动作 T5 自然语言框 (free_action_prose)】
+cowboy shot with legs apart, tilting her head with a peace sign near her cheek while resting her other hand below her taut, round heavily pregnant belly with a protruding navel and spreading her overflowing cum-dripping pussy with her fingers
+
+【3. 配套额外负面框 (extra_uc) —— 防遮挡 + 屏蔽透视剖面】
+covering crotch, covering pussy, covering breasts, censor, mosaic censoring, bar censor, gaping, x-ray, cross-section, uterus, cervix, internal cumshot, cutaway, fetus, baby, embryo, umbilical cord
+
+
+====================================================================
+二、MA7 歪头比耶 + 单手展示 + 饱满孕肚 + 内部子宫透视版（孕肚带透视窗 · 实测版）
+实测预览：outputs/_mcp_live_preview/193107_FREE_s222673538.png
+====================================================================
+【1. 自由动作 Tag 框 (free_action_tags)】
+1.55::pregnant::, 1.45::stomach bulge::, 1.4::cum inflation::, round pregnant belly, protruding navel, 1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.55::cum in uterus::, 1.25::spread pussy::, 1.25::spreading own pussy::, fingers, after vaginal, 1.4::cum::, 1.45::cum in pussy::, 1.4::cumdrip::, cowboy shot, legs apart, head tilt, peace sign near cheek, hand on belly, looking at viewer
+
+【2. 自由动作 T5 自然语言框 (free_action_prose)】
+cowboy shot with legs apart, tilting her head with a peace sign near her cheek while resting her hand below her taut, round heavily pregnant belly with a protruding navel and spreading her overflowing cum-dripping pussy with her fingers, accompanied by an anatomical cross-section x-ray cutaway window showing her distended womb filled to capacity
+
+【3. 配套额外负面框 (extra_uc) —— 注意不要屏蔽 x-ray / uterus】
+covering crotch, covering pussy, covering breasts, censor, mosaic censoring, bar censor, gaping, fetus, baby, embryo, umbilical cord
+
+
+====================================================================
+三、MA7 歪头比耶 + 单手展示 + 平腹内部透视满盈版（纤细平腹 + 子宫透视 · 实测版）
+实测预览：outputs/_mcp_live_preview/193240_FREE_s1539012057.png
+====================================================================
+【1. 自由动作 Tag 框 (free_action_tags)】
+cowboy shot, 1.35::upper body::, legs apart, head tilt, peace sign near cheek, 1.25::spread pussy::, 1.25::spreading own pussy::, fingers, after vaginal, 1.4::cum::, 1.45::cum in pussy::, 1.35::cumdrip::, 1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.55::cum in uterus::, cum inflation, looking at viewer
+
+【2. 自由动作 T5 自然语言框 (free_action_prose)】
+cowboy shot with legs apart, tilting her head with a peace sign near her cheek while spreading her overflowing cum-dripping pussy with her fingers, accompanied by an anatomical cross-section x-ray cutaway showing her womb filled to capacity
+
+【3. 配套额外负面框 (extra_uc)】
+covering crotch, covering pussy, covering breasts, censor, mosaic censoring, bar censor, gaping, pregnant, stomach bulge, fetus, baby, embryo, umbilical cord
+
+
+====================================================================
+【袖珍纤细体型预设 · 圆腹解锁小贴士（用于方案一、二）】
+====================================================================
+若左侧选用了「袖珍娇小/纤细」类体型预设且希望孕肚像实测图那样圆润饱满，可在底部提示词框删掉正面的 `slim waist, -0.40::plump::`（以及服装里的 `midriff, navel`）和全局负面的 `plump, curvy`，保留 `petite, slender, slender legs, narrow shoulders, narrow hips` 即可实现四肢纤细娇小而腹部浑圆鼓胀。

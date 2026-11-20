@@ -555,7 +555,7 @@ async function main(): Promise<void> {
   }
 
   // 12. Verify Tentacle Series TN01~TN04 Built-In Environment Lock & Mixed Sequential Batch Isolation
-  assert.equal(ALL_POSITIONS_CHAPTERS.length, 55, "Expected 55 positions (P01..P51 + TN01..TN04)");
+  assert.equal(ALL_POSITIONS_CHAPTERS.length, 83, "Expected 83 positions (P01..P51 + TN01..TN12 + BG01..BG20)");
   const mixedBatchCfg = {
     ...createDefaultCharacterConfig(),
     body_preset: "袖珍娇小窄肩细腰笔直长腿·微Q萌圆脸（0.25 chibi + short slender mini-lady）",
@@ -699,7 +699,7 @@ async function main(): Promise<void> {
   );
 
   // 13. Verify MA7 Derived Variants (MA7A, MA7B, MA7C — Top Buttons Only, Single MA7 in Bottom List)
-  assert.equal(MULTI_ANGLE_CHAPTERS.length, 11, "Bottom Multi-Angle list must remain MA0~MA10 (11 items)");
+  assert.equal(MULTI_ANGLE_CHAPTERS.length, 12, "Bottom Multi-Angle list must remain MA0~MA11 (12 items)");
   const ma7TestCfg = {
     ...createDefaultCharacterConfig(),
     body_preset: "袖珍娇小窄肩细腰笔直长腿·微Q萌圆脸（0.25 chibi + short slender mini-lady）",
@@ -1333,8 +1333,308 @@ async function main(): Promise<void> {
     "STYLE_PRESETS must include 安定萌化futa专用 with 0.28::artist:pija (pianiishimo):: at the tail of the 5-artist chain"
   );
 
+  // (f) Unified Character Prompt Distribution ([Base Prompt] + [Character 1] [+ [Character 2] on 3rd-person 2-person scenes])
+  const [p33FutaPov] = generateScenePrompts("P33", futaNoBallsCfg, "pov");
+  const [p33Futa3rd] = generateScenePrompts("P33", futaNoBallsCfg, "3rd");
+  assert(
+    p33FutaPov.prompt.startsWith("[Base Prompt]\n") &&
+      p33FutaPov.prompt.includes("[Character 1]\ngirl,") &&
+      !p33FutaPov.prompt.includes("[Character 2]"),
+    "POV 2-person scene must distribute into [Base Prompt] + [Character 1] without forcing [Character 2] into frame"
+  );
+  assert(
+    p33Futa3rd.prompt.startsWith("[Base Prompt]\n") &&
+      p33Futa3rd.prompt.includes("[Character 1]\ngirl,") &&
+      p33Futa3rd.prompt.includes("[Character 2]\nboy, faceless male"),
+    "3rd-person 2-person scene must distribute into [Base Prompt] + [Character 1] + [Character 2]"
+  );
+
+  // (g) V5 Medium single-512 inline-negative budget guard must NOT push [Character 1] past 512,
+  // while V5 High keeps full separated positive/negative channels untouched.
+  const spP33Futa3rd = splitPromptPosAndNeg(p33Futa3rd.prompt);
+  const medPayload = buildNaiGeneratePayload({
+    model: MODEL_V5_FULL_MEDIUM,
+    rawPrompt: spP33Futa3rd.posPrompt,
+    customNegPrompt: spP33Futa3rd.negPrompt,
+    ucPresetMode: "heavy",
+  }).payload.parameters as {
+    v4_prompt: { caption: { base_caption: string; char_captions: Array<{ char_caption: string }> } };
+  };
+  const medCombinedPrompt =
+    `[Base Prompt]\n${medPayload.v4_prompt.caption.base_caption}\n` +
+    medPayload.v4_prompt.caption.char_captions
+      .map((c, idx) => `[Character ${idx + 1}]\n${c.char_caption}`)
+      .join("\n");
+  const medTok = countPromptT5Tokens(medCombinedPrompt);
+  assert(
+    medTok.web_single_box_tokens <= 512 &&
+      medPayload.v4_prompt.caption.char_captions.length === 2 &&
+      medPayload.v4_prompt.caption.char_captions[0].char_caption.includes("futanari"),
+    `V5 Medium must budget-cap inline negatives so combined tokens (${medTok.web_single_box_tokens}) stay <= 512 and [Character 1] is never truncated`
+  );
+  const highPayload = buildNaiGeneratePayload({
+    model: MODEL_V5_FULL,
+    rawPrompt: spP33Futa3rd.posPrompt,
+    customNegPrompt: spP33Futa3rd.negPrompt,
+    ucPresetMode: "none",
+  }).payload.parameters as {
+    v4_prompt: { caption: { base_caption: string; char_captions: Array<{ char_caption: string }> } };
+    v4_negative_prompt: { caption: { base_caption: string } };
+  };
+  assert(
+    !highPayload.v4_prompt.caption.base_caption.includes("-2::") &&
+      highPayload.v4_negative_prompt.caption.base_caption.includes("testicles") &&
+      highPayload.v4_prompt.caption.char_captions.length === 2,
+    "V5 High must remain completely unaffected with separated positive/negative channels"
+  );
+
+  // (h) MA7E Dedicated Futa Two-Handed Spread Variant (v4 Final: With-Balls & Ball-Free)
+  const [ma7eWithBalls] = generateScenePrompts("MA7E", futaWithBallsCfg, "3rd");
+  const spMa7eWb = splitPromptPosAndNeg(ma7eWithBalls.prompt);
+  const ma7eWbNeg = new Set(spMa7eWb.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    spMa7eWb.posPrompt.includes("1.45::futa with balls::") &&
+      spMa7eWb.posPrompt.indexOf("1.55::futanari::") < spMa7eWb.posPrompt.indexOf("rating:explicit") &&
+      spMa7eWb.posPrompt.includes("1.25::asymmetrical pose::") &&
+      spMa7eWb.posPrompt.includes("wide spread legs") &&
+      spMa7eWb.posPrompt.includes("1.35::small penis::") &&
+      spMa7eWb.posPrompt.includes("1.3::erection::") &&
+      spMa7eWb.posPrompt.includes("1.35::holding own testicles::") &&
+      spMa7eWb.posPrompt.includes("1.35::spread pussy::") &&
+      !spMa7eWb.posPrompt.includes("holding own penis") &&
+      spMa7eWb.posPrompt.includes("untouched and centered pointing upward") &&
+      spMa7eWb.posPrompt.includes("to the viewer's left") &&
+      spMa7eWb.posPrompt.includes("right half") &&
+      ma7eWbNeg.has("peace sign") &&
+      ma7eWbNeg.has("holding own penis") &&
+      ma7eWbNeg.has("grabbing penis") &&
+      ma7eWbNeg.has("hand on hip") &&
+      ma7eWbNeg.has("hand on thigh") &&
+      ma7eWbNeg.has("arm at side") &&
+      ma7eWbNeg.has("arms at sides") &&
+      !ma7eWbNeg.has("testicles") &&
+      !ma7eWbNeg.has("dripping"),
+    "MA7E v4 With-Balls must keep shaft untouched/upright, lock holding own penis + anti-drift hand UC, and preserve left/right prose"
+  );
+  const [ma7eNoBalls] = generateScenePrompts("MA7E", futaNoBallsCfg, "3rd");
+  const spMa7eNb = splitPromptPosAndNeg(ma7eNoBalls.prompt);
+  const ma7eNbNeg = new Set(spMa7eNb.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    spMa7eNb.posPrompt.includes("1.45::futa without balls::") &&
+      !spMa7eNb.posPrompt.includes("holding own testicles") &&
+      !spMa7eNb.posPrompt.includes("small testicles") &&
+      spMa7eNb.posPrompt.includes("1.35::small penis::") &&
+      spMa7eNb.posPrompt.includes("1.35::spread pussy::") &&
+      spMa7eNb.posPrompt.includes("pull open the left side") &&
+      ma7eNbNeg.has("testicles") &&
+      ma7eNbNeg.has("holding own penis") &&
+      ma7eNbNeg.has("peace sign"),
+    "MA7E v4 Ball-Free must swap to futa without balls, strip testicle tags, update prose, and lock testicles/holding own penis in UC"
+  );
+
+  // (i) Tentacle Series TN05-TN12 (Female / Femboy / Futa 3-Way Routing)
+  for (const tnId of ["TN05", "TN06", "TN07", "TN08", "TN09", "TN10", "TN11", "TN12"] as const) {
+    assert(tnId in ALL_POSITIONS_TEMPLATES, `Missing tentacle template ${tnId}`);
+  }
+  const [tn05Fb] = generateScenePrompts("TN05", femboySoloCfg, "3rd");
+  const spTn05Fb = splitPromptPosAndNeg(tn05Fb.prompt);
+  const tn05FbNeg = new Set(spTn05Fb.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    spTn05Fb.posPrompt.includes("tentacles on chest") &&
+      spTn05Fb.posPrompt.includes("1.45::coiled tentacle around penis::") &&
+      spTn05Fb.posPrompt.includes("1.45::male ejaculation::") &&
+      tn05FbNeg.has("2boys") &&
+      tn05FbNeg.has("uterus") &&
+      !tn05FbNeg.has("penis"),
+    "Femboy TN05 must swap tentacles on breasts -> chest, inject coiled milking sleeve, keep 2boys locked, and unblock penis"
+  );
+  const [tn10Futa] = generateScenePrompts("TN10", futaNoBallsCfg, "3rd");
+  const spTn10Futa = splitPromptPosAndNeg(tn10Futa.prompt);
+  assert(
+    tn10Futa.canvas === "横图 1216x832" &&
+      spTn10Futa.posPrompt.includes("1.55::futanari::") &&
+      spTn10Futa.posPrompt.includes("1.45::coiled tentacle around penis::") &&
+      spTn10Futa.posPrompt.includes("1.45::x-ray::"),
+    "Futa TN10 must be landscape 1216x832 with simultaneous coiled milking sleeve and uterus x-ray"
+  );
+  const [tn12Fb] = generateScenePrompts("TN12", { ...femboySoloCfg, enable_uterus_xray: false }, "3rd");
+  const spTn12Fb = splitPromptPosAndNeg(tn12Fb.prompt);
+  const tn12FbNeg = new Set(spTn12Fb.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    spTn12Fb.posPrompt.includes("1.55::translucent belly::") &&
+      spTn12Fb.posPrompt.includes("1.5::pregnant::") &&
+      tn12FbNeg.has("uterus") &&
+      tn12FbNeg.has("x-ray"),
+    "Femboy TN12 must keep translucent glowing egg-belly while locking uterus and x-ray cutaway in UC"
+  );
+
+  // (j) Fantasy Hive & Doujin Arthropod Series BG01-BG20 (Three-Tier Hygiene UC + 3-Way Gender Routing)
+  for (let i = 1; i <= 20; i++) {
+    const bgId = `BG${String(i).padStart(2, "0")}`;
+    assert(bgId in ALL_POSITIONS_TEMPLATES, `Missing insect/hive template ${bgId}`);
+  }
+  const [bg07] = generateScenePrompts("BG07", povAuditCfg, "3rd");
+  const spBg07 = splitPromptPosAndNeg(bg07.prompt);
+  const bg07Neg = new Set(spBg07.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    spBg07.posPrompt.includes("1.6::worms::") &&
+      spBg07.posPrompt.includes("1.5::larvae::") &&
+      !bg07Neg.has("maggots") &&
+      bg07Neg.has("round eggs"),
+    "BG07 (Tier B Larvae) must unblock maggots and block round eggs"
+  );
+  const [bg14] = generateScenePrompts("BG14", futaNoBallsCfg, "3rd");
+  const spBg14 = splitPromptPosAndNeg(bg14.prompt);
+  const bg14Neg = new Set(spBg14.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    bg14.canvas === "横图 1216x832" &&
+      spBg14.posPrompt.includes("1.6::giant spider::") &&
+      spBg14.posPrompt.includes("1.55::futanari::") &&
+      !bg14Neg.has("extra legs") &&
+      bg14Neg.has("extra human legs"),
+    "BG14 (Tier C Giant Spider) must be landscape 1216x832 and use extra human legs instead of bare extra legs"
+  );
+  const [bg20Fb] = generateScenePrompts("BG20", femboySoloCfg, "3rd");
+  const spBg20Fb = splitPromptPosAndNeg(bg20Fb.prompt);
+  const bg20FbNeg = new Set(spBg20Fb.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    bg20Fb.canvas === "横图 1216x832" &&
+      spBg20Fb.posPrompt.includes("1.6::maggots::") &&
+      spBg20Fb.posPrompt.includes("1.45::intestines::") &&
+      !bg20FbNeg.has("maggots") &&
+      !bg20FbNeg.has("extra legs") &&
+      bg20FbNeg.has("uterus") &&
+      bg20FbNeg.has("2boys"),
+    "Femboy BG20 (Tier C X-Ray Maggot Overflow) must route to intestines, unblock maggots, avoid bare extra legs, and lock uterus/2boys"
+  );
+
+  // (k) BG13-BG17 All-Gender Routing & Dual-Camera View B (Groin-to-Head POV) Audit
+  for (const bgId of ["BG13", "BG14", "BG15", "BG16", "BG17"] as const) {
+    const [povItem] = generateScenePrompts(bgId, { ...femboySoloCfg, enable_uterus_xray: false }, "pov");
+    const spPov = splitPromptPosAndNeg(povItem.prompt);
+    const negPov = new Set(spPov.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+    assert(
+      povItem.canvas === "竖图 832x1216" &&
+        !spPov.posPrompt.startsWith("[Base Prompt]") &&
+        spPov.posPrompt.includes("1.45::pov::") &&
+        spPov.posPrompt.includes("1.5::foreshortening::") &&
+        spPov.posPrompt.includes("head at top") &&
+        !spPov.posPrompt.includes("1.45::vaginal::") &&
+        negPov.has("upside-down") &&
+        negPov.has("inverted") &&
+        negPov.has("head at bottom") &&
+        negPov.has("legs at top") &&
+        !negPov.has("extra legs"),
+      `Femboy ${bgId} View B POV must be vertical 832x1216 flat prompt, front-load head at top, strip vaginal, lock anti-inversion UC, and avoid bare extra legs`
+    );
+    if (bgId === "BG13" || bgId === "BG14" || bgId === "BG16") {
+      assert(
+        spPov.posPrompt.includes("1.5::anal::") && spPov.posPrompt.includes("1.45::male penetrated::"),
+        `Femboy ${bgId} must cleanly reroute vaginal -> anal + male penetrated even after multi-word insect descriptors`
+      );
+    }
+    if (bgId === "BG15") {
+      assert(
+        spPov.posPrompt.includes("1.6::2 creatures::") && spPov.posPrompt.includes("1.55::groin parasite::"),
+        "BG15 View B (Type B-4) must inject 1.6::2 creatures:: and 1.55::groin parasite::"
+      );
+    }
+  }
+
+  // (l) 5-Mode Internal X-Ray Matrix (X-1..X-5) on TN01-TN12 & BG01-BG20
+  const xrayFutaCfg = { ...futaNoBallsCfg, enable_uterus_xray: true };
+  const xrayFemboyCfg = { ...femboySoloCfg, enable_uterus_xray: true };
+  // Mode X-2: BG15 stomach x-ray (drops secondary groin bug, no uterus)
+  const [bg15Xray] = generateScenePrompts("BG15", xrayFutaCfg, "3rd");
+  const spBg15X = splitPromptPosAndNeg(bg15Xray.prompt);
+  assert(
+    spBg15X.posPrompt.includes("1.5::stomach x-ray::") &&
+      !spBg15X.posPrompt.includes("1.55::groin parasite::") &&
+      !spBg15X.posPrompt.includes("1.5::uterus::"),
+    "Mode X-2 BG15 must use stomach x-ray and drop secondary groin parasite"
+  );
+  // Mode X-3: BG17 Femboy intestines + eggs + locks uterus/cervix/womb
+  const [bg17XrayFb] = generateScenePrompts("BG17", xrayFemboyCfg, "3rd");
+  const spBg17XFb = splitPromptPosAndNeg(bg17XrayFb.prompt);
+  const bg17XFbNeg = new Set(spBg17XFb.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    spBg17XFb.posPrompt.includes("1.55::x-ray::") &&
+      spBg17XFb.posPrompt.includes("1.5::intestines::") &&
+      bg17XFbNeg.has("uterus") &&
+      bg17XFbNeg.has("womb") &&
+      bg17XFbNeg.has("medical diagram"),
+    "Mode X-3 Femboy BG17 must emit intestines x-ray and lock uterus/womb/medical diagram"
+  );
+  // Mode X-4: BG14 View A (side-profile abdominal x-ray cutaway) vs View B (cross-section inset)
+  const [bg14Xray3rd] = generateScenePrompts("BG14", xrayFutaCfg, "3rd");
+  const [bg14XrayPov] = generateScenePrompts("BG14", xrayFutaCfg, "pov");
+  assert(
+    bg14Xray3rd.prompt.includes("side-profile abdominal x-ray cutaway") &&
+      bg14XrayPov.prompt.includes("cross-section inset"),
+    "Mode X-4 BG14 must use side-profile cutaway on View A and cross-section inset on View B"
+  );
+  // Mode X-5: BG06 explicit X-Ray overrides translucent belly into sharp cutaway
+  const [bg06Xray] = generateScenePrompts("BG06", xrayFutaCfg, "3rd");
+  const spBg06X = splitPromptPosAndNeg(bg06Xray.prompt);
+  assert(
+    spBg06X.posPrompt.includes("1.55::x-ray::") &&
+      spBg06X.posPrompt.includes("1.55::eggs in uterus::") &&
+      !spBg06X.posPrompt.includes("translucent belly"),
+    "Mode X-5 BG06 with explicit X-Ray must replace translucent belly with sharp eggs-in-uterus cutaway"
+  );
+
+  // (m) MA11 Ultra Close-Up Wide-Angle V-Legs Showcase (Female / Femboy / Futa)
+  const [ma11Fem] = generateScenePrompts("MA11", povAuditCfg, "3rd");
+  const spMa11Fem = splitPromptPosAndNeg(ma11Fem.prompt);
+  const ma11FemNeg = new Set(spMa11Fem.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    ma11Fem.canvas === "竖图 832x1216" &&
+      spMa11Fem.posPrompt.includes("1.65::extreme foreshortening::") &&
+      spMa11Fem.posPrompt.includes("1.5::v-shaped legs::") &&
+      spMa11Fem.posPrompt.includes("1.65::pussy focus::") &&
+      ma11FemNeg.has("upside-down") &&
+      ma11FemNeg.has("head at bottom"),
+    "MA11 Female must emit ultra close-up wide-angle V-legs with anti-inversion UC"
+  );
+  const [ma11Fb] = generateScenePrompts("MA11", { ...femboySoloCfg, enable_uterus_xray: false }, "3rd");
+  const spMa11Fb = splitPromptPosAndNeg(ma11Fb.prompt);
+  assert(
+    spMa11Fb.posPrompt.includes("1.45::1boy::") &&
+      spMa11Fb.posPrompt.includes("1.55::flat chest::") &&
+      !spMa11Fb.posPrompt.includes("pussy focus") &&
+      !spMa11Fb.posPrompt.includes("pussy"),
+    "MA11 Femboy must strip pussy focus / pussy and preserve flat chest"
+  );
+  const [ma11Futa] = generateScenePrompts("MA11", { ...futaNoBallsCfg, enable_uterus_xray: false }, "3rd");
+  const spMa11Futa = splitPromptPosAndNeg(ma11Futa.prompt);
+  assert(
+    spMa11Futa.posPrompt.includes("1.55::futanari::") &&
+      spMa11Futa.posPrompt.includes("pussy") &&
+      !spMa11Futa.posPrompt.includes("pussy focus"),
+    "MA11 Futa must keep vertical triad (futanari + pussy) while stripping pussy focus"
+  );
+
+  // (n) All-Stage Tight-Opening Calibration (No positive gaping, 0.95 spread + creampie on pull_out, gaping anus UC, no dripping block)
+  const pullOutRearCfg = {
+    ...povAuditCfg,
+    pos_stage: "🔗 4. 事后拔出 · 脱出拉丝/外射（pull out · 刚拔出拉丝与穴口白浊流淌）",
+  };
+  const [p17Pull] = generateScenePrompts("P17", pullOutRearCfg, "3rd");
+  const spP17Pull = splitPromptPosAndNeg(p17Pull.prompt);
+  const p17PullNeg = new Set(spP17Pull.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    !spP17Pull.posPrompt.includes("gaping") &&
+      spP17Pull.posPrompt.includes("0.95::spread pussy::") &&
+      spP17Pull.posPrompt.includes("1.45::creampie::") &&
+      spP17Pull.posPrompt.includes("1.4::pussy from behind::") &&
+      !spP17Pull.posPrompt.includes("cum on stomach") &&
+      !p17PullNeg.has("dripping") &&
+      !p17PullNeg.has("gaping"),
+    "Rear P17 pull_out must use tight 0.95::spread pussy:: + 1.45::creampie:: + pussy from behind, zero positive gaping, and unblock dripping"
+  );
+
   console.log(
-    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts: 55 Positions x2 + MA0~MA10 + Free Action, POV Optical & Gaze Audit + Femboy/Futa Conflict-Free Transform Passed, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
+    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts: 83 Positions x2 + MA0~MA11 + Free Action, POV Optical & Gaze Audit + Femboy/Futa/TN01~TN12/BG01~BG20 Conflict-Free Transform Passed, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
   );
 }
 

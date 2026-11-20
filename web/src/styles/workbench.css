@@ -389,24 +389,57 @@ textarea:disabled {
    THREE-COLUMN STUDIO WORKSPACE
    ========================================= */
 .studio-workspace {
+  --col-left-w: 344px;
+  --col-right-w: 400px;
   display: grid;
-  grid-template-columns: 344px minmax(0, 1fr) 376px;
+  grid-template-columns: var(--col-left-w) 5px minmax(260px, 1fr) 5px var(--col-right-w);
   flex: 1;
   min-height: 0;
   overflow: hidden;
 }
 
+.col-resizer {
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 6;
+  touch-action: none;
+  transition: background 0.14s ease;
+}
+.col-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background: var(--border-subtle);
+  transition: background 0.14s ease, width 0.14s ease, left 0.14s ease;
+}
+.col-resizer:hover::after,
+.col-resizer.dragging::after {
+  left: 1px;
+  width: 3px;
+  background: var(--accent);
+}
+.studio-workspace.is-resizing {
+  cursor: col-resize;
+}
+
 .studio-col {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .col-left {
   background: var(--bg-col);
-  border-right: 1px solid var(--border-subtle);
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 8px;
   gap: 8px;
 }
@@ -419,7 +452,8 @@ textarea:disabled {
 
 .col-right {
   background: var(--bg-col);
-  border-left: 1px solid var(--border-subtle);
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 /* =========================================
@@ -920,11 +954,40 @@ textarea:disabled {
 
 /* Collapsible Bottom Prompt Drawer */
 .prompt-drawer {
+  --prompt-drawer-h: 192px;
   background: var(--bg-header);
   border-top: 1px solid var(--border-strong);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+.prompt-drawer-resizer {
+  height: 8px;
+  cursor: row-resize;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  flex-shrink: 0;
+}
+.prompt-drawer-resizer::after {
+  content: "";
+  width: 36px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background 0.14s ease, width 0.14s ease;
+}
+.prompt-drawer-resizer:hover::after,
+.prompt-drawer-resizer.dragging::after {
+  width: 56px;
+  background: var(--accent);
+}
+.prompt-drawer.collapsed .prompt-drawer-resizer {
+  display: none;
 }
 
 .prompt-drawer-bar {
@@ -998,7 +1061,9 @@ textarea:disabled {
   gap: 8px;
   padding: 6px 10px 10px;
   border-top: 1px solid var(--border-subtle);
-  height: 192px;
+  height: var(--prompt-drawer-h, 192px);
+  min-height: 110px;
+  overflow: hidden;
 }
 .prompt-drawer.collapsed .prompt-drawer-body {
   display: none;
@@ -1060,6 +1125,21 @@ textarea:disabled {
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+}
+.action-mode-bar .seg-group {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+.action-mode-bar .seg-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 5px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ctrl-tag-lbl {
@@ -1156,10 +1236,14 @@ textarea:disabled {
 .pose-search-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 5px;
+  min-width: 0;
+  max-width: 100%;
 }
 .pose-search-row input {
-  flex: 1;
+  flex: 1 1 110px;
+  min-width: 0;
   height: 28px;
 }
 
@@ -1184,7 +1268,11 @@ textarea:disabled {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 6px 8px;
   border-radius: var(--radius-sm);
   background: var(--bg-card);
@@ -1396,9 +1484,13 @@ textarea:disabled {
   .studio-col.mobile-active {
     display: flex;
   }
+  .col-resizer {
+    display: none;
+  }
   .prompt-drawer-body {
     grid-template-columns: 1fr;
-    height: 240px;
+    height: var(--prompt-drawer-h, 240px);
+    overflow-y: auto;
   }
 }
 
@@ -1614,9 +1706,17 @@ textarea:disabled {
     width: 100%;
     flex-wrap: wrap;
   }
+  .prompt-drawer-resizer {
+    height: 18px;
+  }
+  .prompt-drawer-resizer::after {
+    width: 44px;
+    height: 4px;
+  }
   .prompt-drawer-body {
-    height: 260px;
+    height: var(--prompt-drawer-h, 260px);
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
   .prompt-box-col textarea {
     min-height: 92px;

@@ -143,7 +143,7 @@ export class WorkbenchApp {
 
   private actionMode: ActionMode = "positions";
   private activeSceneId = "P01";
-  private activeMa7Variant: "" | "MA7A" | "MA7B" | "MA7C" | "MA7D" = "";
+  private activeMa7Variant: "" | "MA7A" | "MA7B" | "MA7C" | "MA7D" | "MA7E" = "";
   private activePosCategory = POS_CATEGORIES[0];
   private posSearchQuery = "";
   private checkedPositionIds = new Set<string>(["P01"]);
@@ -331,12 +331,17 @@ export class WorkbenchApp {
     // 1. Top Studio Bar
     this.root.appendChild(this.buildTopBar());
 
-    // 2. Three-Column Workspace
+    // 2. Three-Column Workspace with Drag-Resizable Left & Right Dividers
     const ws = this.el("div", "studio-workspace");
     this.elColLeft = this.buildLeftColumn();
     this.elColCenter = this.buildCenterColumn();
     this.elColRight = this.buildRightColumn();
-    ws.append(this.elColLeft, this.elColCenter, this.elColRight);
+    const resizerLeft = this.el("div", "col-resizer resizer-left");
+    resizerLeft.title = "拖动调节左侧栏宽度（双击重置）";
+    const resizerRight = this.el("div", "col-resizer resizer-right");
+    resizerRight.title = "拖动调节右侧栏宽度（双击重置）";
+    ws.append(this.elColLeft, resizerLeft, this.elColCenter, resizerRight, this.elColRight);
+    this.setupColumnResizers(ws, resizerLeft, resizerRight);
     this.root.appendChild(ws);
 
     // 3. Mobile Bottom Tab Bar (< 1120px)
@@ -379,6 +384,103 @@ export class WorkbenchApp {
     for (const [k, btn] of this.elMobileBtns.entries()) {
       btn.classList.toggle("btn-primary", k === this.mobileCol);
     }
+  }
+
+  private setupColumnResizers(
+    ws: HTMLElement,
+    resizerLeft: HTMLElement,
+    resizerRight: HTMLElement
+  ): void {
+    const LS_KEY = "nai_wb_col_widths_v1";
+    const DEF_LEFT = 344;
+    const DEF_RIGHT = 400;
+    const MIN_LEFT = 260;
+    const MAX_LEFT = 560;
+    const MIN_RIGHT = 300;
+    const MAX_RIGHT = 640;
+    const MIN_CENTER = 260;
+
+    let leftW = DEF_LEFT;
+    let rightW = DEF_RIGHT;
+    try {
+      const saved = JSON.parse(localStorage.getItem(LS_KEY) || "null") as {
+        left?: number;
+        right?: number;
+      } | null;
+      if (saved) {
+        if (typeof saved.left === "number" && Number.isFinite(saved.left)) {
+          leftW = Math.max(MIN_LEFT, Math.min(MAX_LEFT, Math.round(saved.left)));
+        }
+        if (typeof saved.right === "number" && Number.isFinite(saved.right)) {
+          rightW = Math.max(MIN_RIGHT, Math.min(MAX_RIGHT, Math.round(saved.right)));
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+
+    const applyWidths = (persist = false): void => {
+      const total = ws.clientWidth || window.innerWidth;
+      if (total > 1120) {
+        const maxLeftAllowed = Math.max(MIN_LEFT, Math.min(MAX_LEFT, total - rightW - MIN_CENTER - 10));
+        leftW = Math.max(MIN_LEFT, Math.min(maxLeftAllowed, leftW));
+        const maxRightAllowed = Math.max(MIN_RIGHT, Math.min(MAX_RIGHT, total - leftW - MIN_CENTER - 10));
+        rightW = Math.max(MIN_RIGHT, Math.min(maxRightAllowed, rightW));
+      }
+      ws.style.setProperty("--col-left-w", `${leftW}px`);
+      ws.style.setProperty("--col-right-w", `${rightW}px`);
+      if (persist) {
+        try {
+          localStorage.setItem(LS_KEY, JSON.stringify({ left: leftW, right: rightW }));
+        } catch {
+          // ignore
+        }
+      }
+    };
+    applyWidths(false);
+
+    const bindDrag = (handle: HTMLElement, side: "left" | "right"): void => {
+      handle.addEventListener("dblclick", () => {
+        if (side === "left") leftW = DEF_LEFT;
+        else rightW = DEF_RIGHT;
+        applyWidths(true);
+      });
+      handle.addEventListener("pointerdown", (ev: PointerEvent) => {
+        ev.preventDefault();
+        handle.setPointerCapture(ev.pointerId);
+        handle.classList.add("dragging");
+        ws.classList.add("is-resizing");
+        const startX = ev.clientX;
+        const startLeft = leftW;
+        const startRight = rightW;
+
+        const onMove = (moveEv: PointerEvent): void => {
+          const dx = moveEv.clientX - startX;
+          if (side === "left") {
+            leftW = Math.max(MIN_LEFT, Math.min(MAX_LEFT, Math.round(startLeft + dx)));
+          } else {
+            rightW = Math.max(MIN_RIGHT, Math.min(MAX_RIGHT, Math.round(startRight - dx)));
+          }
+          applyWidths(false);
+        };
+        const onUp = (upEv: PointerEvent): void => {
+          handle.releasePointerCapture(upEv.pointerId);
+          handle.classList.remove("dragging");
+          ws.classList.remove("is-resizing");
+          handle.removeEventListener("pointermove", onMove);
+          handle.removeEventListener("pointerup", onUp);
+          handle.removeEventListener("pointercancel", onUp);
+          applyWidths(true);
+        };
+        handle.addEventListener("pointermove", onMove);
+        handle.addEventListener("pointerup", onUp);
+        handle.addEventListener("pointercancel", onUp);
+      });
+    };
+
+    bindDrag(resizerLeft, "left");
+    bindDrag(resizerRight, "right");
+    window.addEventListener("resize", () => applyWidths(false));
   }
 
   // ===========================================================================
@@ -1528,8 +1630,10 @@ export class WorkbenchApp {
     filmActions.appendChild(btnClearGallery);
     this.elFilmstripBar.append(this.elFilmstripScroll, filmActions);
 
-    // 4. Collapsible Bottom Live Prompt Drawer
+    // 4. Collapsible & Vertically Resizable Bottom Live Prompt Drawer
     this.elPromptDrawer = this.el("section", "prompt-drawer collapsed");
+    const drawerResizer = this.el("div", "prompt-drawer-resizer");
+    drawerResizer.title = "上下拖动调节词条面板高度（双击重置）";
     const pBar = this.el("div", "prompt-drawer-bar");
     const pLeft = this.el("div", "prompt-bar-left");
 
@@ -1617,10 +1721,88 @@ export class WorkbenchApp {
     negCol.append(negHead, this.elNegTextarea);
 
     pBody.append(posCol, negCol);
-    this.elPromptDrawer.append(pBar, pBody);
+    this.elPromptDrawer.append(drawerResizer, pBar, pBody);
+    this.setupPromptDrawerResizer(col, this.elPromptDrawer, drawerResizer);
 
     col.append(toolbar, this.elHeroViewport, this.elFilmstripBar, this.elPromptDrawer);
     return col;
+  }
+
+  private setupPromptDrawerResizer(
+    colCenter: HTMLElement,
+    drawer: HTMLElement,
+    handle: HTMLElement
+  ): void {
+    const LS_KEY = "nai_wb_prompt_drawer_h_v1";
+    const isMobile = () => window.innerWidth <= 768;
+    const getDefaultH = () => (isMobile() ? 260 : window.innerWidth <= 1120 ? 240 : 192);
+    const getMaxH = () => {
+      const containerH = colCenter.clientHeight || window.innerHeight;
+      return Math.max(220, Math.round(containerH * (isMobile() ? 0.65 : 0.68)));
+    };
+    const MIN_H = 110;
+
+    let drawerH: number | null = null;
+    try {
+      const raw = Number(localStorage.getItem(LS_KEY));
+      if (Number.isFinite(raw) && raw >= MIN_H) {
+        drawerH = Math.round(raw);
+      }
+    } catch {
+      // ignore
+    }
+
+    const applyH = (persist = false): void => {
+      if (drawerH === null) {
+        drawer.style.removeProperty("--prompt-drawer-h");
+      } else {
+        drawerH = Math.max(MIN_H, Math.min(getMaxH(), drawerH));
+        drawer.style.setProperty("--prompt-drawer-h", `${drawerH}px`);
+      }
+      if (persist) {
+        try {
+          if (drawerH === null) localStorage.removeItem(LS_KEY);
+          else localStorage.setItem(LS_KEY, String(drawerH));
+        } catch {
+          // ignore
+        }
+      }
+    };
+    applyH(false);
+
+    handle.addEventListener("dblclick", () => {
+      drawerH = null;
+      applyH(true);
+    });
+
+    handle.addEventListener("pointerdown", (ev: PointerEvent) => {
+      ev.preventDefault();
+      handle.setPointerCapture(ev.pointerId);
+      handle.classList.add("dragging");
+      const startY = ev.clientY;
+      const startH = drawerH ?? getDefaultH();
+
+      const onMove = (moveEv: PointerEvent): void => {
+        const dy = startY - moveEv.clientY;
+        drawerH = Math.max(MIN_H, Math.min(getMaxH(), Math.round(startH + dy)));
+        applyH(false);
+      };
+      const onUp = (upEv: PointerEvent): void => {
+        handle.releasePointerCapture(upEv.pointerId);
+        handle.classList.remove("dragging");
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", onUp);
+        handle.removeEventListener("pointercancel", onUp);
+        applyH(true);
+      };
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", onUp);
+      handle.addEventListener("pointercancel", onUp);
+    });
+
+    window.addEventListener("resize", () => {
+      if (drawerH !== null) applyH(false);
+    });
   }
 
   // ===========================================================================
@@ -2012,7 +2194,24 @@ export class WorkbenchApp {
       this.selectScene(nextId);
     });
 
-    rMa7.append(btnRound, btnFlat, btnMa7Xray);
+    const btnFutaSpread = this.el(
+      "button",
+      `chip-btn${this.activeSceneId === "MA7E" ? " active" : ""}`,
+      "⚡ 扶他双拨"
+    );
+    btnFutaSpread.title =
+      "MA7 扶他专用双手分工双拨版（兼容有蛋/无蛋模式；再次点击退出派生回到原版 MA7）";
+    btnFutaSpread.addEventListener("click", () => {
+      if (this.activeSceneId === "MA7E") {
+        this.activeMa7Variant = "";
+        this.selectScene("MA7");
+      } else {
+        this.activeMa7Variant = "MA7E";
+        this.selectScene("MA7E");
+      }
+    });
+
+    rMa7.append(btnRound, btnFlat, btnMa7Xray, btnFutaSpread);
 
     const r2 = this.el("div", "ctrl-inline-row");
     const envSw = this.el(
@@ -2285,7 +2484,8 @@ export class WorkbenchApp {
       sceneId === "MA7A" ||
       sceneId === "MA7B" ||
       sceneId === "MA7C" ||
-      sceneId === "MA7D"
+      sceneId === "MA7D" ||
+      sceneId === "MA7E"
     ) {
       this.activeMa7Variant = sceneId;
     }
@@ -3219,19 +3419,42 @@ export class WorkbenchApp {
       appendQuality: this.apiSettings.append_v5_quality,
     });
     const isMed = this.apiSettings.model === MODEL_V5_FULL_MEDIUM;
-    const usedPos = isMed ? counts.posTokens + counts.sceneNegTokens : counts.posTokens;
+    const rawMedTotal = counts.posTokens + counts.sceneNegTokens;
+    const medNegBudget = Math.max(0, 506 - counts.posTokens);
+    const medFittedNeg = Math.min(counts.sceneNegTokens, medNegBudget);
+    const medSentTotal = counts.posTokens + medFittedNeg;
+    const usedPos = isMed ? medSentTotal : counts.posTokens;
     const limit = isMed ? 512 : safeLimit;
 
     const vibeTag =
       this.apiSettings.model === MODEL_V4_5_FULL && activeVibes.length > 0
         ? ` · 含${activeVibes.length}Vibe`
         : "";
-    this.elTokenPill.textContent = isMed
-      ? `内联 ${usedPos} / 512 tok`
-      : `正向 ${usedPos} / ${limit} tok${vibeTag} · 负向 ${counts.negTokens}`;
+    if (isMed) {
+      if (counts.posTokens > 506) {
+        this.elTokenPill.textContent = `内联 正向超限 ${counts.posTokens} / 512 tok`;
+        this.elTokenPill.title = "正向提示词本身已超过 512 上限，建议精简预设";
+      } else if (rawMedTotal > 512) {
+        this.elTokenPill.textContent = `内联 ${medSentTotal}/512 tok (负向缩${medFittedNeg}/${counts.sceneNegTokens})`;
+        this.elTokenPill.title =
+          "V5 Medium 发包时已自动按 512 剩余预算截取高优先级负向，确保正向与 [Character 1] 不被截断";
+      } else {
+        this.elTokenPill.textContent = `内联 ${rawMedTotal} / 512 tok`;
+        this.elTokenPill.title = "V5 Medium 单通道正向 + 全部内联负向均在 512 以内";
+      }
+    } else {
+      this.elTokenPill.textContent = `正向 ${usedPos} / ${limit} tok${vibeTag} · 负向 ${counts.negTokens}`;
+      this.elTokenPill.title = "";
+    }
 
     this.elTokenPill.className = "token-pill";
-    if (usedPos > limit) {
+    if (isMed) {
+      if (counts.posTokens > 506) {
+        this.elTokenPill.classList.add("danger");
+      } else if (rawMedTotal > 512 || medSentTotal > 484) {
+        this.elTokenPill.classList.add("warn");
+      }
+    } else if (usedPos > limit) {
       this.elTokenPill.classList.add("danger");
     } else if (usedPos > limit - 28) {
       this.elTokenPill.classList.add("warn");

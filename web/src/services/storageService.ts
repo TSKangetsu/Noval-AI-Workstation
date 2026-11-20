@@ -362,7 +362,20 @@ export function saveCustomPresets(presets: Record<string, Partial<CharacterConfi
 export function loadMcpBridgeEnabled(): boolean {
   try {
     const raw = localStorage.getItem(LS_MCP_ENABLED_KEY);
-    return raw === null ? true : raw === "1" || raw === "true";
+    if (raw !== null) {
+      return raw === "1" || raw === "true";
+    }
+    // Default ON only for local PC sessions (file://, localhost, 127.0.0.1);
+    // default OFF on public domains / LAN IPs so remote/mobile viewers never hijack local MCP.
+    if (typeof window !== "undefined" && window.location) {
+      const proto = window.location.protocol;
+      const host = (window.location.hostname || "").toLowerCase();
+      if (proto === "file:" || host === "localhost" || host === "127.0.0.1" || host === "::1") {
+        return true;
+      }
+      return false;
+    }
+    return true;
   } catch {
     return true;
   }

@@ -62,6 +62,7 @@ class WsBrowserClient {
   public readonly id: string;
   public connectedUrl = "";
   public connectedAt = Date.now();
+  public lastSeenAt = Date.now();
   private socket: Socket;
   private rxBuf: Buffer = Buffer.alloc(0);
   private fragOpcode = 0;
@@ -79,13 +80,46 @@ class WsBrowserClient {
     this.onJsonMessage = onJsonMessage;
     this.onClosed = onClosed;
 
-    socket.on("data", (chunk: Buffer) => this.onData(chunk));
+    socket.on("data", (chunk: Buffer) => {
+      this.lastSeenAt = Date.now();
+      this.onData(chunk);
+    });
     socket.on("close", () => this.onClosed(this));
     socket.on("error", () => this.onClosed(this));
   }
 
+  public isAlive(): boolean {
+    return !this.socket.destroyed && this.socket.writable;
+  }
+
+  public isLocalClient(): boolean {
+    const u = this.connectedUrl.trim().toLowerCase();
+    if (!u) return true;
+    return (
+      u.startsWith("file://") ||
+      u.startsWith("http://127.0.0.1") ||
+      u.startsWith("https://127.0.0.1") ||
+      u.startsWith("http://localhost") ||
+      u.startsWith("https://localhost") ||
+      u.startsWith("http://[::1]")
+    );
+  }
+
+  public sendPing(): void {
+    if (!this.isAlive()) return;
+    this.sendFrame(0x9, Buffer.from("hb", "utf8"));
+  }
+
+  public destroy(): void {
+    try {
+      this.socket.destroy();
+    } catch {
+      // ignore
+    }
+  }
+
   public sendJson(payload: unknown): void {
-    if (this.socket.destroyed) return;
+    if (!this.isAlive()) return;
     const body = Buffer.from(JSON.stringify(payload), "utf8");
     this.sendFrame(0x1, body);
   }
@@ -210,6 +244,7 @@ interface PendingRpc {
 class BridgeHub {
   private role: "primary" | "relay" = "primary";
   private httpServer: http.Server | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private clients: WsBrowserClient[] = [];
   private pending = new Map<string, PendingRpc>();
 
@@ -229,17 +264,95 @@ class BridgeHub {
       srv.listen(BRIDGE_PORT, BRIDGE_BIND_HOST, () => {
         this.role = "primary";
         this.httpServer = srv;
+        this.startHeartbeat();
         resolve();
       });
     });
   }
 
+  private startHeartbeat(): void {
+    if (this.heartbeatTimer) return;
+    this.heartbeatTimer = setInterval(() => {
+      const now = Date.now();
+      const stale: WsBrowserClient[] = [];
+      for (const cli of this.clients) {
+        if (!cli.isAlive() || now - cli.lastSeenAt > 30000) {
+          stale.push(cli);
+        } else {
+          cli.sendPing();
+        }
+      }
+      for (const dead of stale) {
+        this.evictClient(dead);
+      }
+    }, 12000);
+    this.heartbeatTimer.unref?.();
+  }
+
+  private evictClient(cli: WsBrowserClient): void {
+    this.clients = this.clients.filter((c) => c !== cli);
+    cli.destroy();
+  }
+
   public close(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
     this.httpServer?.close();
   }
 
+  private getOrderedClients(): WsBrowserClient[] {
+    const alive = this.clients.filter((c) => c.isAlive());
+    if (alive.length !== this.clients.length) {
+      this.clients = alive;
+    }
+    const locals: WsBrowserClient[] = [];
+    const remotes: WsBrowserClient[] = [];
+    for (let i = alive.length - 1; i >= 0; i--) {
+      const c = alive[i];
+      if (c.isLocalClient()) locals.push(c);
+      else remotes.push(c);
+    }
+    return [...locals, ...remotes];
+  }
+
   private getActiveClient(): WsBrowserClient | null {
-    return this.clients.length > 0 ? this.clients[this.clients.length - 1] : null;
+    const ordered = this.getOrderedClients();
+    return ordered.length > 0 ? ordered[0] : null;
+  }
+
+  public async getBridgeSnapshot(): Promise<{
+    connected_clients: number;
+    active_client_url: string | null;
+    client_urls: string[];
+  }> {
+    if (this.role === "primary") {
+      const ordered = this.getOrderedClients();
+      return {
+        connected_clients: ordered.length,
+        active_client_url: ordered[0]?.connectedUrl || null,
+        client_urls: ordered.map((c) => c.connectedUrl || "(connecting)"),
+      };
+    }
+    try {
+      const resp = await fetch(`http://${LOCAL_RELAY_HOST}:${BRIDGE_PORT}/health`);
+      if (resp.ok) {
+        const data = (await resp.json()) as {
+          connected_clients?: number;
+          latest_client_url?: string | null;
+          client_urls?: string[];
+        };
+        return {
+          connected_clients: data.connected_clients ?? 0,
+          active_client_url: data.latest_client_url ?? null,
+          client_urls: data.client_urls ?? [],
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return { connected_clients: 0, active_client_url: null, client_urls: [] };
   }
 
   private setCors(res: http.ServerResponse): void {
@@ -293,6 +406,7 @@ class BridgeHub {
     }
 
     if (req.method === "GET" && reqUrl.pathname === "/health") {
+      const ordered = this.getOrderedClients();
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end(
         JSON.stringify({
@@ -301,8 +415,9 @@ class BridgeHub {
           bind_host: BRIDGE_BIND_HOST,
           port: BRIDGE_PORT,
           lan_urls: getLanUrls(),
-          connected_clients: this.clients.length,
-          latest_client_url: this.getActiveClient()?.connectedUrl ?? null,
+          connected_clients: ordered.length,
+          latest_client_url: ordered[0]?.connectedUrl ?? null,
+          client_urls: ordered.map((c) => c.connectedUrl || "(connecting)"),
         })
       );
       return;
@@ -406,22 +521,16 @@ class BridgeHub {
     }
   }
 
-  private dispatchLocalBrowserRpc(
+  private sendRpcToClient(
+    client: WsBrowserClient,
     method: string,
     params: Record<string, unknown>,
     timeoutMs: number
   ): Promise<unknown> {
-    const client = this.getActiveClient();
-    if (!client) {
-      const lanList = getLanUrls();
-      const lanHint = lanList.length > 0 ? `；手机/平板/其他设备可直接访问 ${lanList.join(" 或 ")}` : "";
-      return Promise.reject(
-        new Error(
-          `当前没有检测到已连接的 NovelAI_Workbench.html 网页！请在本机打开 NovelAI_Workbench.html（或访问 http://127.0.0.1:${BRIDGE_PORT}${lanHint}）。`
-        )
-      );
+    if (!client.isAlive()) {
+      this.evictClient(client);
+      return Promise.reject(new Error(`网页连接已断开: ${method}`));
     }
-
     const reqId = `rpc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -437,6 +546,40 @@ class BridgeHub {
         params,
       });
     });
+  }
+
+  private async dispatchLocalBrowserRpc(
+    method: string,
+    params: Record<string, unknown>,
+    timeoutMs: number
+  ): Promise<unknown> {
+    const candidates = this.getOrderedClients();
+    if (candidates.length === 0) {
+      const lanList = getLanUrls();
+      const lanHint = lanList.length > 0 ? `；手机/平板/其他设备可直接访问 ${lanList.join(" 或 ")}` : "";
+      throw new Error(
+        `当前没有检测到已连接的 NovelAI_Workbench.html 网页！请在本机打开 NovelAI_Workbench.html（或访问 http://127.0.0.1:${BRIDGE_PORT}${lanHint}）。`
+      );
+    }
+
+    // For non-generation RPCs with multiple connected clients, fail over swiftly if a background/sleeping tab hangs
+    const allowFailover = method !== "generate" && candidates.length > 1;
+    let lastErr: Error | null = null;
+    for (let i = 0; i < candidates.length; i++) {
+      const cli = candidates[i];
+      const attemptTimeout = allowFailover && i < candidates.length - 1 ? Math.min(timeoutMs, 6000) : timeoutMs;
+      try {
+        return await this.sendRpcToClient(cli, method, params, attemptTimeout);
+      } catch (err) {
+        lastErr = err instanceof Error ? err : new Error(String(err));
+        if (!allowFailover || !lastErr.message.includes("超时")) {
+          throw lastErr;
+        }
+        // Evict hung zombie socket and try next live client
+        this.evictClient(cli);
+      }
+    }
+    throw lastErr ?? new Error(`等待网页响应超时: ${method}`);
   }
 
   public async callBrowser(
@@ -545,7 +688,7 @@ const MCP_TOOLS = [
   {
     name: "nai_update_config",
     description:
-      "Directly push configuration changes to the open NovelAI_Workbench.html webpage in real time. Supports updating any CharacterConfig field (char_tag, extra_char_tags, body_preset, bust_preset, outfit_preset, custom_outfit_tags, outfit_state_mode, style_preset, lighting_preset, pos_stage, pos_male_mode, pos_scene, enable_condom, enable_uterus_xray, free_action_tags, free_action_prose, free_action_nsfw, etc.), NaiApiSettings (model, steps, scale, cfg_rescale, canvas_preset, seed, batch_count, auto_upscale_replace), action_mode ('positions' | 'multi_angle' | 'free'), and active_scene_id ('P01'..'P51' | 'MA0'..'MA10' | 'FREE').",
+      "Directly push configuration changes to the open NovelAI_Workbench.html webpage in real time. Supports updating any CharacterConfig field (char_tag, extra_char_tags, gender_mode: 'normal'|'femboy'|'futa_no_balls'|'futa_with_balls', body_preset, bust_preset, outfit_preset, custom_outfit_tags, outfit_state_mode, style_preset, lighting_preset, pos_stage, pos_male_mode, pos_scene, enable_condom, enable_uterus_xray, free_action_tags, free_action_prose, free_action_nsfw, etc.), NaiApiSettings (model, steps, scale, cfg_rescale, canvas_preset, seed, batch_count, auto_upscale_replace), action_mode ('positions' | 'multi_angle' | 'free'), and active_scene_id ('P01'..'P51' | 'MP01'..'MP15' | 'TN01'..'TN12' | 'BG01'..'BG20' | 'MA0'..'MA11' | 'MA7A'..'MA7E' | 'FREE').",
     inputSchema: {
       type: "object",
       properties: {
@@ -739,6 +882,7 @@ async function executeToolCall(
   }
   if (name === "nai_get_state") {
     const state = (await hub.callBrowser("get_state", {})) as Record<string, unknown>;
+    const snap = await hub.getBridgeSnapshot();
     return {
       ...state,
       bridge_access: {
@@ -746,6 +890,9 @@ async function executeToolCall(
         port: BRIDGE_PORT,
         local_url: `http://127.0.0.1:${BRIDGE_PORT}`,
         lan_urls: getLanUrls(),
+        connected_clients: snap.connected_clients,
+        active_client_url: snap.active_client_url,
+        client_urls: snap.client_urls,
       },
     };
   }

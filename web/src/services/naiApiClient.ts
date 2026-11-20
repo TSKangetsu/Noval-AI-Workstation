@@ -10,7 +10,9 @@ import {
 } from "../data/engineConstants";
 import {
   applySmartQualitySuffix,
+  countPromptT5Tokens,
   deduplicateCommaTags,
+  encodeT5Len,
   parseStructuredPrompt,
   splitInlineNegativesFromCaption,
 } from "../engine/t5Tokenizer";
@@ -185,19 +187,64 @@ export function buildNaiGeneratePayload(options: {
 
   if (keepInlineNegs) {
     baseCaption = baseCaption.trim();
-    const inlineAdditions: string[] = [];
-    if (customNegPrompt) inlineAdditions.push(customNegPrompt);
-    if (isV5Medium && extraUc.trim()) inlineAdditions.push(extraUc.trim());
-    if (inlineAdditions.length > 0) {
-      const dedupInline = deduplicateCommaTags(inlineAdditions.join(", "));
-      if (dedupInline && !baseCaption.includes(`-2::${dedupInline}::`)) {
-        baseCaption = `${baseCaption.replace(/[, ]+$/g, "")}, -2::${dedupInline}::`;
-      }
-    }
     charCaptions = charCaptions.map((c) => {
       charInlineNegsList.push([]);
       return { char_caption: c.char_caption.trim(), centers: c.centers };
     });
+
+    if (isV5Medium) {
+      // V5 Medium shares a single 512 T5 window across base_caption + char_captions + inline -2::...:: negatives.
+      // Extract any pre-existing inline negatives first, measure total positive tokens (base + all characters),
+      // then fit only as many priority negative tags as fit inside the remaining 512 budget so [Character 1..N]
+      // are NEVER pushed past the 512-token cutoff.
+      const preSplit = splitInlineNegativesFromCaption(baseCaption);
+      baseCaption = preSplit.cleaned;
+      const inlineAdditions: string[] = [];
+      if (preSplit.negChunks.length > 0) inlineAdditions.push(...preSplit.negChunks);
+      if (customNegPrompt) inlineAdditions.push(customNegPrompt);
+      if (extraUc.trim()) inlineAdditions.push(extraUc.trim());
+
+      if (inlineAdditions.length > 0) {
+        const dedupInline = deduplicateCommaTags(inlineAdditions.join(", "));
+        if (dedupInline) {
+          const posCheckPrompt =
+            charCaptions.length > 0
+              ? `[Base Prompt]\n${baseCaption}\n` +
+                charCaptions.map((c, idx) => `[Character ${idx + 1}]\n${c.char_caption}`).join("\n")
+              : baseCaption;
+          const currentPosTokens = countPromptT5Tokens(posCheckPrompt).api_pos_tokens;
+          // Reserve 6 tokens for "-2::...::" wrapper, quality suffix, and EOS
+          const negBudget = Math.max(0, 506 - currentPosTokens);
+          if (negBudget >= 4) {
+            const negTags = dedupInline
+              .split(",")
+              .map((t) => t.trim())
+              .filter(Boolean);
+            const fitted: string[] = [];
+            for (const tag of negTags) {
+              const cand = fitted.length > 0 ? `${fitted.join(", ")}, ${tag}` : tag;
+              if (encodeT5Len(cand) <= negBudget) {
+                fitted.push(tag);
+              } else {
+                break;
+              }
+            }
+            if (fitted.length > 0) {
+              baseCaption = `${baseCaption.replace(/[, ]+$/g, "")}, -2::${fitted.join(", ")}::`;
+            }
+          }
+        }
+      }
+    } else {
+      const inlineAdditions: string[] = [];
+      if (customNegPrompt) inlineAdditions.push(customNegPrompt);
+      if (inlineAdditions.length > 0) {
+        const dedupInline = deduplicateCommaTags(inlineAdditions.join(", "));
+        if (dedupInline && !baseCaption.includes(`-2::${dedupInline}::`)) {
+          baseCaption = `${baseCaption.replace(/[, ]+$/g, "")}, -2::${dedupInline}::`;
+        }
+      }
+    }
   } else {
     let baseCaptionInlineKept = "";
     const tune2Re = /(?:,\s*)?(-2\.5::(?:(?!::)[\s\S])*?nose bridge,\s*nostrils,\s*lips(?:(?!::)[\s\S])*?::)/;
