@@ -6,7 +6,7 @@ export const BUILTIN_CHARACTERS: Record<string, Record<string, string>> = {
   "标枪 Javelin（碧蓝航线 · 默认）": {
     "char_tag": "javelin (azur lane)",
     "eng_name": "Javelin",
-    "canon_neg_tags": "neckerchief, serafuku, plaid, gloves, crown",
+    "canon_neg_tags": "crown, tiara, hair crown, neckerchief, serafuku, plaid, gloves",
     "canon_outfit": "serafuku, white crop top, neckerchief, purple plaid skirt, pleated skirt, white gloves",
     "canon_top_only": "serafuku, white crop top, neckerchief, white gloves",
     "canon_bottom_neg": "skirt, pleated skirt, plaid skirt",
@@ -239,7 +239,7 @@ export const BODY_PRESETS: Record<string, [string, string]> = {
     "tall female, mature female, skinny, obese"
   ],
   "袖珍娇小窄肩细腰笔直长腿·微Q萌圆脸（0.25 chibi + short slender mini-lady）": [
-    "0.25::chibi::, 1.25::short female::, 1.15::very short::, 1.2::petite::, small frame, 1.3::slender::, 1.3::slender legs::, slim waist, narrow shoulders, 1.25::narrow hips::, -0.45::wide hips::, -0.45::thick thighs::, -0.40::plump::, short torso, small breasts, thigh gap, long legs, short face, round face",
+    "0.25::chibi::, 1.25::short female::, 1.2::petite::, 1.3::slender::, 1.3::slender legs::, slim waist, narrow shoulders, 1.25::narrow hips::, -0.45::wide hips::, -0.45::thick thighs::, -0.40::plump::, small breasts, thigh gap, long legs, round face",
     "super deformed, doll, plushie, oversized head, stubby legs, short legs, tall female, mature female, muscular, muscular female, broad shoulders, wide shoulders, long torso, plump, chubby, fat, thick thighs, wide hips, curvy, pointy chin, sharp chin, long face, giantess, towering, miniature furniture, low doorframe"
   ],
   "纤柔嫩骨·精致锁骨双向防折痕少女（Slim-Tender · 无腹褶无肋骨）": [
@@ -626,9 +626,9 @@ export const LIGHTING_PRESETS: Record<string, LightingPresetEntry> = {
   "🌅✨ 强逆光过曝眩光 · 深邃暗面 HDR 光比（Contre-Jour HDR Backlight）": {
     code: "contre_jour_caustics",
     light_axis: "backlit",
-    tags: "2.05::backlighting::, 1.72::sun glare::, 1.55::overexposure::, 1.38::bloom::, 1.28::lens flare::, sunbeam, light rays, 2.0::shade::, 1.5::dim lighting::, 1.3::dark::, 0.96::chiaroscuro::, 0.8::high contrast::, 1.22::partially shaded face::, 1.3::shiny skin::, depth of field, blurry background",
+    tags: "2.05::backlighting::, 1.72::sun glare::, 1.55::overexposure::, 1.38::bloom::, 1.28::lens flare::, light rays, 2.0::shade::, 1.5::dim lighting::, 1.3::dark::, 0.96::chiaroscuro::, 0.8::high contrast::, 1.22::partially shaded face::, 1.3::shiny skin::, depth of field",
     prose:
-      "High-contrast HDR contre-jour lighting with blinding sun glare behind her; her camera-facing face and body rest in deep dark shadow, accented by bright rim halation and crisp white specular highlights.",
+      "High-contrast HDR contre-jour lighting with blinding sun glare behind her; her camera-facing face and body rest in deep dark shadow with bright rim halation and crisp white speculars.",
     badge: "🌅✨强逆光HDR",
     strip_head_lighting: true,
     replace_style_tags: {
@@ -2040,9 +2040,10 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "1. 仰卧·传教士系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "1.25::from above::, lying on back, spread legs, arms above head, looking at viewer",
+    "pose_pov": "reclining, lying on back, spread legs, knees bent, grabbing thighs, looking at viewer",
     "pose_3rd": "three-quarter view, high angle, lying on back, spread legs, knees bent, looking at viewer",
     "prose_core": "lying on her back with her legs parted and gazing up",
+    "prose_pov": "POV from his groin between {name}'s parted thighs toward her upper body and face",
     "pov_visibility": "front_face_visible"
   },
   "P02": {
@@ -2051,9 +2052,10 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "1. 仰卧·传教士系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "from above, lying on back, 1.35::legs up::, v-shaped legs, bare legs raised high, looking at viewer",
-    "pose_3rd": "side three-quarter view, lying on back, 1.35::legs up::, ankles raised high in a V-shape",
-    "prose_core": "lying on her back with both legs raised high in a V-shape",
+    "pose_pov": "reclining, lying on back, 1.3::legs up::, v-shaped legs, grabbing ankles, looking at viewer",
+    "pose_3rd": "three-quarter view, reclining, lying on back, 1.3::legs up::, ankles raised in a V-shape, looking at viewer",
+    "prose_core": "reclining on her back with both legs raised in a V-shape",
+    "prose_pov": "POV from his groin between {name}'s V-raised legs toward her face",
     "pov_visibility": "front_face_visible"
   },
   "P03": {
@@ -2062,9 +2064,10 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "1. 仰卧·传教士系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "1.3::from above::, lying on back, 1.4::folded::, knees to chest, ankles near shoulders, tilted hips, looking at viewer",
-    "pose_3rd": "side view, lying on back, 1.4::folded::, knees pressed toward chest, raised pelvis",
+    "pose_pov": "reclining, lying on back, 1.4::folded::, mating press, knees to chest, holding thighs, looking at viewer",
+    "pose_3rd": "three-quarter view, reclining, lying on back, 1.4::folded::, knees pressed toward chest, raised pelvis, looking at viewer",
     "prose_core": "lying folded on her back with her knees pressed close to her chest and hips tilted upward",
+    "prose_pov": "POV from his groin as {name} lies folded with knees pressed to her chest",
     "pov_visibility": "front_face_visible"
   },
   "P04": {
@@ -2073,9 +2076,10 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "1. 仰卧·传教士系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "close-up, from above, lying on back, 1.35::leg lock::, ankles crossed, arms outstretched, looking at viewer",
-    "pose_3rd": "three-quarter high angle, lying on back, 1.35::leg lock::, legs wrapped around waist, embrace",
-    "prose_core": "lying on her back with her legs locked inward in a close embrace",
+    "pose_pov": "cowboy shot, reclining, lying on back, 1.35::leg lock::, ankles crossed, holding hips, looking at viewer",
+    "pose_3rd": "three-quarter view, reclining, lying on back, 1.35::leg lock::, legs wrapped around waist, looking at viewer",
+    "prose_core": "reclining on her back with her legs wrapped around waist",
+    "prose_pov": "POV from his groin as {name} reclines locking her legs around his waist",
     "pov_visibility": "front_face_visible"
   },
   "P05": {
@@ -2084,9 +2088,10 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "1. 仰卧·传教士系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "from above, lying on back, 1.35::one leg up::, asymmetrical legs, spread thigh, looking at viewer",
+    "pose_pov": "reclining, lying on back, 1.35::one leg up::, holding leg, spread thigh, looking at viewer",
     "pose_3rd": "three-quarter view, lying on back, 1.35::one leg up::, one knee bent flat, asymmetric leg posture",
     "prose_core": "lying on her back with one leg lifted high and the other extended",
+    "prose_pov": "POV from his groin between {name}'s thighs with one leg held high",
     "pov_visibility": "front_face_visible"
   },
   "P06": {
@@ -2095,9 +2100,10 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "1. 仰卧·传教士系",
     "channel": "vaginal",
     "canvas": "竖图 832x1216",
-    "pose_pov": "eye-level, lying on back, hips at edge, knees bent wide apart, arched waist, looking at viewer",
+    "pose_pov": "reclining on back, knees wide apart, grabbing thighs, arched waist, looking at viewer",
     "pose_3rd": "three-quarter low angle, reclining on back at edge, knees open wide, arched lower back",
     "prose_core": "reclining on her back at the edge with her hips forward and knees parted",
+    "prose_pov": "POV from his groin between {name}'s wide-parted knees toward her face",
     "pov_visibility": "front_face_visible"
   },
   "P07": {
@@ -2106,9 +2112,10 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "1. 仰卧·传教士系",
     "channel": "vaginal",
     "canvas": "横图 1216x832",
-    "pose_pov": "high angle, lying on back, elevated hips, 1.3::arched back::, spread knees, hands gripping sheet",
+    "pose_pov": "reclining, lying on back, elevated hips, 1.3::arched back::, grabbing hips, looking at viewer",
     "pose_3rd": "side three-quarter view, lying on back, elevated pelvis, 1.3::arched back::, bent knees apart",
     "prose_core": "lying on her back with her pelvis elevated and lower back arched",
+    "prose_pov": "POV from his groin at {name}'s elevated hips and arched upper body",
     "pov_visibility": "front_face_visible"
   },
   "P08": {
@@ -2304,9 +2311,10 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "4. 侧卧·汤匙交叉系",
     "channel": "vaginal",
     "canvas": "横图 1216x832",
-    "pose_pov": "three-quarter view, 1.3::lying on side::, 1.35::one leg raised::, open hip, supporting on elbow, looking at viewer",
+    "pose_pov": "three-quarter view, foreshortening, 1.3::lying on side::, 1.35::one leg raised::, holding raised leg, open hip, supporting on elbow, looking at viewer",
     "pose_3rd": "landscape three-quarter view, lying on side, upper leg lifted high, open posture, looking at viewer",
     "prose_core": "lying on her side propped on one elbow with her upper leg lifted high",
+    "prose_pov": "First-person POV from the man's lower torso looking toward {name} lying on her side propped on one elbow with her upper leg held high",
     "pov_visibility": "front_face_visible"
   },
   "P25": {
@@ -2546,9 +2554,10 @@ export const ALL_POSITIONS_TEMPLATES: Record<string, { id: string; title: string
     "category": "9. 手部爱抚·指技前戏系",
     "channel": "fingering",
     "canvas": "竖图 832x1216",
-    "pose_pov": "1.3::from above::, lying on back, 1.35::spread legs::, knees bent wide, arched waist, looking at viewer",
+    "pose_pov": "1.4::pov::, foreshortening, reclining, lying on back, 1.35::spread legs::, knees bent wide, arched waist, looking at viewer",
     "pose_3rd": "three-quarter high angle, lying on back, spread legs, knees bent apart, hips slightly lifted, looking at viewer",
     "prose_core": "lying on her back with her knees bent wide apart and waist arching sensitively",
+    "prose_pov": "First-person POV looking forward between {name}'s wide-parted thighs at the bottom foreground toward her arched torso and blushing face",
     "pov_visibility": "front_face_visible"
   },
   "P46": {

@@ -35,10 +35,14 @@ import {
 } from "../data/engineConstants";
 import { BUNDLED_VIBE_PACKS, cloneBundledVibeItems } from "../data/bundledVibes";
 import {
+  buildStageProgressionQueue,
   describeExpressionShort,
+  formatStageBadgeLabel,
+  formatStageFileTag,
   generateScenePrompts,
   isC5LowresPixelStyleActive,
   isExpressionOverrideActive,
+  ORDERED_POS_STAGE_ENTRIES,
 } from "../engine/storyEngine";
 import {
   buildFullNegativeString,
@@ -54,11 +58,16 @@ import {
   type CarouselMode,
   type CharacterConfig,
   type CharacterGenderMode,
+  type GalleryFilterMode,
+  type GalleryFolderItem,
+  type GalleryStageViewMode,
+  type GeneratedConfigSnapshot,
   type GeneratedImageRecord,
   type NaiApiSettings,
   type NaiModelId,
   type NaiUcPresetMode,
   type ScenePromptItem,
+  type StageProgressionMode,
   type StoredVibeItem,
   type SubscriptionInfo,
   type VibeTransferSlotInput,
@@ -81,6 +90,8 @@ import {
   buildStoreZipBlob,
   clearDeletedPresets,
   clearStoredVibeItems,
+  deleteDirectoryFromMountedDir,
+  deleteFileFromMountedDir,
   formatDateYYYYMMDD,
   formatTimeHHMMSS,
   getMountedDirName,
@@ -88,19 +99,27 @@ import {
   loadApiSettings,
   loadCustomPresets,
   loadDeletedPresets,
+  loadGalleryFolders,
   loadMcpBridgeEnabled,
   loadMcpBridgeEndpoint,
+  loadStarredGalleryRecords,
   loadStoredVibeItems,
   markPresetDeleted,
   mountLocalOutputDirectory,
+  moveFileInMountedDir,
+  resolveRecordDiskSubpath,
+  sanitizeSubfolderName,
   saveActiveConfig,
   saveApiSettings,
   saveBytesToMountedDir,
   saveCustomPresets,
+  saveGalleryFolders,
   saveMcpBridgeEnabled,
   saveMcpBridgeEndpoint,
+  saveStarredGalleryRecords,
   saveStoredVibeItems,
   supportsDirectoryPicker,
+  syncPromptsLogToMountedDir,
   triggerBlobDownload,
   triggerBytesDownload,
   unmarkPresetDeleted,
@@ -161,6 +180,30 @@ export class WorkbenchApp {
   private gallery: GeneratedImageRecord[] = [];
   private selectedGalleryIdx = -1;
   private checkedGalleryIds = new Set<string>();
+  private lastClickedGalleryId: string | null = null;
+  private galleryFilterMode: GalleryFilterMode = "all";
+  private gallerySceneFilter = "";
+  private filmstripExpanded = false;
+  private galleryFolders: GalleryFolderItem[] = [];
+  private openedFolderName: string | null = null;
+  private pinnedTargetFolderName: string | null = null;
+  private organizerLeftPoolMode: "ungrouped" | "all" = "ungrouped";
+  private draggingRecordIds: string[] = [];
+  private stageViewMode: GalleryStageViewMode = "single";
+  private comparePairIds: [string, string] = ["", ""];
+  private compareFitOneToOne = false;
+  private rerollCountPerRound = 2;
+  private shootoutState: {
+    anchorId: string;
+    candidateIds: string[];
+  } | null = null;
+
+  // Position Library Progressive Stage Generation State
+  private progSelectedStageCodes = new Set<string>(["before", "during", "after_inside", "pull_out"]);
+  private progMode: StageProgressionMode = "per_pose_chain";
+  private progLockSeedPerPose = true;
+  private progAutoGroupFolder = true;
+  private elProgRunBtn: HTMLButtonElement | null = null;
 
   private isGenerating = false;
   private abortController: AbortController | null = null;
@@ -231,7 +274,20 @@ export class WorkbenchApp {
   private elProgressText!: HTMLElement;
   private elFilmstripBar!: HTMLElement;
   private elFilmstripScroll!: HTMLElement;
+  private elFilmFilterBtns = new Map<GalleryFilterMode, HTMLButtonElement>();
+  private elFilmSceneSelect!: HTMLSelectElement;
+  private elFilmExpandBtn!: HTMLButtonElement;
+  private elBatchUpscaleGalleryBtn!: HTMLButtonElement;
+  private elBatchDeleteGalleryBtn!: HTMLButtonElement;
   private elUpscaleBtn!: HTMLButtonElement;
+  private elStarCurBtn!: HTMLButtonElement;
+  private elRerollCurBtn!: HTMLButtonElement;
+  private elRerollCountSelect!: HTMLSelectElement;
+  private elRestoreTriggerBtn!: HTMLButtonElement;
+  private elRestorePopover!: HTMLElement;
+  private elStageGridBtn!: HTMLButtonElement;
+  private elStageCompareBtn!: HTMLButtonElement;
+  private elDeleteCurBtn!: HTMLButtonElement;
   private elAutoUpscaleBtn!: HTMLButtonElement;
   private elAutoCarouselBtn!: HTMLButtonElement;
 
@@ -264,6 +320,7 @@ export class WorkbenchApp {
   private elLightbox!: HTMLElement;
   private elLightboxImg!: HTMLImageElement;
   private elLightboxMeta!: HTMLElement;
+  private elLightboxStarBtn!: HTMLButtonElement;
   private elLightboxModeBtns = new Map<CarouselMode, HTMLButtonElement>();
 
   // Syncable form bindings
@@ -274,6 +331,7 @@ export class WorkbenchApp {
     this.cfg = loadActiveConfig();
     this.customPresets = loadCustomPresets();
     this.apiSettings = loadApiSettings();
+    this.galleryFolders = loadGalleryFolders();
     this.carouselMode = this.apiSettings.carousel_auto_mode || "follow_latest";
     this.showCustomOutfitExtra = Boolean(this.cfg.custom_outfit_tags.trim());
   }
@@ -281,6 +339,16 @@ export class WorkbenchApp {
   public async mount(): Promise<void> {
     initT5Tokenizer();
     this.vibeItems = await loadStoredVibeItems();
+    const persistedStarred = await loadStarredGalleryRecords();
+    if (persistedStarred.length > 0) {
+      this.gallery = persistedStarred;
+      this.selectedGalleryIdx = persistedStarred.length - 1;
+      for (const rec of persistedStarred) {
+        if (rec.group_folder) {
+          this.ensureGalleryFolderExists(rec.group_folder);
+        }
+      }
+    }
     // Auto-seed bundled Vibe pack if active preset or active style declares one and vibe list is empty
     const activePresetObj = this.customPresets[this.cfg.preset_name] as
       | Record<string, unknown>
@@ -306,6 +374,10 @@ export class WorkbenchApp {
     this.bindGlobalEvents();
     this.syncAllControls();
     this.refreshSceneAndPrompt();
+    if (this.gallery.length > 0 || this.galleryFolders.length > 0) {
+      this.renderHeroViewport();
+      this.renderFilmstrip();
+    }
 
     this.mcpBridge.start();
     this.syncMcpPill(this.mcpBridge.getStatus());
@@ -367,11 +439,13 @@ export class WorkbenchApp {
     this.elMcpPopover = this.buildMcpPopover();
     this.elSavePresetPopover = this.buildSavePresetPopover();
     this.elExprPopover = this.buildExpressionPopover();
+    this.elRestorePopover = this.buildRestoreRecordPopover();
     this.elLightbox = this.buildLightbox();
     this.root.append(
       this.elMcpPopover,
       this.elSavePresetPopover,
       this.elExprPopover,
+      this.elRestorePopover,
       this.elLightbox
     );
 
@@ -620,6 +694,7 @@ export class WorkbenchApp {
       this.apiSettings.batch_count = Math.max(1, Math.min(8, parseInt(this.elBatchSelect.value, 10) || 1));
       saveApiSettings(this.apiSettings);
       this.updateQuotaPill();
+      this.updateBatchCheckedButton();
     });
 
     gCenter.append(modelSeg, this.elCanvasSelect, seedBox, this.elBatchSelect);
@@ -1578,6 +1653,7 @@ export class WorkbenchApp {
     });
 
     const btnOpenLightbox = this.el("button", "btn btn-xs", "📺 全屏灯箱");
+    btnOpenLightbox.title = "进入全屏灯箱轮播查看 (快捷键: ←/→ 切图, F 收藏, Delete 删图)";
     btnOpenLightbox.addEventListener("click", () => {
       if (this.gallery.length === 0) {
         this.setStatus("⚠️ 画廊暂无图片，请先生图", true);
@@ -1586,8 +1662,67 @@ export class WorkbenchApp {
       this.openLightbox(Math.max(0, this.selectedGalleryIdx));
     });
 
-    this.elUpscaleBtn = this.el("button", "btn btn-xs btn-primary", "✨ 2x高清放大");
-    this.elUpscaleBtn.title = "对当前预览图片调用官方 2x Upscale 高清放大并原位替换";
+    const btnOpenFolders = this.el("button", "btn btn-xs", "📁 分组");
+    btnOpenFolders.title = "拉起底部「两栏 ➔ 三栏」拖拽分组文件夹抽屉（支持预建文件夹与 🎯新图直入）";
+    btnOpenFolders.addEventListener("click", () => {
+      this.filmstripExpanded = !this.filmstripExpanded;
+      this.renderFilmstrip();
+    });
+
+    this.elStageGridBtn = this.el("button", "btn btn-xs", "🪟 总览");
+    this.elStageGridBtn.title = "在中央舞台展开当前筛选画廊的大图网格总览";
+    this.elStageGridBtn.addEventListener("click", () => {
+      if (this.gallery.length === 0) return;
+      this.stageViewMode = this.stageViewMode === "grid" ? "single" : "grid";
+      this.renderHeroViewport();
+    });
+
+    this.elStageCompareBtn = this.el("button", "btn btn-xs", "⚖️ 对比");
+    this.elStageCompareBtn.title = "勾选 2 张图（或对比当前图与上一张）在中央舞台同屏左右比对";
+    this.elStageCompareBtn.addEventListener("click", () => {
+      this.toggleCompareStageView();
+    });
+
+    this.elStarCurBtn = this.el("button", "btn btn-xs", "☆ 收藏");
+    this.elStarCurBtn.title =
+      "收藏当前图：自动持久化至浏览器 IndexedDB（刷新不丢），已挂载目录时同步移入 _favorites 子文件夹 (快捷键: F)";
+    this.elStarCurBtn.addEventListener("click", () => {
+      const rec = this.gallery[this.selectedGalleryIdx];
+      if (rec) void this.toggleGalleryStar(rec.id);
+    });
+
+    const rerollGroup = this.el("div", "reroll-inline-group");
+    this.elRerollCurBtn = this.el("button", "btn btn-xs btn-primary", "🎲 重抽选优");
+    this.elRerollCurBtn.title =
+      "按当前图原始配置快照快速重抽 N 张新候选图，同屏比对并一键选定留用、自动销毁落选图 (快捷键: R)";
+    this.elRerollCurBtn.addEventListener("click", () => {
+      const rec = this.gallery[this.selectedGalleryIdx];
+      if (rec) void this.startOrContinueShootout(rec.id, this.rerollCountPerRound);
+    });
+    this.elRerollCountSelect = this.el("select", "batch-select reroll-cnt-select") as HTMLSelectElement;
+    this.elRerollCountSelect.title = "每次重抽生成的候选张数";
+    for (const n of [1, 2, 3, 4]) {
+      const opt = this.el("option", "", `+${n}张`);
+      opt.value = String(n);
+      this.elRerollCountSelect.appendChild(opt);
+    }
+    this.elRerollCountSelect.value = String(this.rerollCountPerRound);
+    this.elRerollCountSelect.addEventListener("change", () => {
+      this.rerollCountPerRound = Math.max(1, Math.min(4, parseInt(this.elRerollCountSelect.value, 10) || 2));
+    });
+    rerollGroup.append(this.elRerollCurBtn, this.elRerollCountSelect);
+
+    this.elRestoreTriggerBtn = this.el("button", "btn btn-xs", "🧬 回溯 ▾");
+    this.elRestoreTriggerBtn.title = "从当前预览图一键回填生成当时的角色/画风/光影配置、Seed 或词条";
+    this.elRestoreTriggerBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (!this.gallery[this.selectedGalleryIdx]) return;
+      this.refreshRestorePopoverLabels();
+      this.togglePopover(this.elRestorePopover, this.elRestoreTriggerBtn);
+    });
+
+    this.elUpscaleBtn = this.el("button", "btn btn-xs btn-primary", "✨ 2x高清");
+    this.elUpscaleBtn.title = "对当前预览图片调用官方 2x Upscale 高清放大并原位替换（同步清理硬盘旧1x图）";
     this.elUpscaleBtn.addEventListener("click", () => void this.upscaleSelectedGalleryImage());
 
     const btnDownloadCur = this.el("button", "btn btn-xs", "💾 下载");
@@ -1597,16 +1732,31 @@ export class WorkbenchApp {
       triggerBytesDownload(rec.bytes, rec.filename);
     });
 
+    this.elDeleteCurBtn = this.el("button", "btn btn-xs btn-danger", "🗑️ 删除");
+    this.elDeleteCurBtn.title = "删除当前图（已挂载本地目录时同步删除硬盘对应 PNG 文件，快捷键: Delete）";
+    this.elDeleteCurBtn.addEventListener("click", () => {
+      const rec = this.gallery[this.selectedGalleryIdx];
+      if (rec) void this.deleteGalleryRecordsByIds([rec.id], `已删除 ${rec.scene_id}`);
+    });
+
     const btnZipAll = this.el("button", "btn btn-xs btn-success", "📦 打包ZIP");
+    btnZipAll.title = "打包导出已勾选图片（未勾选时导出当前筛选列表全部图片）与 prompts.txt";
     btnZipAll.addEventListener("click", () => this.exportGalleryZip());
 
     actions.append(
       this.elAutoUpscaleBtn,
       this.elAutoCarouselBtn,
       btnChecker,
+      btnOpenFolders,
+      this.elStageGridBtn,
+      this.elStageCompareBtn,
       btnOpenLightbox,
+      this.elStarCurBtn,
+      rerollGroup,
+      this.elRestoreTriggerBtn,
       this.elUpscaleBtn,
       btnDownloadCur,
+      this.elDeleteCurBtn,
       btnZipAll
     );
     toolbar.append(this.elStageMeta, actions);
@@ -1619,22 +1769,151 @@ export class WorkbenchApp {
     this.elProgressBanner.append(this.el("span", "spinner-dot"), this.elProgressText);
     this.renderHeroViewport();
 
-    // 3. Horizontal Filmstrip
+    // 3. Rich Bottom Gallery Bar (Single-Row Filmstrip ⇄ Multi-Row Adjustable Drawer)
     this.elFilmstripBar = this.el("div", "filmstrip-bar hidden");
-    this.elFilmstripScroll = this.el("div", "filmstrip-scroll");
-    const filmActions = this.el("div", "topbar-group");
-    const btnClearGallery = this.el("button", "btn btn-xs", "清空画廊");
-    btnClearGallery.addEventListener("click", () => {
-      for (const g of this.gallery) URL.revokeObjectURL(g.objectUrl);
-      this.gallery = [];
-      this.checkedGalleryIds.clear();
-      this.selectedGalleryIdx = -1;
-      this.renderHeroViewport();
+    const filmResizer = this.el("div", "filmstrip-resizer");
+    filmResizer.title = "上下拖动调节展开态画廊抽屉高度（双击重置）";
+
+    const filmToolbar = this.el("div", "filmstrip-toolbar");
+    const filmLeft = this.el("div", "filmstrip-filter-group");
+
+    this.elFilmExpandBtn = this.el("button", "btn btn-xs btn-primary", "▴ 分栏归档");
+    this.elFilmExpandBtn.title = "上拉展开「两栏拖拽归档 ➔ 点击文件夹展开三栏」自动分文件夹视图";
+    this.elFilmExpandBtn.addEventListener("click", () => {
+      this.filmstripExpanded = !this.filmstripExpanded;
       this.renderFilmstrip();
-      this.setStatus("🧹 已清空当前会话画廊缓存");
     });
-    filmActions.appendChild(btnClearGallery);
-    this.elFilmstripBar.append(this.elFilmstripScroll, filmActions);
+    filmLeft.appendChild(this.elFilmExpandBtn);
+
+    const filterDefs: Array<[GalleryFilterMode, string, string]> = [
+      ["all", "全部", "显示全部画廊图片"],
+      ["starred", "⭐收藏", "仅显示已点亮星标收藏的图片（刷新保留）"],
+      ["upscaled", "🔍2x", "仅显示已完成 2x 高清放大的图片"],
+    ];
+    this.elFilmFilterBtns.clear();
+    for (const [fMode, fLbl, fTip] of filterDefs) {
+      const fb = this.el("button", `chip-btn${this.galleryFilterMode === fMode ? " active" : ""}`, fLbl);
+      fb.title = fTip;
+      fb.addEventListener("click", () => {
+        this.galleryFilterMode = fMode;
+        if (fMode !== "scene") this.elFilmSceneSelect.value = "";
+        this.ensureSelectedMatchesFilter();
+        this.renderFilmstrip();
+        this.renderHeroViewport();
+      });
+      this.elFilmFilterBtns.set(fMode, fb);
+      filmLeft.appendChild(fb);
+    }
+
+    this.elFilmSceneSelect = this.el("select", "batch-select film-scene-select") as HTMLSelectElement;
+    this.elFilmSceneSelect.title = "按生成时的场景/体位 ID 筛选画廊图片";
+    this.elFilmSceneSelect.addEventListener("change", () => {
+      const val = this.elFilmSceneSelect.value;
+      if (val) {
+        this.gallerySceneFilter = val;
+        this.galleryFilterMode = "scene";
+      } else {
+        this.gallerySceneFilter = "";
+        if (this.galleryFilterMode === "scene") this.galleryFilterMode = "all";
+      }
+      this.ensureSelectedMatchesFilter();
+      this.renderFilmstrip();
+      this.renderHeroViewport();
+    });
+    filmLeft.appendChild(this.elFilmSceneSelect);
+
+    const filmRight = this.el("div", "filmstrip-batch-group");
+    const btnSelAll = this.el("button", "btn btn-xs", "全选");
+    btnSelAll.title = "勾选当前筛选列表中的所有图片（Shift+点击缩略图勾选框可区间连选）";
+    btnSelAll.addEventListener("click", () => {
+      const indices = this.getFilteredGalleryIndices();
+      const allChecked =
+        indices.length > 0 && indices.every((idx) => this.checkedGalleryIds.has(this.gallery[idx].id));
+      for (const idx of indices) {
+        const id = this.gallery[idx].id;
+        if (allChecked) this.checkedGalleryIds.delete(id);
+        else this.checkedGalleryIds.add(id);
+      }
+      this.renderFilmstrip();
+      this.syncStageToolbar();
+    });
+
+    const btnSelInvert = this.el("button", "btn btn-xs", "反选");
+    btnSelInvert.addEventListener("click", () => {
+      for (const idx of this.getFilteredGalleryIndices()) {
+        const id = this.gallery[idx].id;
+        if (this.checkedGalleryIds.has(id)) this.checkedGalleryIds.delete(id);
+        else this.checkedGalleryIds.add(id);
+      }
+      this.renderFilmstrip();
+      this.syncStageToolbar();
+    });
+
+    this.elBatchUpscaleGalleryBtn = this.el("button", "btn btn-xs btn-primary", "✨ 批量2x");
+    this.elBatchUpscaleGalleryBtn.title = "对已勾选的所有未放大图片依次执行官方 2x 高清放大替换";
+    this.elBatchUpscaleGalleryBtn.addEventListener("click", () => {
+      const ids = this.gallery
+        .filter((g) => this.checkedGalleryIds.has(g.id) && !g.is_upscaled)
+        .map((g) => g.id);
+      if (ids.length === 0) {
+        this.setStatus("⚠️ 请先在画廊勾选尚未 2x 放大的 1x 图片", true);
+        return;
+      }
+      void this.upscaleGalleryRecordsByIds(ids);
+    });
+
+    this.elBatchDeleteGalleryBtn = this.el("button", "btn btn-xs btn-danger", "🗑️ 删已选");
+    this.elBatchDeleteGalleryBtn.title = "删除所有已勾选图片（同步清理已挂载本地硬盘文件）";
+    this.elBatchDeleteGalleryBtn.addEventListener("click", () => {
+      if (this.checkedGalleryIds.size === 0) return;
+      const cnt = this.checkedGalleryIds.size;
+      void this.deleteGalleryRecordsByIds(
+        Array.from(this.checkedGalleryIds),
+        `🗑️ 已批量删除 ${cnt} 张勾选图片`
+      );
+    });
+
+    const btnClearUnstarred = this.el("button", "btn btn-xs", "🧹 清未收藏");
+    btnClearUnstarred.title = "一键清理所有未标星 ⭐ 的普通图（保留全部收藏图，同步删除硬盘未收藏文件）";
+    btnClearUnstarred.addEventListener("click", () => {
+      const unstarredIds = this.gallery.filter((g) => !g.is_starred).map((g) => g.id);
+      if (unstarredIds.length === 0) {
+        this.setStatus("✨ 当前画廊没有未收藏的普通图");
+        return;
+      }
+      void this.deleteGalleryRecordsByIds(
+        unstarredIds,
+        `🧹 已清理 ${unstarredIds.length} 张未收藏图片（⭐收藏已保留）`
+      );
+    });
+
+    const btnClearGallery = this.el("button", "btn btn-xs", "清空全部");
+    btnClearGallery.title = "清空当前全部画廊图片（包含取消收藏并同步清理本地文件）";
+    btnClearGallery.addEventListener("click", () => {
+      if (this.gallery.length === 0) return;
+      const hasStars = this.gallery.some((g) => g.is_starred);
+      if (hasStars && !window.confirm("当前画廊包含 ⭐ 已收藏图片，确定全部清空并从本地移除吗？")) {
+        return;
+      }
+      void this.deleteGalleryRecordsByIds(
+        this.gallery.map((g) => g.id),
+        "🧹 已清空全部画廊图片"
+      );
+    });
+
+    filmRight.append(
+      btnSelAll,
+      btnSelInvert,
+      this.elBatchUpscaleGalleryBtn,
+      this.elBatchDeleteGalleryBtn,
+      btnClearUnstarred,
+      btnClearGallery
+    );
+    filmToolbar.append(filmLeft, filmRight);
+
+    this.elFilmstripScroll = this.el("div", "filmstrip-scroll");
+    this.elFilmstripBar.append(filmResizer, filmToolbar, this.elFilmstripScroll);
+    this.setupFilmstripDrawerResizer(col, this.elFilmstripBar, filmResizer);
 
     // 4. Collapsible & Vertically Resizable Bottom Live Prompt Drawer
     this.elPromptDrawer = this.el("section", "prompt-drawer collapsed");
@@ -1732,6 +2011,80 @@ export class WorkbenchApp {
 
     col.append(toolbar, this.elHeroViewport, this.elFilmstripBar, this.elPromptDrawer);
     return col;
+  }
+
+  private setupFilmstripDrawerResizer(
+    colCenter: HTMLElement,
+    bar: HTMLElement,
+    handle: HTMLElement
+  ): void {
+    const LS_KEY = "nai_wb_filmstrip_h_v1";
+    const MIN_H = 175;
+    const getDefaultH = () => 268;
+    const getMaxH = () => {
+      const containerH = colCenter.clientHeight || window.innerHeight;
+      return Math.max(240, Math.round(containerH * 0.64));
+    };
+
+    let customH: number | null = null;
+    try {
+      const raw = Number(localStorage.getItem(LS_KEY));
+      if (Number.isFinite(raw) && raw >= MIN_H) customH = Math.round(raw);
+    } catch {
+      // ignore
+    }
+
+    const applyH = (persist = false): void => {
+      if (customH === null) {
+        bar.style.removeProperty("--filmstrip-expanded-h");
+      } else {
+        customH = Math.max(MIN_H, Math.min(getMaxH(), customH));
+        bar.style.setProperty("--filmstrip-expanded-h", `${customH}px`);
+      }
+      if (persist) {
+        try {
+          if (customH === null) localStorage.removeItem(LS_KEY);
+          else localStorage.setItem(LS_KEY, String(customH));
+        } catch {
+          // ignore
+        }
+      }
+    };
+    applyH(false);
+
+    handle.addEventListener("dblclick", () => {
+      customH = null;
+      applyH(true);
+    });
+
+    handle.addEventListener("pointerdown", (ev: PointerEvent) => {
+      ev.preventDefault();
+      if (!this.filmstripExpanded) {
+        this.filmstripExpanded = true;
+        this.renderFilmstrip();
+      }
+      handle.setPointerCapture(ev.pointerId);
+      handle.classList.add("dragging");
+      const startY = ev.clientY;
+      const startH = customH ?? getDefaultH();
+
+      const onMove = (moveEv: PointerEvent): void => {
+        const dy = startY - moveEv.clientY;
+        customH = Math.max(MIN_H, Math.min(getMaxH(), Math.round(startH + dy)));
+        applyH(false);
+      };
+      const onUp = (upEv: PointerEvent): void => {
+        handle.releasePointerCapture(upEv.pointerId);
+        handle.classList.remove("dragging");
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", onUp);
+        handle.removeEventListener("pointercancel", onUp);
+        applyH(true);
+      };
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", onUp);
+      handle.addEventListener("pointercancel", onUp);
+    });
   }
 
   private setupPromptDrawerResizer(
@@ -1985,6 +2338,9 @@ export class WorkbenchApp {
       r2.appendChild(c);
     }
 
+    // Row 2.5: Progressive Stage Generation Bar (由阶段递进生成)
+    const progBox = this.buildStageProgressionBox(isTentacleScene);
+
     // Row 3: Aux Toggles (Show Penis / Condom / Uterus X-Ray / Transparent BG)
     const r3 = this.el("div", "ctrl-inline-row");
     r3.appendChild(this.el("span", "ctrl-tag-lbl", "叠加"));
@@ -2040,7 +2396,109 @@ export class WorkbenchApp {
 
     // Row 4: Scene Environment Bar with inline Enable Switch (auto-locked for TN poses)
     const r4 = this.buildPosSceneRow();
-    this.elContextCtrlBox.append(r1, r2, r3, r4);
+    this.elContextCtrlBox.append(r1, r2, progBox, r3, r4);
+    this.updateBatchCheckedButton();
+  }
+
+  private buildStageProgressionBox(isCurrentPoseTentacle: boolean): HTMLElement {
+    const box = this.el("div", "stage-prog-box");
+
+    // Top line: Multi-select stage chain pills (1.进行 ➔ 2.内射 ➔ 3.溢流 ➔ 4.拔出 [5.宫脱])
+    const line1 = this.el("div", "ctrl-inline-row stage-prog-row");
+    const lbl = this.el("span", "ctrl-tag-lbl stage-prog-lbl", "📈递进");
+    lbl.title = "勾选参与递进生成的阶段链（至少保留 2 个阶段，按 1➔5 顺序推进）";
+    line1.appendChild(lbl);
+
+    ORDERED_POS_STAGE_ENTRIES.forEach((st, idx) => {
+      if (idx > 0) {
+        line1.appendChild(this.el("span", "stage-prog-arrow", "›"));
+      }
+      const isOn = this.progSelectedStageCodes.has(st.code);
+      const pill = this.el(
+        "button",
+        `chip-btn stage-chain-chip${isOn ? " active" : ""}`,
+        st.compactPill
+      );
+      pill.title = `${isOn ? "已纳入递进链" : "点击加入递进链"}：${st.key}`;
+      pill.addEventListener("click", () => {
+        if (this.progSelectedStageCodes.has(st.code)) {
+          if (this.progSelectedStageCodes.size <= 2) {
+            this.setStatus("⚠️ 阶段递进至少保留 2 个阶段");
+            return;
+          }
+          this.progSelectedStageCodes.delete(st.code);
+        } else {
+          this.progSelectedStageCodes.add(st.code);
+        }
+        this.renderRightModeView();
+      });
+      line1.appendChild(pill);
+    });
+
+    // Bottom line: Mode switcher + Lock Shared Seed + Auto Folder + Run button
+    const line2 = this.el("div", "ctrl-inline-row stage-prog-row");
+
+    const modeSeg = this.el("div", "seg-group stage-prog-seg");
+    const modeDefs: Array<[StageProgressionMode, string, string]> = [
+      [
+        "per_pose_chain",
+        "🔁 单体位全阶段",
+        "对当前体位（或每个勾选体位依次）完整连出所选阶段链（如 1.进行 ➔ 2.内射 ➔ 3.溢流 ➔ 4.拔出）",
+      ],
+      [
+        "across_poses_arc",
+        "📖 多体位推进",
+        "勾选多个体位时，按动作列表顺序自动从前向后推进阶段（第1个体位走前段 ➔ 最后体位走事后）",
+      ],
+    ];
+    for (const [mVal, mLbl, mTip] of modeDefs) {
+      const mb = this.el(
+        "button",
+        `seg-btn${this.progMode === mVal ? " active" : ""}`,
+        mLbl
+      );
+      mb.title = mTip;
+      mb.addEventListener("click", () => {
+        this.progMode = mVal;
+        this.renderRightModeView();
+      });
+      modeSeg.appendChild(mb);
+    }
+
+    const seedLockBtn = this.el(
+      "button",
+      `switch-pill${this.progLockSeedPerPose ? " on" : ""}`,
+      this.progLockSeedPerPose ? "🔒同Seed" : "🎲各随机"
+    );
+    seedLockBtn.title =
+      "开启后：同一体位在跨阶段递进时锁定同一个随机/指定 Seed，最大化保持构图与角度一致（做阶段差分效果）";
+    seedLockBtn.addEventListener("click", () => {
+      this.progLockSeedPerPose = !this.progLockSeedPerPose;
+      this.renderRightModeView();
+    });
+
+    const autoGrpBtn = this.el(
+      "button",
+      `switch-pill${this.progAutoGroupFolder ? " on" : ""}`,
+      this.progAutoGroupFolder ? "📁自动建组" : "📁不建组"
+    );
+    autoGrpBtn.title =
+      "开启后：每次发起递进生成自动新建专属分组文件夹（同步在挂载本地目录建子文件夹）归档整套递进图";
+    autoGrpBtn.addEventListener("click", () => {
+      this.progAutoGroupFolder = !this.progAutoGroupFolder;
+      this.renderRightModeView();
+    });
+
+    this.elProgRunBtn = this.el("button", "btn btn-xs btn-primary stage-prog-run-btn", "📈 递进生图");
+    this.elProgRunBtn.disabled =
+      this.isGenerating || (isCurrentPoseTentacle && this.checkedPositionIds.size === 0);
+    this.elProgRunBtn.addEventListener("click", () => {
+      this.runStageProgressionBatch();
+    });
+
+    line2.append(modeSeg, seedLockBtn, autoGrpBtn, this.elProgRunBtn);
+    box.append(line1, line2);
+    return box;
   }
 
   private buildPosSceneRow(): HTMLElement {
@@ -2520,15 +2978,91 @@ export class WorkbenchApp {
       this.buildMultiAngleContextControls();
     }
     this.refreshSceneAndPrompt();
+    this.updateBatchCheckedButton();
+  }
+
+  private getEffectiveProgressionSceneIds(): string[] {
+    if (this.checkedPositionIds.size > 0) {
+      return ALL_POSITIONS_CHAPTERS.filter((c) => this.checkedPositionIds.has(c.id)).map(
+        (c) => c.id
+      );
+    }
+    return this.activeSceneId in ALL_POSITIONS_TEMPLATES ? [this.activeSceneId] : ["P01"];
   }
 
   private updateBatchCheckedButton(): void {
-    if (!this.elBatchCheckedBtn) return;
-    const set =
-      this.actionMode === "positions" ? this.checkedPositionIds : this.checkedMultiAngleIds;
-    const n = set.size;
-    this.elBatchCheckedBtn.textContent = `🚀 连出勾选 (${n})`;
-    this.elBatchCheckedBtn.disabled = n === 0 || this.isGenerating;
+    if (this.elBatchCheckedBtn) {
+      const set =
+        this.actionMode === "positions" ? this.checkedPositionIds : this.checkedMultiAngleIds;
+      const n = set.size;
+      this.elBatchCheckedBtn.textContent = `🚀 连出勾选 (${n})`;
+      this.elBatchCheckedBtn.disabled = n === 0 || this.isGenerating;
+    }
+    if (this.elProgRunBtn && this.actionMode === "positions") {
+      const poseIds = this.getEffectiveProgressionSceneIds();
+      const nonTentacleCount = poseIds.filter(
+        (id) => ALL_POSITIONS_TEMPLATES[id]?.channel !== "tentacle"
+      ).length;
+      const previewTasks = buildStageProgressionQueue({
+        sceneIds: poseIds,
+        selectedStageCodes: Array.from(this.progSelectedStageCodes),
+        mode: this.progMode,
+        lockSharedSeedPerPose: this.progLockSeedPerPose,
+        baseFixedSeed: this.apiSettings.seed,
+        repeatsPerStep: this.apiSettings.batch_count || 1,
+      });
+      const scopeHint =
+        this.checkedPositionIds.size > 0 ? `${poseIds.length}体位` : poseIds[0] || "P01";
+      this.elProgRunBtn.textContent = `📈 递进 ${scopeHint} (${previewTasks.length}张)`;
+      this.elProgRunBtn.disabled = this.isGenerating || nonTentacleCount === 0;
+      this.elProgRunBtn.title =
+        nonTentacleCount === 0
+          ? "触手/异种虫系动作已内置独立解剖阶段，请选择或勾选常规体位 (P01~MP15) 执行阶段递进"
+          : `按所选 ${this.progSelectedStageCodes.size} 个阶段递进连续生成共 ${previewTasks.length} 张图片`;
+    }
+  }
+
+  private runStageProgressionBatch(): void {
+    if (this.isGenerating || this.actionMode !== "positions") return;
+    const poseIds = this.getEffectiveProgressionSceneIds();
+    const hasStageable = poseIds.some((id) => ALL_POSITIONS_TEMPLATES[id]?.channel !== "tentacle");
+    if (!hasStageable) {
+      this.setStatus("⚠️ 当前选中的触手/虫系动作已内置固定阶段，请切换或勾选常规体位执行递进", true);
+      return;
+    }
+
+    let targetFolder: string | undefined;
+    if (this.progAutoGroupFolder) {
+      const tag =
+        poseIds.length === 1
+          ? `${poseIds[0]}_递进${this.progSelectedStageCodes.size}幕_${formatTimeHHMMSS()}`
+          : `剧情递进_${poseIds.length}幕_${formatTimeHHMMSS()}`;
+      targetFolder = this.ensureGalleryFolderExists(tag);
+      this.openedFolderName = targetFolder;
+    } else if (this.pinnedTargetFolderName) {
+      targetFolder = this.pinnedTargetFolderName;
+    }
+
+    const progTasks = buildStageProgressionQueue({
+      sceneIds: poseIds,
+      selectedStageCodes: Array.from(this.progSelectedStageCodes),
+      mode: this.progMode,
+      lockSharedSeedPerPose: this.progLockSeedPerPose,
+      baseFixedSeed: this.apiSettings.seed,
+      repeatsPerStep: this.apiSettings.batch_count || 1,
+      targetGroupFolder: targetFolder,
+    });
+    if (progTasks.length === 0) return;
+
+    void this.runGenerationQueue(
+      progTasks.map((pt) => ({
+        sceneId: pt.sceneId,
+        fixedSeedOverride: pt.fixedSeedOverride,
+        stagePresetKeyOverride: pt.stagePresetKey || undefined,
+        stageCode: pt.stageCode || undefined,
+        targetGroupFolder: pt.targetGroupFolder,
+      }))
+    );
   }
 
   private runCheckedBatch(): void {
@@ -2631,6 +3165,90 @@ export class WorkbenchApp {
     this.elMcpPopover?.classList.add("hidden");
     this.elSavePresetPopover?.classList.add("hidden");
     this.elExprPopover?.classList.add("hidden");
+    this.elRestorePopover?.classList.add("hidden");
+  }
+
+  private elRestoreSeedBtn!: HTMLButtonElement;
+  private elRestoreCfgBtn!: HTMLButtonElement;
+
+  private buildRestoreRecordPopover(): HTMLElement {
+    const pop = this.el("div", "floating-popover hidden");
+    pop.style.width = "330px";
+    pop.addEventListener("click", (ev) => ev.stopPropagation());
+
+    const head = this.el("div", "popover-head");
+    head.appendChild(this.el("span", "", "🧬 历史成图参数与词条回溯"));
+    const btnClose = this.el("button", "btn btn-xs btn-icon", "✕");
+    btnClose.addEventListener("click", () => pop.classList.add("hidden"));
+    head.appendChild(btnClose);
+
+    const col = this.el("div", "restore-pop-actions");
+
+    this.elRestoreCfgBtn = this.el(
+      "button",
+      "btn btn-primary",
+      "🧬 完整回填此图角色/画风/光影配置 + 体位"
+    );
+    this.elRestoreCfgBtn.addEventListener("click", () => {
+      const rec = this.gallery[this.selectedGalleryIdx];
+      if (!rec) return;
+      this.restoreRecordFullConfig(rec);
+      pop.classList.add("hidden");
+    });
+
+    this.elRestoreSeedBtn = this.el("button", "btn", "🎲 锁定此图 Seed");
+    this.elRestoreSeedBtn.addEventListener("click", () => {
+      const rec = this.gallery[this.selectedGalleryIdx];
+      if (!rec) return;
+      this.apiSettings.seed = rec.seed;
+      saveApiSettings(this.apiSettings);
+      this.syncApiControls();
+      pop.classList.add("hidden");
+      this.setStatus(`🎲 已锁定 Seed 为 ${rec.seed}（切换其他动作将沿用此种子）`);
+    });
+
+    const btnRestorePrompts = this.el(
+      "button",
+      "btn",
+      "📝 仅回填此图正/负向词条（手改锁定）"
+    );
+    btnRestorePrompts.addEventListener("click", () => {
+      const rec = this.gallery[this.selectedGalleryIdx];
+      if (!rec) return;
+      this.elPosTextarea.value = rec.prompt_pos || "";
+      this.elNegTextarea.value = rec.prompt_neg || "";
+      this.isManualPromptEdited = true;
+      this.elManualLockPill.style.display = "inline-flex";
+      if (!this.promptDrawerExpanded) {
+        this.elDrawerToggleBtn.click();
+      }
+      this.updateTokenBadgeFromBoxes();
+      pop.classList.add("hidden");
+      this.setStatus(`📝 已回填 ${rec.scene_id} 的正/负向提示词并锁定手改模式`);
+    });
+
+    const btnResetRandomSeed = this.el("button", "btn btn-xs", "🔀 恢复随机 Seed (-1)");
+    btnResetRandomSeed.addEventListener("click", () => {
+      this.apiSettings.seed = -1;
+      saveApiSettings(this.apiSettings);
+      this.syncApiControls();
+      pop.classList.add("hidden");
+      this.setStatus("🔀 已恢复随机种子 (-1)");
+    });
+
+    col.append(this.elRestoreCfgBtn, this.elRestoreSeedBtn, btnRestorePrompts, btnResetRandomSeed);
+    pop.append(head, col);
+    return pop;
+  }
+
+  private refreshRestorePopoverLabels(): void {
+    const rec = this.gallery[this.selectedGalleryIdx];
+    if (!rec) return;
+    this.elRestoreSeedBtn.textContent = `🎲 仅锁定此图 Seed (${rec.seed})`;
+    this.elRestoreCfgBtn.disabled = !rec.config_snapshot;
+    this.elRestoreCfgBtn.textContent = rec.config_snapshot
+      ? `🧬 完整回填 ${rec.scene_id} 配置快照 + 采样参数`
+      : "🧬 无配置快照（仅支持回填 Seed / 词条）";
   }
 
   private buildMcpPopover(): HTMLElement {
@@ -2891,6 +3509,21 @@ export class WorkbenchApp {
       if (this.carouselMode === "timed") this.restartCarouselTimer();
     });
 
+    this.elLightboxStarBtn = this.el("button", "btn btn-xs", "☆ 收藏");
+    this.elLightboxStarBtn.addEventListener("click", () => {
+      const rec = this.gallery[this.lightboxIdx];
+      if (rec) void this.toggleGalleryStar(rec.id);
+    });
+
+    const btnLbReroll = this.el("button", "btn btn-xs btn-primary", "🎲 重抽此图");
+    btnLbReroll.addEventListener("click", () => {
+      const rec = this.gallery[this.lightboxIdx];
+      if (!rec) return;
+      this.selectedGalleryIdx = this.lightboxIdx;
+      this.closeLightbox();
+      void this.startOrContinueShootout(rec.id, this.rerollCountPerRound);
+    });
+
     const btnLbUpscale = this.el("button", "btn btn-xs btn-primary", "✨ 2x放大");
     btnLbUpscale.addEventListener("click", () => {
       this.selectedGalleryIdx = this.lightboxIdx;
@@ -2903,7 +3536,13 @@ export class WorkbenchApp {
       if (rec) triggerBytesDownload(rec.bytes, rec.filename);
     });
 
-    ctrls.append(modeSeg, intSel, btnLbUpscale, btnLbDl);
+    const btnLbDel = this.el("button", "btn btn-xs btn-danger", "🗑️ 删除");
+    btnLbDel.addEventListener("click", () => {
+      const rec = this.gallery[this.lightboxIdx];
+      if (rec) void this.deleteGalleryRecordsByIds([rec.id], `🗑️ 已删除 ${rec.scene_id}`);
+    });
+
+    ctrls.append(modeSeg, intSel, this.elLightboxStarBtn, btnLbReroll, btnLbUpscale, btnLbDl, btnLbDel);
     top.append(headRow, ctrls);
 
     const stage = this.el("div", "lightbox-stage");
@@ -2973,12 +3612,24 @@ export class WorkbenchApp {
   }
 
   private stepLightbox(delta: number, isManualUserClick: boolean): void {
-    if (this.gallery.length === 0) return;
+    const filtered = this.getFilteredGalleryIndices();
+    const pool = filtered.length > 0 ? filtered : this.gallery.map((_, i) => i);
+    if (pool.length === 0) return;
     if (isManualUserClick && this.carouselMode !== "manual") {
       this.setCarouselMode("manual");
     }
-    this.lightboxIdx = (this.lightboxIdx + delta + this.gallery.length) % this.gallery.length;
+    const curPos = pool.indexOf(this.lightboxIdx);
+    const nextPos =
+      curPos === -1
+        ? delta >= 0
+          ? 0
+          : pool.length - 1
+        : (curPos + delta + pool.length) % pool.length;
+    this.lightboxIdx = pool[nextPos];
+    this.selectedGalleryIdx = this.lightboxIdx;
     this.renderLightboxFrame();
+    this.renderHeroViewport();
+    this.renderFilmstrip();
   }
 
   private renderLightboxFrame(): void {
@@ -2986,7 +3637,11 @@ export class WorkbenchApp {
     const rec = this.gallery[this.lightboxIdx];
     if (!rec) return;
     this.elLightboxImg.src = rec.objectUrl;
-    this.elLightboxMeta.textContent = `[${this.lightboxIdx + 1}/${this.gallery.length}] ${rec.scene_id} · ${rec.width}×${rec.height}${rec.is_upscaled ? " (2x HD)" : ""} · Seed ${rec.seed}`;
+    this.elLightboxMeta.textContent = `[${this.lightboxIdx + 1}/${this.gallery.length}] ${rec.is_starred ? "⭐ " : ""}${rec.scene_id} · ${rec.width}×${rec.height}${rec.is_upscaled ? " (2x HD)" : ""} · Seed ${rec.seed}`;
+    if (this.elLightboxStarBtn) {
+      this.elLightboxStarBtn.textContent = rec.is_starred ? "⭐ 已收藏" : "☆ 收藏";
+      this.elLightboxStarBtn.classList.toggle("btn-star-on", Boolean(rec.is_starred));
+    }
   }
 
   // ===========================================================================
@@ -3114,7 +3769,44 @@ export class WorkbenchApp {
       Boolean(this.apiSettings.auto_fullscreen_carousel)
     );
     const rec = this.gallery[this.selectedGalleryIdx];
+    const hasRec = Boolean(rec);
     this.elUpscaleBtn.disabled = !rec || Boolean(rec.is_upscaled) || this.isGenerating;
+    if (this.elStarCurBtn) {
+      this.elStarCurBtn.disabled = !hasRec;
+      this.elStarCurBtn.textContent = rec?.is_starred ? "⭐ 已收藏" : "☆ 收藏";
+      this.elStarCurBtn.classList.toggle("btn-star-on", Boolean(rec?.is_starred));
+    }
+    if (this.elRerollCurBtn) {
+      this.elRerollCurBtn.disabled = !hasRec || this.isGenerating;
+    }
+    if (this.elRestoreTriggerBtn) {
+      this.elRestoreTriggerBtn.disabled = !hasRec;
+    }
+    if (this.elDeleteCurBtn) {
+      this.elDeleteCurBtn.disabled = !hasRec || this.isGenerating;
+    }
+    if (this.elStageGridBtn) {
+      this.elStageGridBtn.disabled = this.gallery.length === 0;
+      this.elStageGridBtn.classList.toggle("btn-primary", this.stageViewMode === "grid");
+    }
+    if (this.elStageCompareBtn) {
+      this.elStageCompareBtn.disabled = this.gallery.length < 2;
+      this.elStageCompareBtn.classList.toggle("btn-primary", this.stageViewMode === "compare");
+    }
+    if (this.elBatchUpscaleGalleryBtn) {
+      const checked1x = this.gallery.filter(
+        (g) => this.checkedGalleryIds.has(g.id) && !g.is_upscaled
+      ).length;
+      this.elBatchUpscaleGalleryBtn.disabled = checked1x === 0 || this.isGenerating;
+      this.elBatchUpscaleGalleryBtn.textContent =
+        checked1x > 0 ? `✨ 批量2x(${checked1x})` : "✨ 批量2x";
+    }
+    if (this.elBatchDeleteGalleryBtn) {
+      const chkCnt = this.checkedGalleryIds.size;
+      this.elBatchDeleteGalleryBtn.disabled = chkCnt === 0 || this.isGenerating;
+      this.elBatchDeleteGalleryBtn.textContent =
+        chkCnt > 0 ? `🗑️ 删已选(${chkCnt})` : "🗑️ 删已选";
+    }
   }
 
   private syncMountButton(): void {
@@ -3547,7 +4239,15 @@ export class WorkbenchApp {
   }
 
   private async runGenerationQueue(
-    tasks: Array<{ sceneId: string; useManualPrompt?: boolean; forceRandomSeed?: boolean }>
+    tasks: Array<{
+      sceneId: string;
+      useManualPrompt?: boolean;
+      forceRandomSeed?: boolean;
+      fixedSeedOverride?: number;
+      stagePresetKeyOverride?: string;
+      stageCode?: string;
+      targetGroupFolder?: string;
+    }>
   ): Promise<void> {
     if (this.isGenerating || tasks.length === 0) return;
     if (!this.apiSettings.api_token.trim()) {
@@ -3578,19 +4278,27 @@ export class WorkbenchApp {
     this.cfg.pos_token_limit = safeLimit;
 
     const sessionFolder = `${formatDateYYYYMMDD()}_${(this.cfg.eng_name || "Studio").replace(/[^a-zA-Z0-9_-]/g, "")}`;
-    const promptLogs: string[] = [];
+    if (this.stageViewMode === "shootout") {
+      this.stageViewMode = "single";
+      this.shootoutState = null;
+    }
 
     try {
       for (let i = 0; i < tasks.length; i++) {
         if (this.abortController.signal.aborted) break;
         const task = tasks[i];
-        const genItems = generateScenePrompts(task.sceneId, this.cfg);
+        const isTentaclePose = ALL_POSITIONS_TEMPLATES[task.sceneId]?.channel === "tentacle";
+        const effectiveCfg: CharacterConfig =
+          task.stagePresetKeyOverride && !isTentaclePose
+            ? { ...this.cfg, pos_stage: task.stagePresetKeyOverride }
+            : this.cfg;
+        const genItems = generateScenePrompts(task.sceneId, effectiveCfg);
         const sceneItem = genItems[0];
         if (!sceneItem) continue;
 
         let rawPosPrompt: string;
         let customNeg: string;
-        if (task.useManualPrompt) {
+        if (task.useManualPrompt && !task.stagePresetKeyOverride) {
           rawPosPrompt = this.elPosTextarea.value.trim();
           customNeg = this.elNegTextarea.value.trim();
         } else {
@@ -3599,7 +4307,7 @@ export class WorkbenchApp {
           customNeg = sp.negPrompt;
         }
 
-        const isPixelC5 = isC5LowresPixelStyleActive(this.cfg);
+        const isPixelC5 = isC5LowresPixelStyleActive(effectiveCfg);
         const [w, h] = isPixelC5
           ? sceneItem.canvas.includes("384x512")
             ? [384, 512]
@@ -3607,11 +4315,19 @@ export class WorkbenchApp {
           : parseCanvasSize(sceneItem.canvas, this.apiSettings.canvas_preset);
 
         const reqSeed =
-          task.forceRandomSeed || tasks.length > 1 ? -1 : this.apiSettings.seed;
+          typeof task.fixedSeedOverride === "number" && task.fixedSeedOverride >= 0
+            ? task.fixedSeedOverride
+            : task.forceRandomSeed || tasks.length > 1
+              ? -1
+              : this.apiSettings.seed;
+        const snap = this.captureCurrentConfigSnapshot();
+        snap.cfg = JSON.parse(JSON.stringify(effectiveCfg)) as CharacterConfig;
 
+        const stageBadge = formatStageBadgeLabel(task.stageCode);
+        const stageProgressHint = stageBadge ? ` · ${stageBadge}` : "";
         const tStart = performance.now();
         this.startLiveTimerLabel(
-          `[${i + 1}/${tasks.length}] 正在生成 ${task.sceneId}${this.apiSettings.auto_upscale_replace && !isPixelC5 ? " (+自动2x高清)" : ""}`,
+          `[${i + 1}/${tasks.length}] 正在生成 ${task.sceneId}${stageProgressHint}${this.apiSettings.auto_upscale_replace && !isPixelC5 ? " (+自动2x高清)" : ""}`,
           tStart
         );
 
@@ -3647,7 +4363,7 @@ export class WorkbenchApp {
         // to the gallery or Lightbox before 2x upscaling completes!
         if (this.apiSettings.auto_upscale_replace && !isPixelC5) {
           this.startLiveTimerLabel(
-            `[${i + 1}/${tasks.length}] 正在执行 2x 高清放大替换 ${task.sceneId}`,
+            `[${i + 1}/${tasks.length}] 正在执行 2x 高清放大替换 ${task.sceneId}${stageProgressHint}`,
             tStart
           );
           try {
@@ -3672,15 +4388,22 @@ export class WorkbenchApp {
 
         const ext = detectImageExt(finalBytes);
         const timeTag = formatTimeHHMMSS();
-        const filename = `${timeTag}_${task.sceneId}_s${res.seed}${isUpscaled ? "_2x" : ""}${ext}`;
+        const stageFileTag = task.stageCode ? `_${formatStageFileTag(task.stageCode)}` : "";
+        const filename = `${timeTag}_${task.sceneId}${stageFileTag}_s${res.seed}${isUpscaled ? "_2x" : ""}${ext}`;
         const copyForBlob = new Uint8Array(finalBytes.byteLength);
         copyForBlob.set(finalBytes);
         const objectUrl = URL.createObjectURL(new Blob([copyForBlob], { type: "image/png" }));
 
+        const effectiveFolderRaw = task.targetGroupFolder ?? this.pinnedTargetFolderName ?? "";
+        const assignedGroupFolder = effectiveFolderRaw
+          ? this.ensureGalleryFolderExists(effectiveFolderRaw) || undefined
+          : undefined;
+        const diskPath = resolveRecordDiskSubpath(sessionFolder, assignedGroupFolder, false);
+
         const rec: GeneratedImageRecord = {
           id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           scene_id: task.sceneId,
-          mode_label: this.cfg.perspective_mode,
+          mode_label: effectiveCfg.perspective_mode,
           filename,
           bytes: finalBytes,
           objectUrl,
@@ -3693,26 +4416,33 @@ export class WorkbenchApp {
           prompt_pos: rawPosPrompt,
           prompt_neg: customNeg,
           is_upscaled: isUpscaled,
+          is_starred: false,
+          disk_subpath: diskPath,
+          config_snapshot: snap,
+          group_folder: assignedGroupFolder,
+          stage_code: task.stageCode,
         };
 
-        // Save to mounted local directory if connected
-        const savedPath = await saveBytesToMountedDir([sessionFolder], filename, finalBytes);
+        // Save to mounted local directory (automatically creates group subfolder if assigned!)
+        const savedPath = await saveBytesToMountedDir(diskPath, filename, finalBytes);
         if (savedPath) rec.saved_to_dir = true;
-        promptLogs.push(`# ${filename} | ${finalW}x${finalH} | Seed: ${res.seed}\n[POS] ${rawPosPrompt}\n[NEG] ${customNeg}\n`);
-        if (getMountedDirName()) {
-          await saveBytesToMountedDir([sessionFolder], "prompts.txt", promptLogs.join("\n"));
-        }
 
         if (this.apiSettings.auto_download) {
           triggerBytesDownload(finalBytes, filename);
         }
 
         this.gallery.push(rec);
+        if (getMountedDirName()) {
+          await syncPromptsLogToMountedDir(this.gallery, [diskPath]);
+        }
         this.selectedGalleryIdx = this.gallery.length - 1;
+        if (this.galleryFilterMode === "starred" || (this.galleryFilterMode === "upscaled" && !isUpscaled)) {
+          this.galleryFilterMode = "all";
+        }
         this.renderHeroViewport();
         this.renderFilmstrip();
         this.setStatus(
-          `✅ ${rec.scene_id} · ${rec.width}×${rec.height}${rec.is_upscaled ? " [2x HD]" : ""} · Seed: ${rec.seed} · ${rec.elapsed_sec}s${rec.saved_to_dir ? " · 📂已落盘" : ""}`
+          `✅ ${rec.scene_id}${stageProgressHint}${assignedGroupFolder ? ` [📁${assignedGroupFolder}]` : ""} · ${rec.width}×${rec.height}${rec.is_upscaled ? " [2x HD]" : ""} · Seed: ${rec.seed} · ${rec.elapsed_sec}s${rec.saved_to_dir ? " · 📂已落盘" : ""}`
         );
 
         // Fullscreen Carousel Lightbox sync (ONLY after final 2x or 1x record is pushed!)
@@ -3764,64 +4494,654 @@ export class WorkbenchApp {
     }
   }
 
+  private captureCurrentConfigSnapshot(): GeneratedConfigSnapshot {
+    return {
+      cfg: JSON.parse(JSON.stringify(this.cfg)) as CharacterConfig,
+      action_mode: this.actionMode,
+      model: this.apiSettings.model,
+      steps: this.apiSettings.steps,
+      scale: this.apiSettings.scale,
+      cfg_rescale: this.apiSettings.cfg_rescale,
+      uc_preset_mode: this.apiSettings.uc_preset_mode,
+      extra_uc: this.apiSettings.extra_uc,
+      append_v5_quality: this.apiSettings.append_v5_quality,
+    };
+  }
+
   private async upscaleSelectedGalleryImage(): Promise<void> {
     const rec = this.gallery[this.selectedGalleryIdx];
     if (!rec || rec.is_upscaled || this.isGenerating) return;
+    await this.upscaleGalleryRecordsByIds([rec.id]);
+  }
+
+  private async upscaleGalleryRecordsByIds(ids: string[]): Promise<void> {
+    const targets = ids
+      .map((id) => this.gallery.find((g) => g.id === id))
+      .filter((g): g is GeneratedImageRecord => Boolean(g && !g.is_upscaled));
+    if (targets.length === 0 || this.isGenerating) return;
     if (!this.apiSettings.api_token.trim()) {
       this.setStatus("⚠️ 请先填写 API Token", true);
       return;
     }
 
     this.isGenerating = true;
+    this.abortController = new AbortController();
+    this.elHeroGenBtn.style.display = "none";
+    this.elStopGenBtn.style.display = "inline-flex";
     this.syncStageToolbar();
     this.elProgressBanner.style.display = "inline-flex";
-    const t0 = performance.now();
-    this.startLiveTimerLabel(`🔍 正在 2x 放大 ${rec.scene_id}`, t0);
+
+    let doneCount = 0;
+    let starredTouched = false;
+    const touchedDiskPaths: string[][] = [];
 
     try {
-      const up = await upscaleSingleImageNai({
-        apiToken: this.apiSettings.api_token,
-        imageBytes: rec.bytes,
-      });
-      URL.revokeObjectURL(rec.objectUrl);
-      const copy = new Uint8Array(up.imageBytes.byteLength);
-      copy.set(up.imageBytes);
-      rec.bytes = up.imageBytes;
-      rec.objectUrl = URL.createObjectURL(new Blob([copy], { type: "image/png" }));
-      rec.width = up.outWidth;
-      rec.height = up.outHeight;
-      rec.is_upscaled = true;
-      rec.filename = rec.filename.replace(/(\.[^.]+)$/, "_2x$1");
+      for (let i = 0; i < targets.length; i++) {
+        if (this.abortController.signal.aborted) break;
+        const rec = targets[i];
+        const t0 = performance.now();
+        this.startLiveTimerLabel(
+          targets.length > 1
+            ? `[${i + 1}/${targets.length}] 🔍 正在批量 2x 放大 ${rec.scene_id}`
+            : `🔍 正在 2x 放大 ${rec.scene_id}`,
+          t0
+        );
 
-      if (getMountedDirName()) {
-        const folder = `${formatDateYYYYMMDD()}_${(this.cfg.eng_name || "Studio").replace(/[^a-zA-Z0-9_-]/g, "")}`;
-        const saved = await saveBytesToMountedDir([folder], rec.filename, rec.bytes);
-        if (saved) rec.saved_to_dir = true;
+        const up = await upscaleSingleImageNai({
+          apiToken: this.apiSettings.api_token,
+          imageBytes: rec.bytes,
+          signal: this.abortController.signal,
+        });
+        const oldFilename = rec.filename;
+        URL.revokeObjectURL(rec.objectUrl);
+        const copy = new Uint8Array(up.imageBytes.byteLength);
+        copy.set(up.imageBytes);
+        rec.bytes = up.imageBytes;
+        rec.objectUrl = URL.createObjectURL(new Blob([copy], { type: "image/png" }));
+        rec.width = up.outWidth;
+        rec.height = up.outHeight;
+        rec.is_upscaled = true;
+        rec.filename = rec.filename.replace(/(\.[^.]+)$/, "_2x$1");
+        if (rec.is_starred) starredTouched = true;
+
+        if (getMountedDirName()) {
+          const defaultFolder = `${formatDateYYYYMMDD()}_${(this.cfg.eng_name || "Studio").replace(/[^a-zA-Z0-9_-]/g, "")}`;
+          const subPath =
+            rec.disk_subpath && rec.disk_subpath.length > 0
+              ? rec.disk_subpath
+              : resolveRecordDiskSubpath(defaultFolder, rec.group_folder, rec.is_starred);
+          const saved = await saveBytesToMountedDir(subPath, rec.filename, rec.bytes);
+          if (saved) {
+            rec.saved_to_dir = true;
+            rec.disk_subpath = [...subPath];
+            if (oldFilename !== rec.filename) {
+              await deleteFileFromMountedDir(subPath, oldFilename);
+            }
+            touchedDiskPaths.push([...subPath]);
+          }
+        }
+        doneCount++;
+        this.renderHeroViewport();
+        this.renderFilmstrip();
+        if (this.lightboxOpen) this.renderLightboxFrame();
       }
 
-      this.renderHeroViewport();
-      this.renderFilmstrip();
-      if (this.lightboxOpen) this.renderLightboxFrame();
-      this.setStatus(
-        `✨ 2x 放大完成：${rec.scene_id} · ${rec.width}×${rec.height} (${up.elapsedSec}s)`
-      );
+      if (starredTouched) {
+        await saveStarredGalleryRecords(this.gallery);
+      }
+      if (getMountedDirName() && touchedDiskPaths.length > 0) {
+        await syncPromptsLogToMountedDir(this.gallery, touchedDiskPaths);
+      }
+      if (doneCount > 0) {
+        const last = targets[Math.min(doneCount - 1, targets.length - 1)];
+        this.setStatus(
+          targets.length > 1
+            ? `✨ 批量 2x 放大完成 (${doneCount}/${targets.length} 张)`
+            : `✨ 2x 放大完成：${last.scene_id} · ${last.width}×${last.height}`
+        );
+      }
     } catch (err) {
-      this.setStatus(
-        `❌ 2x 放大失败：${err instanceof Error ? err.message : String(err)}`,
-        true
-      );
+      if (!this.abortController.signal.aborted) {
+        this.setStatus(
+          `❌ 2x 放大失败：${err instanceof Error ? err.message : String(err)}`,
+          true
+        );
+      } else {
+        this.setStatus(`⏹ 已停止批量 2x 放大（已完成 ${doneCount} 张）`);
+      }
     } finally {
       this.stopLiveTimerLabel();
       this.isGenerating = false;
+      this.abortController = null;
+      this.elHeroGenBtn.style.display = "inline-flex";
+      this.elStopGenBtn.style.display = "none";
       this.elProgressBanner.style.display = "none";
       this.syncStageToolbar();
+      void this.refreshSubscription(true);
     }
+  }
+
+  // ===========================================================================
+  // RICH GALLERY MANAGEMENT: FILTER / STAR+IDB / DISK SYNC / SHOOTOUT / COMPARE
+  // ===========================================================================
+  private getFilteredGalleryIndices(): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < this.gallery.length; i++) {
+      const g = this.gallery[i];
+      if (this.galleryFilterMode === "starred" && !g.is_starred) continue;
+      if (this.galleryFilterMode === "upscaled" && !g.is_upscaled) continue;
+      if (this.galleryFilterMode === "scene" && this.gallerySceneFilter && g.scene_id !== this.gallerySceneFilter) {
+        continue;
+      }
+      out.push(i);
+    }
+    return out;
+  }
+
+  private ensureSelectedMatchesFilter(): void {
+    if (this.gallery.length === 0) {
+      this.selectedGalleryIdx = -1;
+      return;
+    }
+    const indices = this.getFilteredGalleryIndices();
+    if (indices.length === 0) return;
+    if (!indices.includes(this.selectedGalleryIdx)) {
+      this.selectedGalleryIdx = indices[indices.length - 1];
+    }
+  }
+
+  private stepCenterGallery(delta: number): void {
+    const indices = this.getFilteredGalleryIndices();
+    const pool = indices.length > 0 ? indices : this.gallery.map((_, i) => i);
+    if (pool.length === 0) return;
+    const curPos = pool.indexOf(this.selectedGalleryIdx);
+    const nextPos =
+      curPos === -1
+        ? delta >= 0
+          ? 0
+          : pool.length - 1
+        : (curPos + delta + pool.length) % pool.length;
+    this.selectedGalleryIdx = pool[nextPos];
+    const rec = this.gallery[this.selectedGalleryIdx];
+    this.renderHeroViewport();
+    this.renderFilmstrip();
+    if (rec) {
+      this.setStatus(
+        `🖼️ [${nextPos + 1}/${pool.length}] ${rec.is_starred ? "⭐ " : ""}${rec.scene_id} · ${rec.width}×${rec.height}${rec.is_upscaled ? " [2x HD]" : ""} · Seed: ${rec.seed}`
+      );
+    }
+  }
+
+  private async toggleGalleryStar(recId: string): Promise<void> {
+    const rec = this.gallery.find((g) => g.id === recId);
+    if (!rec) return;
+    rec.is_starred = !rec.is_starred;
+
+    // 1. Persist starred-only set to IndexedDB (unstarred items are automatically purged from IDB)
+    await saveStarredGalleryRecords(this.gallery);
+
+    // 2. Two-way strong sync with mounted local directory (_favorites subfolder, respecting group_folder)
+    let diskSyncNote = "";
+    if (getMountedDirName()) {
+      const baseFolder =
+        rec.disk_subpath?.[0] ||
+        `${formatDateYYYYMMDD()}_${(this.cfg.eng_name || "Studio").replace(/[^a-zA-Z0-9_-]/g, "")}`;
+      const normalPath = resolveRecordDiskSubpath(baseFolder, rec.group_folder, false);
+      const favPath = resolveRecordDiskSubpath(baseFolder, rec.group_folder, true);
+      const prevPath =
+        rec.disk_subpath && rec.disk_subpath.length > 0 ? [...rec.disk_subpath] : normalPath;
+      const targetPath = rec.is_starred ? favPath : normalPath;
+
+      if (rec.saved_to_dir) {
+        const moved = await moveFileInMountedDir(prevPath, targetPath, rec.filename, rec.bytes);
+        if (moved) {
+          rec.disk_subpath = targetPath;
+          diskSyncNote = rec.is_starred ? " · 📂已移入 _favorites" : " · 📂已移回会话目录";
+        }
+      } else {
+        const saved = await saveBytesToMountedDir(targetPath, rec.filename, rec.bytes);
+        if (saved) {
+          rec.saved_to_dir = true;
+          rec.disk_subpath = targetPath;
+          diskSyncNote = rec.is_starred ? " · 📂已存入 _favorites" : " · 📂已存入会话目录";
+        }
+      }
+      await syncPromptsLogToMountedDir(this.gallery, [normalPath, favPath]);
+    }
+
+    if (!rec.is_starred && this.galleryFilterMode === "starred") {
+      this.ensureSelectedMatchesFilter();
+    }
+    this.renderHeroViewport();
+    this.renderFilmstrip();
+    if (this.lightboxOpen) this.renderLightboxFrame();
+    this.setStatus(
+      rec.is_starred
+        ? `⭐ 已收藏 ${rec.scene_id}（IndexedDB 持久化保护${diskSyncNote}）`
+        : `☆ 已取消收藏 ${rec.scene_id}（刷新后不保留${diskSyncNote}）`
+    );
+  }
+
+  private async deleteGalleryRecordsByIds(
+    ids: Iterable<string>,
+    statusMsg?: string
+  ): Promise<void> {
+    const delSet = new Set(ids);
+    if (delSet.size === 0 || this.gallery.length === 0) return;
+
+    const currentSelectedId = this.gallery[this.selectedGalleryIdx]?.id ?? null;
+    const currentLbId = this.gallery[this.lightboxIdx]?.id ?? null;
+
+    // Remember neighbor before deletion so cursor lands smoothly on adjacent item
+    let fallbackNextId: string | null = null;
+    if (currentSelectedId && delSet.has(currentSelectedId)) {
+      for (let i = this.selectedGalleryIdx + 1; i < this.gallery.length; i++) {
+        if (!delSet.has(this.gallery[i].id)) {
+          fallbackNextId = this.gallery[i].id;
+          break;
+        }
+      }
+      if (!fallbackNextId) {
+        for (let i = this.selectedGalleryIdx - 1; i >= 0; i--) {
+          if (!delSet.has(this.gallery[i].id)) {
+            fallbackNextId = this.gallery[i].id;
+            break;
+          }
+        }
+      }
+    } else {
+      fallbackNextId = currentSelectedId;
+    }
+
+    let hadStarredDeleted = false;
+    let diskDeletedCount = 0;
+    const touchedPaths: string[][] = [];
+
+    for (const rec of this.gallery) {
+      if (!delSet.has(rec.id)) continue;
+      URL.revokeObjectURL(rec.objectUrl);
+      this.checkedGalleryIds.delete(rec.id);
+      if (rec.is_starred) hadStarredDeleted = true;
+      if (getMountedDirName() && rec.disk_subpath && rec.disk_subpath.length > 0) {
+        const ok = await deleteFileFromMountedDir(rec.disk_subpath, rec.filename);
+        if (ok) diskDeletedCount++;
+        touchedPaths.push([...rec.disk_subpath]);
+      }
+    }
+
+    this.gallery = this.gallery.filter((g) => !delSet.has(g.id));
+
+    if (hadStarredDeleted) {
+      await saveStarredGalleryRecords(this.gallery);
+    }
+    if (getMountedDirName() && touchedPaths.length > 0) {
+      await syncPromptsLogToMountedDir(this.gallery, touchedPaths);
+    }
+
+    // Update Shootout state if active
+    if (this.shootoutState) {
+      this.shootoutState.candidateIds = this.shootoutState.candidateIds.filter(
+        (cid) => !delSet.has(cid) && this.gallery.some((g) => g.id === cid)
+      );
+      if (this.shootoutState.candidateIds.length === 0) {
+        this.shootoutState = null;
+        if (this.stageViewMode === "shootout") this.stageViewMode = "single";
+      } else if (!this.gallery.some((g) => g.id === this.shootoutState!.anchorId)) {
+        this.shootoutState.anchorId = this.shootoutState.candidateIds[0];
+      }
+    }
+
+    if (this.gallery.length === 0) {
+      this.selectedGalleryIdx = -1;
+      this.stageViewMode = "single";
+      if (this.lightboxOpen) this.closeLightbox();
+    } else {
+      const nextIdx = fallbackNextId
+        ? this.gallery.findIndex((g) => g.id === fallbackNextId)
+        : -1;
+      this.selectedGalleryIdx =
+        nextIdx !== -1 ? nextIdx : Math.min(this.selectedGalleryIdx, this.gallery.length - 1);
+      this.ensureSelectedMatchesFilter();
+
+      if (this.stageViewMode === "compare" && this.gallery.length < 2) {
+        this.stageViewMode = "single";
+      }
+      if (this.lightboxOpen) {
+        const lbKeepIdx = currentLbId ? this.gallery.findIndex((g) => g.id === currentLbId) : -1;
+        this.lightboxIdx =
+          lbKeepIdx !== -1 ? lbKeepIdx : Math.max(0, Math.min(this.lightboxIdx, this.gallery.length - 1));
+        this.renderLightboxFrame();
+      }
+    }
+
+    this.renderHeroViewport();
+    this.renderFilmstrip();
+    const diskSuffix = diskDeletedCount > 0 ? `（📂本地已同步删除 ${diskDeletedCount} 个文件）` : "";
+    if (statusMsg) {
+      this.setStatus(`${statusMsg}${diskSuffix}`);
+    }
+  }
+
+  private restoreRecordFullConfig(rec: GeneratedImageRecord): void {
+    const snap = rec.config_snapshot;
+    if (snap) {
+      this.cfg = {
+        ...createDefaultCharacterConfig(),
+        ...(JSON.parse(JSON.stringify(snap.cfg)) as CharacterConfig),
+      };
+      this.actionMode = snap.action_mode;
+      this.apiSettings.model = snap.model;
+      this.apiSettings.steps = snap.steps;
+      this.apiSettings.scale = snap.scale;
+      this.apiSettings.cfg_rescale = snap.cfg_rescale;
+      this.apiSettings.uc_preset_mode = snap.uc_preset_mode;
+      this.apiSettings.extra_uc = snap.extra_uc;
+      this.apiSettings.append_v5_quality = snap.append_v5_quality;
+      saveActiveConfig(this.cfg);
+      saveApiSettings(this.apiSettings);
+    }
+    if (rec.scene_id === "FREE") {
+      this.actionMode = "free";
+    } else if (rec.scene_id.startsWith("MA")) {
+      this.actionMode = "multi_angle";
+      this.activeSceneId = rec.scene_id;
+    } else if (rec.scene_id in ALL_POSITIONS_TEMPLATES) {
+      this.actionMode = "positions";
+      this.activeSceneId = rec.scene_id;
+    }
+    this.isManualPromptEdited = false;
+    this.populatePresetSelect();
+    this.syncAllControls();
+    this.renderRightModeView();
+    this.refreshSceneAndPrompt();
+    this.setStatus(`🧬 已完整回填 ${rec.scene_id} 的角色/画风/光影配置与采样参数`);
+  }
+
+  private toggleCompareStageView(): void {
+    if (this.gallery.length < 2) {
+      this.setStatus("⚠️ 画廊至少需要 2 张图片才能进入双图对比视图", true);
+      return;
+    }
+    if (this.stageViewMode === "compare") {
+      this.stageViewMode = "single";
+      this.renderHeroViewport();
+      return;
+    }
+    const checkedInOrder = this.gallery.filter((g) => this.checkedGalleryIds.has(g.id));
+    if (checkedInOrder.length >= 2) {
+      this.comparePairIds = [
+        checkedInOrder[checkedInOrder.length - 2].id,
+        checkedInOrder[checkedInOrder.length - 1].id,
+      ];
+    } else {
+      const curIdx = Math.max(0, this.selectedGalleryIdx);
+      const prevIdx = curIdx > 0 ? curIdx - 1 : Math.min(this.gallery.length - 1, curIdx + 1);
+      this.comparePairIds = [this.gallery[prevIdx].id, this.gallery[curIdx].id];
+    }
+    this.stageViewMode = "compare";
+    this.renderHeroViewport();
+  }
+
+  private async startOrContinueShootout(anchorId: string, count = 2): Promise<void> {
+    if (this.isGenerating) return;
+    const anchor = this.gallery.find((g) => g.id === anchorId);
+    if (!anchor) return;
+    if (!this.apiSettings.api_token.trim()) {
+      this.elApiCard.classList.remove("collapsed");
+      this.mobileCol = "left";
+      this.syncMobileColumns();
+      this.setStatus("⚠️ 请先填入 Persistent API Token (pst-...)", true);
+      return;
+    }
+
+    const roundCount = Math.max(1, Math.min(4, count));
+    if (!this.shootoutState || !this.shootoutState.candidateIds.includes(anchorId)) {
+      this.shootoutState = {
+        anchorId: anchor.id,
+        candidateIds: [anchor.id],
+      };
+    }
+    this.stageViewMode = "shootout";
+    this.renderHeroViewport();
+
+    const snap = anchor.config_snapshot ?? this.captureCurrentConfigSnapshot();
+    const model = snap.model;
+    const isPixelC5 = isC5LowresPixelStyleActive(snap.cfg);
+    // Recover 1x generation canvas if anchor was already 2x upscaled
+    const genW =
+      anchor.is_upscaled && !isPixelC5
+        ? Math.max(64, Math.round(anchor.width / 2 / 64) * 64)
+        : isPixelC5 && anchor.width > 640
+          ? Math.round(anchor.width / 3)
+          : anchor.width;
+    const genH =
+      anchor.is_upscaled && !isPixelC5
+        ? Math.max(64, Math.round(anchor.height / 2 / 64) * 64)
+        : isPixelC5 && anchor.height > 640
+          ? Math.round(anchor.height / 3)
+          : anchor.height;
+
+    const rawPosPrompt = (anchor.prompt_pos || "").trim() || this.elPosTextarea.value.trim();
+    const customNeg = (anchor.prompt_neg ?? this.elNegTextarea.value).trim();
+    const activeVibes = model === MODEL_V4_5_FULL ? this.getActiveVibeSlots() : [];
+    const sessionFolder =
+      anchor.disk_subpath?.[0] ||
+      `${formatDateYYYYMMDD()}_${(snap.cfg.eng_name || "Studio").replace(/[^a-zA-Z0-9_-]/g, "")}`;
+    const groupId = anchor.reroll_group_id || `shootout_${anchor.id}`;
+    anchor.reroll_group_id = groupId;
+
+    this.isGenerating = true;
+    this.abortController = new AbortController();
+    this.elHeroGenBtn.style.display = "none";
+    this.elStopGenBtn.style.display = "inline-flex";
+    this.elProgressBanner.style.display = "inline-flex";
+    this.syncStageToolbar();
+
+    try {
+      for (let r = 0; r < roundCount; r++) {
+        if (this.abortController.signal.aborted) break;
+        const tStart = performance.now();
+        this.startLiveTimerLabel(
+          `🎯 重抽选优 [${r + 1}/${roundCount}] ${anchor.scene_id}${this.apiSettings.auto_upscale_replace && !isPixelC5 ? " (+2x高清)" : ""}`,
+          tStart
+        );
+
+        const res = await generateSingleImageNai({
+          apiToken: this.apiSettings.api_token,
+          model,
+          promptText: rawPosPrompt,
+          customNegPrompt: customNeg,
+          width: genW,
+          height: genH,
+          steps: snap.steps,
+          scale: snap.scale,
+          cfgRescale: snap.cfg_rescale,
+          seed: -1,
+          ucPresetMode: snap.uc_preset_mode,
+          keepInlineNegatives: false,
+          extraUc: snap.extra_uc,
+          appendV5Quality: snap.append_v5_quality,
+          vibes: activeVibes,
+          normalizeVibeStrength: this.apiSettings.vibe_normalize_strength,
+          isOpusFreeEligible: this.isOpusFreeActive(),
+          pixel3xNearest: isPixelC5,
+          signal: this.abortController.signal,
+        });
+
+        let finalBytes = res.imageBytes;
+        let finalW = res.width;
+        let finalH = res.height;
+        let finalElapsed = res.elapsedSec;
+        let isUpscaled = false;
+
+        if (this.apiSettings.auto_upscale_replace && !isPixelC5) {
+          this.startLiveTimerLabel(
+            `🎯 重抽选优 [${r + 1}/${roundCount}] 正在 2x 放大 ${anchor.scene_id}`,
+            tStart
+          );
+          try {
+            const up = await upscaleSingleImageNai({
+              apiToken: this.apiSettings.api_token,
+              imageBytes: finalBytes,
+              signal: this.abortController.signal,
+            });
+            finalBytes = up.imageBytes;
+            finalW = up.outWidth;
+            finalH = up.outHeight;
+            finalElapsed = Number((finalElapsed + up.elapsedSec).toFixed(2));
+            isUpscaled = true;
+          } catch {
+            if (this.abortController.signal.aborted) break;
+          }
+        }
+
+        const ext = detectImageExt(finalBytes);
+        const stageTag = anchor.stage_code ? `_${formatStageFileTag(anchor.stage_code)}` : "";
+        const filename = `${formatTimeHHMMSS()}_${anchor.scene_id}${stageTag}_s${res.seed}${isUpscaled ? "_2x" : ""}${ext}`;
+        const copyForBlob = new Uint8Array(finalBytes.byteLength);
+        copyForBlob.set(finalBytes);
+        const objectUrl = URL.createObjectURL(new Blob([copyForBlob], { type: "image/png" }));
+        const candDiskPath = resolveRecordDiskSubpath(sessionFolder, anchor.group_folder, false);
+
+        const newRec: GeneratedImageRecord = {
+          id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          scene_id: anchor.scene_id,
+          mode_label: anchor.mode_label,
+          filename,
+          bytes: finalBytes,
+          objectUrl,
+          seed: res.seed,
+          width: finalW,
+          height: finalH,
+          elapsed_sec: finalElapsed,
+          estimated_anlas: res.estimatedAnlas + (isUpscaled ? 1 : 0),
+          created_at: Date.now(),
+          prompt_pos: rawPosPrompt,
+          prompt_neg: customNeg,
+          is_upscaled: isUpscaled,
+          is_starred: false,
+          disk_subpath: candDiskPath,
+          config_snapshot: JSON.parse(JSON.stringify(snap)) as GeneratedConfigSnapshot,
+          reroll_group_id: groupId,
+          group_folder: anchor.group_folder,
+          stage_code: anchor.stage_code,
+        };
+
+        const savedPath = await saveBytesToMountedDir(candDiskPath, filename, finalBytes);
+        if (savedPath) newRec.saved_to_dir = true;
+        if (this.apiSettings.auto_download) {
+          triggerBytesDownload(finalBytes, filename);
+        }
+
+        // Insert right after the last candidate of this shootout group so gallery sequence stays tidy
+        const lastCandId =
+          this.shootoutState.candidateIds[this.shootoutState.candidateIds.length - 1];
+        const lastCandIdx = this.gallery.findIndex((g) => g.id === lastCandId);
+        const insertAt = lastCandIdx !== -1 ? lastCandIdx + 1 : this.gallery.length;
+        this.gallery.splice(insertAt, 0, newRec);
+        this.shootoutState.candidateIds.push(newRec.id);
+        this.selectedGalleryIdx = insertAt;
+
+        if (getMountedDirName()) {
+          await syncPromptsLogToMountedDir(this.gallery, [candDiskPath]);
+        }
+        this.renderHeroViewport();
+        this.renderFilmstrip();
+      }
+      this.setStatus(
+        `🎯 重抽完成：请点击候选卡片下方「🏆 仅留此张（删其余）」一键选定最优成图`
+      );
+    } catch (err) {
+      if (!this.abortController.signal.aborted) {
+        this.setStatus(
+          `❌ 重抽中断：${err instanceof Error ? err.message : String(err)}`,
+          true
+        );
+      } else {
+        this.setStatus("⏹ 已停止当前轮重抽");
+      }
+    } finally {
+      this.stopLiveTimerLabel();
+      this.isGenerating = false;
+      this.abortController = null;
+      this.elHeroGenBtn.style.display = "inline-flex";
+      this.elStopGenBtn.style.display = "none";
+      this.elProgressBanner.style.display = "none";
+      this.syncStageToolbar();
+      void this.refreshSubscription(true);
+    }
+  }
+
+  private async pickShootoutWinner(winnerId: string): Promise<void> {
+    if (!this.shootoutState || this.isGenerating) return;
+    const { anchorId, candidateIds } = this.shootoutState;
+    const winner = this.gallery.find((g) => g.id === winnerId);
+    if (!winner) return;
+
+    // Place winner right at anchor's slot if anchor is being replaced
+    const anchorIdx = this.gallery.findIndex((g) => g.id === anchorId);
+    const winnerIdx = this.gallery.findIndex((g) => g.id === winnerId);
+    if (anchorIdx !== -1 && winnerIdx !== -1 && anchorIdx !== winnerIdx) {
+      this.gallery.splice(winnerIdx, 1);
+      const nextAnchorIdx = this.gallery.findIndex((g) => g.id === anchorId);
+      this.gallery.splice(nextAnchorIdx, 0, winner);
+    }
+
+    const loserIds = candidateIds.filter((cid) => cid !== winnerId);
+    this.shootoutState = null;
+    this.stageViewMode = "single";
+
+    if (loserIds.length > 0) {
+      await this.deleteGalleryRecordsByIds(
+        loserIds,
+        `🏆 已选定留用 ${winner.scene_id} (Seed: ${winner.seed})，自动销毁 ${loserIds.length} 张落选图`
+      );
+    }
+    const finalIdx = this.gallery.findIndex((g) => g.id === winnerId);
+    if (finalIdx !== -1) this.selectedGalleryIdx = finalIdx;
+    this.renderHeroViewport();
+    this.renderFilmstrip();
   }
 
   private renderHeroViewport(): void {
     this.elHeroViewport.innerHTML = "";
     this.elHeroViewport.appendChild(this.elProgressBanner);
 
+    // INVARIANT (AGENTS.md Rule 3): Empty center viewport MUST render pure #000000 black screen with zero placeholder text/buttons!
+    if (this.gallery.length === 0) {
+      this.elHeroViewport.classList.remove("stage-multi-mode");
+      this.syncStageToolbar();
+      return;
+    }
+
+    if (this.stageViewMode === "shootout" && this.shootoutState) {
+      const cands = this.shootoutState.candidateIds
+        .map((id) => this.gallery.find((g) => g.id === id))
+        .filter((g): g is GeneratedImageRecord => Boolean(g));
+      if (cands.length > 0) {
+        this.elHeroViewport.classList.add("stage-multi-mode");
+        this.renderShootoutStage(cands, this.shootoutState.anchorId);
+        this.syncStageToolbar();
+        return;
+      }
+      this.stageViewMode = "single";
+    }
+
+    if (this.stageViewMode === "compare" && this.gallery.length >= 2) {
+      this.elHeroViewport.classList.add("stage-multi-mode");
+      this.renderCompareStage();
+      this.syncStageToolbar();
+      return;
+    }
+
+    if (this.stageViewMode === "grid") {
+      this.elHeroViewport.classList.add("stage-multi-mode");
+      this.renderGridOverviewStage();
+      this.syncStageToolbar();
+      return;
+    }
+
+    this.elHeroViewport.classList.remove("stage-multi-mode");
     const rec = this.gallery[this.selectedGalleryIdx];
     if (!rec) {
       this.syncStageToolbar();
@@ -3832,83 +5152,1163 @@ export class WorkbenchApp {
     img.className = "hero-img";
     img.src = rec.objectUrl;
     img.alt = rec.filename;
-    img.title = "点击进入全屏灯箱查看";
+    img.title = "点击进入全屏灯箱查看 (快捷键: ←/→ 切图, F 收藏, R 重抽, Delete 删除)";
     img.addEventListener("click", () => this.openLightbox(this.selectedGalleryIdx));
     this.elHeroViewport.appendChild(img);
     this.syncStageToolbar();
   }
 
+  private renderShootoutStage(cands: GeneratedImageRecord[], anchorId: string): void {
+    const wrap = this.el("div", "stage-multi-wrap");
+    const head = this.el("div", "stage-multi-head");
+    const title = this.el(
+      "div",
+      "stage-multi-title",
+      `🎯 快速重抽选优 · ${cands[0].scene_id}（共 ${cands.length} 张候选 · 点击图片可全屏放大细看）`
+    );
+
+    const acts = this.el("div", "topbar-group");
+    const btnMore = this.el(
+      "button",
+      "btn btn-xs btn-primary",
+      `🎲 再抽 +${this.rerollCountPerRound} 张`
+    );
+    btnMore.disabled = this.isGenerating;
+    btnMore.addEventListener("click", () => {
+      void this.startOrContinueShootout(anchorId, this.rerollCountPerRound);
+    });
+
+    const btnKeepAll = this.el("button", "btn btn-xs btn-success", "✅ 全部保留退出");
+    btnKeepAll.disabled = this.isGenerating;
+    btnKeepAll.addEventListener("click", () => {
+      this.shootoutState = null;
+      this.stageViewMode = "single";
+      this.renderHeroViewport();
+      this.setStatus(`✅ 已保留本轮全部 ${cands.length} 张候选图`);
+    });
+
+    const btnRevert = this.el("button", "btn btn-xs btn-danger", "↩ 放弃新抽（仅留原图）");
+    btnRevert.disabled = this.isGenerating || !cands.some((c) => c.id === anchorId) || cands.length <= 1;
+    btnRevert.addEventListener("click", () => {
+      void this.pickShootoutWinner(anchorId);
+    });
+
+    acts.append(btnMore, btnKeepAll, btnRevert);
+    head.append(title, acts);
+
+    const grid = this.el(
+      "div",
+      `shootout-grid cols-${cands.length <= 2 ? "2" : cands.length <= 4 ? "2" : "3"}`
+    );
+    cands.forEach((rec, idx) => {
+      const isOrig = rec.id === anchorId;
+      const card = this.el(
+        "div",
+        `shootout-card${this.gallery[this.selectedGalleryIdx]?.id === rec.id ? " active" : ""}`
+      );
+
+      const imgWrap = this.el("div", "shootout-img-wrap");
+      const img = document.createElement("img");
+      img.src = rec.objectUrl;
+      img.alt = rec.filename;
+      img.addEventListener("click", () => {
+        const gIdx = this.gallery.findIndex((g) => g.id === rec.id);
+        if (gIdx !== -1) {
+          this.selectedGalleryIdx = gIdx;
+          this.openLightbox(gIdx, "manual");
+        }
+      });
+
+      const badge = this.el(
+        "span",
+        `shootout-badge${isOrig ? " orig" : " reroll"}`,
+        isOrig ? "📌 原图" : `🆕 重抽 #${idx}`
+      );
+      imgWrap.append(img, badge);
+      if (rec.is_upscaled) {
+        imgWrap.appendChild(this.el("span", "film-item-2x", "2x"));
+      }
+
+      const foot = this.el("div", "shootout-foot");
+      const meta = this.el("div", "shootout-meta", `Seed: ${rec.seed} · ${rec.width}×${rec.height}`);
+      const cBtns = this.el("div", "shootout-card-btns");
+
+      const btnPick = this.el("button", "btn btn-xs btn-success", "🏆 仅留此张（删其余）");
+      btnPick.disabled = this.isGenerating;
+      btnPick.addEventListener("click", () => {
+        void this.pickShootoutWinner(rec.id);
+      });
+
+      const btnStar = this.el(
+        "button",
+        `btn btn-xs${rec.is_starred ? " btn-star-on" : ""}`,
+        rec.is_starred ? "⭐" : "☆"
+      );
+      btnStar.title = "收藏此候选图";
+      btnStar.addEventListener("click", () => {
+        void this.toggleGalleryStar(rec.id);
+      });
+
+      const btnUpscale = this.el("button", "btn btn-xs", "2x");
+      btnUpscale.title = "单独对此候选图执行 2x 高清放大";
+      btnUpscale.disabled = Boolean(rec.is_upscaled) || this.isGenerating;
+      btnUpscale.addEventListener("click", () => {
+        void this.upscaleGalleryRecordsByIds([rec.id]);
+      });
+
+      const btnDrop = this.el("button", "btn btn-xs btn-danger", "淘汰");
+      btnDrop.disabled = this.isGenerating || cands.length <= 1;
+      btnDrop.addEventListener("click", () => {
+        void this.deleteGalleryRecordsByIds([rec.id], `🗑️ 已淘汰候选图 Seed: ${rec.seed}`);
+      });
+
+      cBtns.append(btnPick, btnStar, btnUpscale, btnDrop);
+      foot.append(meta, cBtns);
+      card.append(imgWrap, foot);
+      grid.appendChild(card);
+    });
+
+    wrap.append(head, grid);
+    this.elHeroViewport.appendChild(wrap);
+  }
+
+  private renderCompareStage(): void {
+    let leftRec = this.gallery.find((g) => g.id === this.comparePairIds[0]);
+    let rightRec = this.gallery.find((g) => g.id === this.comparePairIds[1]);
+    if (!leftRec) leftRec = this.gallery[0];
+    if (!rightRec || rightRec.id === leftRec.id) {
+      rightRec = this.gallery.find((g) => g.id !== leftRec!.id) ?? this.gallery[this.gallery.length - 1];
+    }
+    this.comparePairIds = [leftRec.id, rightRec.id];
+
+    const wrap = this.el("div", "stage-multi-wrap");
+    const head = this.el("div", "stage-multi-head");
+    head.appendChild(this.el("div", "stage-multi-title", "⚖️ 双图同屏 A/B 对比"));
+
+    const acts = this.el("div", "topbar-group");
+    const btnZoom = this.el(
+      "button",
+      `btn btn-xs${this.compareFitOneToOne ? " btn-primary" : ""}`,
+      this.compareFitOneToOne ? "🔍 1:1 原始像素" : "📐 适应窗口"
+    );
+    btnZoom.addEventListener("click", () => {
+      this.compareFitOneToOne = !this.compareFitOneToOne;
+      this.renderHeroViewport();
+    });
+
+    const btnKeepLeft = this.el("button", "btn btn-xs btn-success", "🏆 留左删右");
+    btnKeepLeft.disabled = leftRec.id === rightRec.id || this.isGenerating;
+    btnKeepLeft.addEventListener("click", () => {
+      const dropId = rightRec!.id;
+      const keepIdx = this.gallery.findIndex((g) => g.id === leftRec!.id);
+      if (keepIdx !== -1) this.selectedGalleryIdx = keepIdx;
+      this.stageViewMode = "single";
+      void this.deleteGalleryRecordsByIds([dropId], `🏆 已保留左图 (${leftRec!.scene_id}) 并删除右图`);
+    });
+
+    const btnKeepRight = this.el("button", "btn btn-xs btn-success", "🏆 留右删左");
+    btnKeepRight.disabled = leftRec.id === rightRec.id || this.isGenerating;
+    btnKeepRight.addEventListener("click", () => {
+      const dropId = leftRec!.id;
+      const keepIdx = this.gallery.findIndex((g) => g.id === rightRec!.id);
+      if (keepIdx !== -1) this.selectedGalleryIdx = keepIdx;
+      this.stageViewMode = "single";
+      void this.deleteGalleryRecordsByIds([dropId], `🏆 已保留右图 (${rightRec!.scene_id}) 并删除左图`);
+    });
+
+    const btnExit = this.el("button", "btn btn-xs", "✕ 返回单图");
+    btnExit.addEventListener("click", () => {
+      this.stageViewMode = "single";
+      this.renderHeroViewport();
+    });
+
+    acts.append(btnZoom, btnKeepLeft, btnKeepRight, btnExit);
+    head.appendChild(acts);
+
+    const split = this.el("div", `compare-split${this.compareFitOneToOne ? " zoom-1x" : ""}`);
+    const buildPane = (rec: GeneratedImageRecord, slotIdx: 0 | 1, tagLbl: string): HTMLElement => {
+      const pane = this.el("div", "compare-pane");
+      const pTop = this.el("div", "compare-pane-bar");
+      const sel = this.el("select", "batch-select compare-slot-select") as HTMLSelectElement;
+      this.gallery.forEach((g, idx) => {
+        const opt = this.el(
+          "option",
+          "",
+          `#${idx + 1} ${g.is_starred ? "⭐" : ""}${g.scene_id}${g.is_upscaled ? " [2x]" : ""} · s${g.seed}`
+        );
+        opt.value = g.id;
+        sel.appendChild(opt);
+      });
+      sel.value = rec.id;
+      sel.addEventListener("change", () => {
+        this.comparePairIds[slotIdx] = sel.value;
+        this.renderHeroViewport();
+      });
+
+      const meta = this.el("span", "compare-meta", `${tagLbl} · ${rec.width}×${rec.height}`);
+      pTop.append(meta, sel);
+
+      const canvas = this.el("div", "compare-img-box");
+      const img = document.createElement("img");
+      img.src = rec.objectUrl;
+      img.alt = rec.filename;
+      img.addEventListener("click", () => {
+        const gIdx = this.gallery.findIndex((g) => g.id === rec.id);
+        if (gIdx !== -1) this.openLightbox(gIdx, "manual");
+      });
+      canvas.appendChild(img);
+      pane.append(pTop, canvas);
+      return pane;
+    };
+
+    split.append(buildPane(leftRec, 0, "🅰️ 左图"), buildPane(rightRec, 1, "🅱️ 右图"));
+    wrap.append(head, split);
+    this.elHeroViewport.appendChild(wrap);
+  }
+
+  private renderGridOverviewStage(): void {
+    const indices = this.getFilteredGalleryIndices();
+    const wrap = this.el("div", "stage-multi-wrap");
+    const head = this.el("div", "stage-multi-head");
+    head.appendChild(
+      this.el("div", "stage-multi-title", `🪟 画廊大图网格总览（当前显示 ${indices.length} / ${this.gallery.length} 张）`)
+    );
+    const btnClose = this.el("button", "btn btn-xs", "✕ 返回单图舞台");
+    btnClose.addEventListener("click", () => {
+      this.stageViewMode = "single";
+      this.renderHeroViewport();
+    });
+    head.appendChild(btnClose);
+
+    const grid = this.el("div", "stage-overview-grid");
+    for (const idx of indices) {
+      const rec = this.gallery[idx];
+      const card = this.el(
+        "div",
+        `overview-card${idx === this.selectedGalleryIdx ? " active" : ""}${rec.is_starred ? " starred" : ""}`
+      );
+      const imgBox = this.el("div", "overview-img-box");
+      const img = document.createElement("img");
+      img.src = rec.objectUrl;
+      img.alt = rec.filename;
+      img.addEventListener("click", () => {
+        this.selectedGalleryIdx = idx;
+        this.stageViewMode = "single";
+        this.renderHeroViewport();
+        this.renderFilmstrip();
+      });
+      imgBox.appendChild(img);
+      if (rec.is_upscaled) imgBox.appendChild(this.el("span", "film-item-2x", "2x"));
+
+      const bar = this.el("div", "overview-card-bar");
+      bar.appendChild(this.el("span", "overview-lbl", `${rec.scene_id} · s${rec.seed}`));
+      const bActs = this.el("div", "overview-card-btns");
+
+      const bStar = this.el("button", `btn btn-xs${rec.is_starred ? " btn-star-on" : ""}`, rec.is_starred ? "⭐" : "☆");
+      bStar.title = "收藏 / 取消收藏";
+      bStar.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        void this.toggleGalleryStar(rec.id);
+      });
+
+      const bReroll = this.el("button", "btn btn-xs btn-primary", "🎲");
+      bReroll.title = "对此图发起快速重抽选优";
+      bReroll.disabled = this.isGenerating;
+      bReroll.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this.selectedGalleryIdx = idx;
+        void this.startOrContinueShootout(rec.id, this.rerollCountPerRound);
+      });
+
+      const bDel = this.el("button", "btn btn-xs btn-danger", "×");
+      bDel.title = "删除此图";
+      bDel.disabled = this.isGenerating;
+      bDel.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        void this.deleteGalleryRecordsByIds([rec.id], `🗑️ 已删除 ${rec.scene_id}`);
+      });
+
+      bActs.append(bStar, bReroll, bDel);
+      bar.appendChild(bActs);
+      card.append(imgBox, bar);
+      grid.appendChild(card);
+    }
+
+    wrap.append(head, grid);
+    this.elHeroViewport.appendChild(wrap);
+  }
+
+  // ===========================================================================
+  // GALLERY FOLDER ORGANIZER (2-COLUMN ➔ 3-COLUMN DRAG & DROP + DISK SUBFOLDERS)
+  // ===========================================================================
+  private ensureGalleryFolderExists(rawName: string): string {
+    const safeName = sanitizeSubfolderName(rawName);
+    if (!safeName) return "";
+    const existing = this.galleryFolders.find(
+      (f) => f.name.toLowerCase() === safeName.toLowerCase()
+    );
+    if (existing) return existing.name;
+    this.galleryFolders.push({
+      id: `fld_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: safeName,
+      created_at: Date.now(),
+    });
+    saveGalleryFolders(this.galleryFolders);
+    return safeName;
+  }
+
+  private extractDraggedIds(ev: DragEvent): string[] {
+    if (this.draggingRecordIds.length > 0) {
+      return [...this.draggingRecordIds];
+    }
+    try {
+      const raw = ev.dataTransfer?.getData("text/plain") || "";
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private async moveGalleryRecordsToFolder(
+    ids: Iterable<string>,
+    targetFolderRaw: string | null
+  ): Promise<void> {
+    const idSet = new Set(ids);
+    if (idSet.size === 0) return;
+
+    const destFolder = targetFolderRaw ? this.ensureGalleryFolderExists(targetFolderRaw) : "";
+    const targets = this.gallery.filter(
+      (g) => idSet.has(g.id) && (g.group_folder || "") !== destFolder
+    );
+    if (targets.length === 0) {
+      this.setStatus(
+        destFolder
+          ? `📁 所选图片已在文件夹「${destFolder}」中`
+          : "🖼️ 所选图片已在未分组图池中"
+      );
+      return;
+    }
+
+    const defaultSessionFolder = `${formatDateYYYYMMDD()}_${(this.cfg.eng_name || "Studio").replace(/[^a-zA-Z0-9_-]/g, "")}`;
+    let starredTouched = false;
+    let movedDiskCount = 0;
+    const touchedPaths: string[][] = [];
+
+    for (const rec of targets) {
+      rec.group_folder = destFolder || undefined;
+      if (rec.is_starred) starredTouched = true;
+      this.checkedGalleryIds.delete(rec.id);
+
+      if (getMountedDirName()) {
+        const baseSession = rec.disk_subpath?.[0] || defaultSessionFolder;
+        const prevPath =
+          rec.disk_subpath && rec.disk_subpath.length > 0 ? [...rec.disk_subpath] : [baseSession];
+        const nextPath = resolveRecordDiskSubpath(
+          baseSession,
+          destFolder || undefined,
+          rec.is_starred
+        );
+        if (rec.saved_to_dir) {
+          const ok = await moveFileInMountedDir(prevPath, nextPath, rec.filename, rec.bytes);
+          if (ok) {
+            rec.disk_subpath = nextPath;
+            movedDiskCount++;
+          }
+        } else {
+          const saved = await saveBytesToMountedDir(nextPath, rec.filename, rec.bytes);
+          if (saved) {
+            rec.saved_to_dir = true;
+            rec.disk_subpath = nextPath;
+            movedDiskCount++;
+          }
+        }
+        touchedPaths.push(prevPath, nextPath);
+      }
+    }
+
+    if (starredTouched) {
+      await saveStarredGalleryRecords(this.gallery);
+    }
+    if (getMountedDirName() && touchedPaths.length > 0) {
+      await syncPromptsLogToMountedDir(this.gallery, touchedPaths);
+    }
+
+    this.renderFilmstrip();
+    this.renderHeroViewport();
+    const diskSuffix =
+      movedDiskCount > 0
+        ? destFolder
+          ? `（📂本地已自动建子文件夹「${destFolder}」并移入 ${movedDiskCount} 张）`
+          : `（📂本地已移回根会话目录 ${movedDiskCount} 张）`
+        : "";
+    this.setStatus(
+      destFolder
+        ? `📁 已将 ${targets.length} 张图片归入文件夹「${destFolder}」${diskSuffix}`
+        : `📤 已将 ${targets.length} 张图片移出分组回到未分组图池${diskSuffix}`
+    );
+  }
+
+  private async renameGalleryFolder(oldName: string, rawNewName: string): Promise<void> {
+    const nextSafe = sanitizeSubfolderName(rawNewName);
+    if (!nextSafe || nextSafe === oldName) return;
+
+    const existingOther = this.galleryFolders.find(
+      (f) => f.name.toLowerCase() === nextSafe.toLowerCase() && f.name !== oldName
+    );
+    if (existingOther) {
+      if (
+        !window.confirm(
+          `已存在同名文件夹「${existingOther.name}」，是否将「${oldName}」内的图片合并至「${existingOther.name}」？`
+        )
+      ) {
+        return;
+      }
+    }
+
+    if (existingOther) {
+      this.galleryFolders = this.galleryFolders.filter((f) => f.name !== oldName);
+    } else {
+      const fld = this.galleryFolders.find((f) => f.name === oldName);
+      if (fld) fld.name = nextSafe;
+    }
+    saveGalleryFolders(this.galleryFolders);
+
+    const finalTargetName = existingOther ? existingOther.name : nextSafe;
+    if (this.openedFolderName === oldName) this.openedFolderName = finalTargetName;
+    if (this.pinnedTargetFolderName === oldName) this.pinnedTargetFolderName = finalTargetName;
+
+    const members = this.gallery.filter((g) => g.group_folder === oldName);
+    const defaultSessionFolder = `${formatDateYYYYMMDD()}_${(this.cfg.eng_name || "Studio").replace(/[^a-zA-Z0-9_-]/g, "")}`;
+    const touchedPaths: string[][] = [];
+    const oldSessionRoots = new Set<string>();
+    let starredTouched = false;
+
+    for (const rec of members) {
+      rec.group_folder = finalTargetName;
+      if (rec.is_starred) starredTouched = true;
+      if (getMountedDirName()) {
+        const baseSession = rec.disk_subpath?.[0] || defaultSessionFolder;
+        oldSessionRoots.add(baseSession);
+        const prevPath =
+          rec.disk_subpath && rec.disk_subpath.length > 0 ? [...rec.disk_subpath] : [baseSession];
+        const nextPath = resolveRecordDiskSubpath(baseSession, finalTargetName, rec.is_starred);
+        if (rec.saved_to_dir) {
+          const ok = await moveFileInMountedDir(prevPath, nextPath, rec.filename, rec.bytes);
+          if (ok) rec.disk_subpath = nextPath;
+        }
+        touchedPaths.push(prevPath, nextPath);
+      }
+    }
+
+    if (starredTouched) {
+      await saveStarredGalleryRecords(this.gallery);
+    }
+    if (getMountedDirName()) {
+      if (touchedPaths.length > 0) {
+        await syncPromptsLogToMountedDir(this.gallery, touchedPaths);
+      }
+      for (const rootSeg of oldSessionRoots) {
+        await deleteDirectoryFromMountedDir([rootSeg], oldName);
+      }
+    }
+
+    this.renderFilmstrip();
+    this.setStatus(`✏️ 文件夹「${oldName}」已重命名为「${finalTargetName}」`);
+  }
+
+  private async dissolveGalleryFolder(folderName: string): Promise<void> {
+    const members = this.gallery.filter((g) => g.group_folder === folderName);
+    const oldSessionRoots = new Set<string>();
+    for (const m of members) {
+      if (m.disk_subpath?.[0]) oldSessionRoots.add(m.disk_subpath[0]);
+    }
+    if (members.length > 0) {
+      await this.moveGalleryRecordsToFolder(
+        members.map((m) => m.id),
+        null
+      );
+    }
+    this.galleryFolders = this.galleryFolders.filter((f) => f.name !== folderName);
+    saveGalleryFolders(this.galleryFolders);
+    if (this.openedFolderName === folderName) this.openedFolderName = null;
+    if (this.pinnedTargetFolderName === folderName) this.pinnedTargetFolderName = null;
+    if (getMountedDirName()) {
+      for (const rootSeg of oldSessionRoots) {
+        await deleteDirectoryFromMountedDir([rootSeg], folderName);
+      }
+    }
+    this.renderFilmstrip();
+    this.setStatus(`📤 已解散文件夹「${folderName}」（${members.length} 张图片已退回未分组图池）`);
+  }
+
+  private async deleteGalleryFolder(folderName: string): Promise<void> {
+    const members = this.gallery.filter((g) => g.group_folder === folderName);
+    if (members.length > 0) {
+      const hasStar = members.some((m) => m.is_starred);
+      const ok = window.confirm(
+        `确定连同删除文件夹「${folderName}」及其内部全部 ${members.length} 张图片${hasStar ? "（含 ⭐收藏图）" : ""}与本地子目录吗？\n（若只想移除分组而不删图，请点文件夹上的「📤 解散」按钮）`
+      );
+      if (!ok) return;
+    }
+
+    const oldSessionRoots = new Set<string>([
+      `${formatDateYYYYMMDD()}_${(this.cfg.eng_name || "Studio").replace(/[^a-zA-Z0-9_-]/g, "")}`,
+    ]);
+    for (const m of members) {
+      if (m.disk_subpath?.[0]) oldSessionRoots.add(m.disk_subpath[0]);
+    }
+
+    this.galleryFolders = this.galleryFolders.filter((f) => f.name !== folderName);
+    saveGalleryFolders(this.galleryFolders);
+    if (this.openedFolderName === folderName) this.openedFolderName = null;
+    if (this.pinnedTargetFolderName === folderName) this.pinnedTargetFolderName = null;
+
+    if (members.length > 0) {
+      await this.deleteGalleryRecordsByIds(
+        members.map((m) => m.id),
+        `🗑️ 已删除文件夹「${folderName}」及组内 ${members.length} 张图片`
+      );
+    }
+    if (getMountedDirName()) {
+      for (const rootSeg of oldSessionRoots) {
+        await deleteDirectoryFromMountedDir([rootSeg], folderName);
+      }
+    }
+    this.renderFilmstrip();
+    if (members.length === 0) {
+      this.setStatus(`🗑️ 已删除空文件夹「${folderName}」`);
+    }
+  }
+
+  private createFilmThumbElement(
+    rec: GeneratedImageRecord,
+    idx: number,
+    orderedPoolIndices: number[],
+    showFolderBadge: boolean
+  ): HTMLElement {
+    const isSelected = idx === this.selectedGalleryIdx;
+    const item = this.el(
+      "div",
+      `film-item${isSelected ? " active" : ""}${rec.is_starred ? " starred" : ""}`
+    );
+    item.draggable = true;
+
+    const img = document.createElement("img");
+    img.src = rec.objectUrl;
+    img.alt = rec.filename;
+    img.draggable = false;
+
+    item.addEventListener("dragstart", (ev) => {
+      const batchIds = this.checkedGalleryIds.has(rec.id)
+        ? Array.from(this.checkedGalleryIds)
+        : [rec.id];
+      this.draggingRecordIds = batchIds;
+      item.classList.add("is-dragging");
+      if (ev.dataTransfer) {
+        ev.dataTransfer.effectAllowed = "move";
+        ev.dataTransfer.setData("text/plain", JSON.stringify(batchIds));
+      }
+    });
+    item.addEventListener("dragend", () => {
+      this.draggingRecordIds = [];
+      item.classList.remove("is-dragging");
+      this.elFilmstripScroll
+        .querySelectorAll(".drop-target-active")
+        .forEach((n) => n.classList.remove("drop-target-active"));
+    });
+
+    const chk = this.el("input", "film-item-chk") as HTMLInputElement;
+    chk.type = "checkbox";
+    chk.checked = this.checkedGalleryIds.has(rec.id);
+    chk.title = "勾选图片（按住 Shift 点击可区间连选；勾选后拖动任一张可批量拖入文件夹）";
+    chk.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (ev.shiftKey && this.lastClickedGalleryId) {
+        const a = orderedPoolIndices.findIndex(
+          (gi) => this.gallery[gi]?.id === this.lastClickedGalleryId
+        );
+        const b = orderedPoolIndices.indexOf(idx);
+        if (a !== -1 && b !== -1) {
+          const [lo, hi] = a < b ? [a, b] : [b, a];
+          for (let k = lo; k <= hi; k++) {
+            const targetId = this.gallery[orderedPoolIndices[k]].id;
+            if (chk.checked) this.checkedGalleryIds.add(targetId);
+            else this.checkedGalleryIds.delete(targetId);
+          }
+          this.lastClickedGalleryId = rec.id;
+          this.renderFilmstrip();
+          this.syncStageToolbar();
+          return;
+        }
+      }
+      if (chk.checked) this.checkedGalleryIds.add(rec.id);
+      else this.checkedGalleryIds.delete(rec.id);
+      this.lastClickedGalleryId = rec.id;
+      this.syncStageToolbar();
+    });
+
+    const starBtn = this.el(
+      "button",
+      `film-star-btn${rec.is_starred ? " on" : ""}`,
+      rec.is_starred ? "⭐" : "☆"
+    );
+    starBtn.title = rec.is_starred ? "取消收藏" : "收藏此图 (F)";
+    starBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      void this.toggleGalleryStar(rec.id);
+    });
+
+    const delBtn = this.el("button", "film-del-btn", "×");
+    delBtn.title = "删除此图 (Delete)";
+    delBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (this.isGenerating) return;
+      void this.deleteGalleryRecordsByIds([rec.id], `🗑️ 已删除 ${rec.scene_id}`);
+    });
+
+    item.append(img, chk, starBtn, delBtn);
+    if (rec.is_upscaled) {
+      item.appendChild(this.el("span", "film-item-2x", "2x"));
+    }
+    if (showFolderBadge && rec.group_folder) {
+      const fBadge = this.el(
+        "span",
+        "film-item-folder-badge",
+        `📁${compactOptionText(rec.group_folder, 5)}`
+      );
+      fBadge.title = `所属文件夹：${rec.group_folder}`;
+      item.appendChild(fBadge);
+    }
+    const stageShort = formatStageBadgeLabel(rec.stage_code);
+    item.appendChild(
+      this.el("div", "film-item-lbl", stageShort ? `${rec.scene_id}·${stageShort}` : rec.scene_id)
+    );
+
+    item.addEventListener("click", () => {
+      this.selectedGalleryIdx = idx;
+      this.lastClickedGalleryId = rec.id;
+      if (this.stageViewMode === "grid") {
+        this.stageViewMode = "single";
+      }
+      this.renderHeroViewport();
+      this.renderFilmstrip();
+      this.setStatus(
+        `🖼️ ${rec.is_starred ? "⭐ " : ""}${rec.scene_id}${stageShort ? ` (${stageShort})` : ""}${rec.group_folder ? ` [📁${rec.group_folder}]` : ""} · ${rec.width}×${rec.height}${rec.is_upscaled ? " [2x HD]" : ""} · Seed: ${rec.seed}`
+      );
+    });
+    item.addEventListener("dblclick", () => {
+      this.selectedGalleryIdx = idx;
+      this.openLightbox(idx, "manual");
+    });
+
+    return item;
+  }
+
+  private wireDropZone(elZone: HTMLElement, onDropIds: (ids: string[]) => void): void {
+    elZone.addEventListener("dragover", (ev) => {
+      ev.preventDefault();
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+      elZone.classList.add("drop-target-active");
+    });
+    elZone.addEventListener("dragleave", (ev) => {
+      const related = ev.relatedTarget as Node | null;
+      if (!related || !elZone.contains(related)) {
+        elZone.classList.remove("drop-target-active");
+      }
+    });
+    elZone.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      elZone.classList.remove("drop-target-active");
+      const ids = this.extractDraggedIds(ev);
+      this.draggingRecordIds = [];
+      if (ids.length > 0) onDropIds(ids);
+    });
+  }
+
+  private renderExpandedOrganizer(filteredIndices: number[]): void {
+    if (
+      this.openedFolderName &&
+      !this.galleryFolders.some((f) => f.name === this.openedFolderName)
+    ) {
+      this.openedFolderName = null;
+    }
+    if (
+      this.pinnedTargetFolderName &&
+      !this.galleryFolders.some((f) => f.name === this.pinnedTargetFolderName)
+    ) {
+      this.pinnedTargetFolderName = null;
+    }
+
+    const hasOpenFolder = Boolean(this.openedFolderName);
+    const split = this.el(
+      "div",
+      `gallery-organizer-split ${hasOpenFolder ? "three-col" : "two-col"}`
+    );
+
+    // -------------------------------------------------------------------------
+    // COLUMN 1: Ungrouped / Source Image Pool (Drag Source & Ungroup Dropzone)
+    // -------------------------------------------------------------------------
+    const ungroupedFiltered = filteredIndices.filter((i) => !this.gallery[i].group_folder);
+    const leftPoolIndices =
+      this.organizerLeftPoolMode === "ungrouped" ? ungroupedFiltered : filteredIndices;
+
+    const colPool = this.el("div", "organizer-col organizer-col-pool");
+    this.wireDropZone(colPool, (ids) => {
+      void this.moveGalleryRecordsToFolder(ids, null);
+    });
+
+    const poolHead = this.el("div", "organizer-col-head");
+    const poolSeg = this.el("div", "seg-group");
+    const btnPoolUngrouped = this.el(
+      "button",
+      `seg-btn${this.organizerLeftPoolMode === "ungrouped" ? " active" : ""}`,
+      `🖼️ 未分组(${ungroupedFiltered.length})`
+    );
+    btnPoolUngrouped.title = "仅展示尚未归入任何文件夹的图片（拖入右侧后自动从此处移走）";
+    btnPoolUngrouped.addEventListener("click", () => {
+      this.organizerLeftPoolMode = "ungrouped";
+      this.renderFilmstrip();
+    });
+    const btnPoolAll = this.el(
+      "button",
+      `seg-btn${this.organizerLeftPoolMode === "all" ? " active" : ""}`,
+      `全部(${filteredIndices.length})`
+    );
+    btnPoolAll.title = "展示当前筛选下的全部图片（含已归组图，带 📁 标记）";
+    btnPoolAll.addEventListener("click", () => {
+      this.organizerLeftPoolMode = "all";
+      this.renderFilmstrip();
+    });
+    poolSeg.append(btnPoolUngrouped, btnPoolAll);
+
+    const poolHint = this.el(
+      "span",
+      "organizer-drag-hint",
+      this.checkedGalleryIds.size > 0
+        ? `📦 已选 ${this.checkedGalleryIds.size} 张 · 拖动任一即批量归组`
+        : "拖拽图片 ➔ 右侧文件夹自动分目录"
+    );
+    poolHead.append(poolSeg, poolHint);
+
+    const poolGrid = this.el("div", "organizer-thumb-grid");
+    if (leftPoolIndices.length === 0) {
+      poolGrid.appendChild(
+        this.el(
+          "div",
+          "organizer-empty-note",
+          this.organizerLeftPoolMode === "ungrouped"
+            ? "✨ 未分组图片已全部归档完毕（将右侧文件夹内图片拖回此处可移出分组）"
+            : "当前筛选条件下暂无图片"
+        )
+      );
+    } else {
+      for (const idx of leftPoolIndices) {
+        const rec = this.gallery[idx];
+        poolGrid.appendChild(
+          this.createFilmThumbElement(
+            rec,
+            idx,
+            leftPoolIndices,
+            this.organizerLeftPoolMode === "all"
+          )
+        );
+      }
+    }
+    colPool.append(poolHead, poolGrid);
+
+    // -------------------------------------------------------------------------
+    // COLUMN 2: User Folders List (Create / Pin / Dropzone / Click -> Open Col 3)
+    // -------------------------------------------------------------------------
+    const colFolders = this.el("div", "organizer-col organizer-col-folders");
+    const fldHead = this.el("div", "organizer-col-head");
+    fldHead.appendChild(
+      this.el("span", "organizer-col-title", `📁 分组文件夹 (${this.galleryFolders.length})`)
+    );
+
+    const createRow = this.el("div", "folder-create-bar");
+    const createInp = this.el("input", "folder-create-input") as HTMLInputElement;
+    createInp.type = "text";
+    createInp.placeholder = "输入新文件夹名称...";
+    const btnCreate = this.el("button", "btn btn-xs btn-primary", "➕新建");
+    const submitNewFolder = () => {
+      const raw = createInp.value.trim();
+      const fallback = `${this.activeSceneId || "分组"}_${this.galleryFolders.length + 1}`;
+      const created = this.ensureGalleryFolderExists(raw || fallback);
+      if (!created) return;
+      createInp.value = "";
+      this.openedFolderName = created;
+      if (this.checkedGalleryIds.size > 0) {
+        void this.moveGalleryRecordsToFolder(Array.from(this.checkedGalleryIds), created);
+      } else {
+        this.renderFilmstrip();
+        this.setStatus(
+          `📁 已新建并展开文件夹「${created}」（拖入左侧图片即可自动同步本地子文件夹）`
+        );
+      }
+    };
+    createInp.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        submitNewFolder();
+      }
+    });
+    btnCreate.addEventListener("click", submitNewFolder);
+    createRow.append(createInp, btnCreate);
+    fldHead.appendChild(createRow);
+
+    const fldList = this.el("div", "organizer-folder-list");
+    for (const fld of this.galleryFolders) {
+      const members = this.gallery.filter((g) => g.group_folder === fld.name);
+      const isOpened = this.openedFolderName === fld.name;
+      const isPinned = this.pinnedTargetFolderName === fld.name;
+      const card = this.el(
+        "div",
+        `folder-card${isOpened ? " opened" : ""}${isPinned ? " pinned" : ""}`
+      );
+      card.title = isOpened
+        ? `点击收起「${fld.name}」返回两栏视图`
+        : `点击打开「${fld.name}」展开第三栏查看组内图片（支持直接拖拽图片到此卡片归组）`;
+
+      this.wireDropZone(card, (ids) => {
+        void this.moveGalleryRecordsToFolder(ids, fld.name);
+      });
+
+      const coverWrap = this.el("div", "folder-cover");
+      if (members.length > 0) {
+        const covImg = document.createElement("img");
+        covImg.src = members[members.length - 1].objectUrl;
+        covImg.alt = fld.name;
+        covImg.draggable = false;
+        coverWrap.appendChild(covImg);
+      } else {
+        coverWrap.appendChild(this.el("span", "folder-cover-empty", "📁"));
+      }
+
+      const infoCol = this.el("div", "folder-info");
+      infoCol.appendChild(this.el("div", "folder-name", fld.name));
+      infoCol.appendChild(
+        this.el(
+          "div",
+          "folder-sub",
+          `${members.length} 张${isPinned ? " · 🎯新图直入" : ""}${isOpened ? " · ▸已展开" : ""}`
+        )
+      );
+
+      const fActs = this.el("div", "folder-actions");
+
+      if (this.checkedGalleryIds.size > 0) {
+        const bMoveIn = this.el("button", "btn btn-xs btn-primary", "📥");
+        bMoveIn.title = `将已勾选的 ${this.checkedGalleryIds.size} 张图片一键移入「${fld.name}」`;
+        bMoveIn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          void this.moveGalleryRecordsToFolder(Array.from(this.checkedGalleryIds), fld.name);
+        });
+        fActs.appendChild(bMoveIn);
+      }
+
+      const bPin = this.el(
+        "button",
+        `btn btn-xs${isPinned ? " pin-target-on" : ""}`,
+        "🎯"
+      );
+      bPin.title = isPinned
+        ? "已锁定：后续新生成的图片将自动直入此文件夹（再次点击取消）"
+        : "设为默认入组目标：后续新生成图片自动存入此文件夹";
+      bPin.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this.pinnedTargetFolderName = isPinned ? null : fld.name;
+        this.renderFilmstrip();
+        this.setStatus(
+          this.pinnedTargetFolderName
+            ? `🎯 已开启新图直入文件夹「${fld.name}」`
+            : "🎯 已恢复新图默认进入未分组图池"
+        );
+      });
+
+      const bRen = this.el("button", "btn btn-xs", "✏️");
+      bRen.title = "重命名此文件夹（同步移动本地子目录）";
+      bRen.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const next = window.prompt("重命名分组文件夹：", fld.name);
+        if (next !== null) {
+          void this.renameGalleryFolder(fld.name, next);
+        }
+      });
+
+      fActs.append(bPin, bRen);
+
+      if (members.length > 0) {
+        const bUngroup = this.el("button", "btn btn-xs", "📤");
+        bUngroup.title = "解散此文件夹：内部图片全部退回未分组图池，不删除图片";
+        bUngroup.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          void this.dissolveGalleryFolder(fld.name);
+        });
+        fActs.appendChild(bUngroup);
+      }
+
+      const bDelFld = this.el("button", "btn btn-xs btn-danger", "🗑️");
+      bDelFld.title =
+        members.length > 0 ? "连同组内图片与本地子目录一并删除" : "删除此空文件夹";
+      bDelFld.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        void this.deleteGalleryFolder(fld.name);
+      });
+      fActs.appendChild(bDelFld);
+
+      card.addEventListener("click", () => {
+        this.openedFolderName = isOpened ? null : fld.name;
+        this.renderFilmstrip();
+      });
+
+      card.append(coverWrap, infoCol, fActs);
+      fldList.appendChild(card);
+    }
+
+    // Quick-create drop card at bottom of Column 2: drag images here to auto-create a new folder!
+    const quickNewDrop = this.el(
+      "div",
+      "folder-new-dropzone",
+      "➕ 拖放图片到此处，自动新建文件夹并归入"
+    );
+    this.wireDropZone(quickNewDrop, (ids) => {
+      const firstRec = this.gallery.find((g) => ids.includes(g.id));
+      const defaultName = `${firstRec?.scene_id || "分组"}_${this.galleryFolders.length + 1}`;
+      const inputName = window.prompt("新建分组文件夹名称：", defaultName);
+      if (inputName === null) return;
+      const created = this.ensureGalleryFolderExists(inputName.trim() || defaultName);
+      if (!created) return;
+      this.openedFolderName = created;
+      void this.moveGalleryRecordsToFolder(ids, created);
+    });
+    fldList.appendChild(quickNewDrop);
+
+    colFolders.append(fldHead, fldList);
+    split.append(colPool, colFolders);
+
+    // -------------------------------------------------------------------------
+    // COLUMN 3: Opened Folder Contents (Shown when user clicks a folder -> 3 Columns!)
+    // -------------------------------------------------------------------------
+    if (hasOpenFolder && this.openedFolderName) {
+      const openName = this.openedFolderName;
+      const openIndices = filteredIndices.filter(
+        (i) => this.gallery[i].group_folder === openName
+      );
+      const allOpenMembers = this.gallery.filter((g) => g.group_folder === openName);
+
+      const colOpen = this.el("div", "organizer-col organizer-col-opened");
+      this.wireDropZone(colOpen, (ids) => {
+        void this.moveGalleryRecordsToFolder(ids, openName);
+      });
+
+      const openHead = this.el("div", "organizer-col-head");
+      openHead.appendChild(
+        this.el(
+          "span",
+          "organizer-col-title",
+          `📂 ${openName} (${openIndices.length}/${allOpenMembers.length})`
+        )
+      );
+
+      const openActs = this.el("div", "organizer-open-actions");
+      if (this.checkedGalleryIds.size > 0) {
+        const bPullChecked = this.el("button", "btn btn-xs btn-primary", "📥 移入已选");
+        bPullChecked.addEventListener("click", () => {
+          void this.moveGalleryRecordsToFolder(Array.from(this.checkedGalleryIds), openName);
+        });
+        openActs.appendChild(bPullChecked);
+      }
+
+      const bUpFolder = this.el("button", "btn btn-xs", "✨ 本组2x");
+      const unupscaledInFolder = allOpenMembers.filter((g) => !g.is_upscaled).map((g) => g.id);
+      bUpFolder.disabled = unupscaledInFolder.length === 0 || this.isGenerating;
+      bUpFolder.title = `对此文件夹内 ${unupscaledInFolder.length} 张 1x 图片批量执行 2x 高清放大`;
+      bUpFolder.addEventListener("click", () => {
+        void this.upscaleGalleryRecordsByIds(unupscaledInFolder);
+      });
+
+      const bZipFolder = this.el("button", "btn btn-xs", "📦 本组ZIP");
+      bZipFolder.disabled = allOpenMembers.length === 0;
+      bZipFolder.title = "单独打包下载此文件夹内的全部图片与 prompts.txt";
+      bZipFolder.addEventListener("click", () => {
+        this.exportGalleryZip(allOpenMembers, openName);
+      });
+
+      const bCloseCol3 = this.el("button", "btn btn-xs", "✕ 收起");
+      bCloseCol3.title = "关闭第三栏回到两栏视图";
+      bCloseCol3.addEventListener("click", () => {
+        this.openedFolderName = null;
+        this.renderFilmstrip();
+      });
+
+      openActs.append(bUpFolder, bZipFolder, bCloseCol3);
+      openHead.appendChild(openActs);
+
+      const openGrid = this.el("div", "organizer-thumb-grid");
+      if (openIndices.length === 0) {
+        openGrid.appendChild(
+          this.el(
+            "div",
+            "organizer-empty-note",
+            allOpenMembers.length === 0
+              ? `📂 文件夹「${openName}」为空 · 直接将第 1 栏图片拖入此处即可自动分文件夹落盘`
+              : "当前顶部筛选条件下该组暂无匹配图片（切换「全部」查看全部组内图片）"
+          )
+        );
+      } else {
+        for (const idx of openIndices) {
+          openGrid.appendChild(
+            this.createFilmThumbElement(this.gallery[idx], idx, openIndices, false)
+          );
+        }
+      }
+
+      colOpen.append(openHead, openGrid);
+      split.appendChild(colOpen);
+    }
+
+    this.elFilmstripScroll.appendChild(split);
+  }
+
   private renderFilmstrip(): void {
-    if (this.gallery.length === 0) {
+    if (this.gallery.length === 0 && this.galleryFolders.length === 0 && !this.filmstripExpanded) {
       this.elFilmstripBar.classList.add("hidden");
+      this.syncStageToolbar();
       return;
     }
     this.elFilmstripBar.classList.remove("hidden");
-    this.elFilmstripScroll.innerHTML = "";
+    this.elFilmstripBar.classList.toggle("expanded", this.filmstripExpanded);
+    if (this.elFilmExpandBtn) {
+      const grpSuffix =
+        this.galleryFolders.length > 0 ? `(${this.galleryFolders.length}组)` : "";
+      this.elFilmExpandBtn.textContent = this.filmstripExpanded
+        ? "▾ 收起单行"
+        : `▴ 分栏归档${grpSuffix}`;
+    }
 
-    this.gallery.forEach((rec, idx) => {
-      const item = this.el(
-        "div",
-        `film-item${idx === this.selectedGalleryIdx ? " active" : ""}`
-      );
-      const img = document.createElement("img");
-      img.src = rec.objectUrl;
-      const chk = this.el("input", "film-item-chk") as HTMLInputElement;
-      chk.type = "checkbox";
-      chk.checked = this.checkedGalleryIds.has(rec.id);
-      chk.title = "勾选以用于打包 ZIP 导出（不勾选则默认打包全部）";
-      chk.addEventListener("click", (ev) => ev.stopPropagation());
-      chk.addEventListener("change", () => {
-        if (chk.checked) this.checkedGalleryIds.add(rec.id);
-        else this.checkedGalleryIds.delete(rec.id);
-      });
+    // Update filter pill counts & scene selector options
+    const starCnt = this.gallery.filter((g) => g.is_starred).length;
+    const upCnt = this.gallery.filter((g) => g.is_upscaled).length;
+    const btnAll = this.elFilmFilterBtns.get("all");
+    const btnStar = this.elFilmFilterBtns.get("starred");
+    const btnUp = this.elFilmFilterBtns.get("upscaled");
+    if (btnAll) {
+      btnAll.textContent = `全部(${this.gallery.length})`;
+      btnAll.classList.toggle("active", this.galleryFilterMode === "all");
+    }
+    if (btnStar) {
+      btnStar.textContent = `⭐收藏(${starCnt})`;
+      btnStar.classList.toggle("active", this.galleryFilterMode === "starred");
+    }
+    if (btnUp) {
+      btnUp.textContent = `🔍2x(${upCnt})`;
+      btnUp.classList.toggle("active", this.galleryFilterMode === "upscaled");
+    }
 
-      item.append(img, chk);
-      if (rec.is_upscaled) {
-        item.appendChild(this.el("span", "film-item-2x", "2x"));
+    if (this.elFilmSceneSelect) {
+      const sceneCounts = new Map<string, number>();
+      for (const g of this.gallery) {
+        sceneCounts.set(g.scene_id, (sceneCounts.get(g.scene_id) ?? 0) + 1);
       }
-      item.appendChild(this.el("div", "film-item-lbl", rec.scene_id));
-      item.addEventListener("click", () => {
-        this.selectedGalleryIdx = idx;
-        this.renderHeroViewport();
-        this.renderFilmstrip();
-        this.setStatus(
-          `🖼️ ${rec.scene_id} · ${rec.width}×${rec.height}${rec.is_upscaled ? " [2x HD]" : ""} · Seed: ${rec.seed}`
-        );
-      });
-      this.elFilmstripScroll.appendChild(item);
-    });
+      const prevVal = this.galleryFilterMode === "scene" ? this.gallerySceneFilter : "";
+      this.elFilmSceneSelect.innerHTML = "";
+      const defOpt = this.el("option", "", "📍 按体位筛选");
+      defOpt.value = "";
+      this.elFilmSceneSelect.appendChild(defOpt);
+      for (const [sid, cnt] of sceneCounts.entries()) {
+        const opt = this.el("option", "", `${sid} (${cnt})`);
+        opt.value = sid;
+        this.elFilmSceneSelect.appendChild(opt);
+      }
+      if (prevVal && sceneCounts.has(prevVal)) {
+        this.elFilmSceneSelect.value = prevVal;
+      } else if (this.galleryFilterMode === "scene") {
+        this.galleryFilterMode = "all";
+        this.gallerySceneFilter = "";
+      }
+    }
 
-    // Keep latest active thumbnail scrolled into view
-    const activeThumb = this.elFilmstripScroll.children[this.selectedGalleryIdx] as
-      | HTMLElement
-      | undefined;
-    activeThumb?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+    this.elFilmstripScroll.innerHTML = "";
+    const filteredIndices = this.getFilteredGalleryIndices();
+
+    // Expanded state: 2-Column ➔ 3-Column Drag-and-Drop Folder Organizer
+    if (this.filmstripExpanded) {
+      this.renderExpandedOrganizer(filteredIndices);
+      this.syncStageToolbar();
+      return;
+    }
+
+    if (filteredIndices.length === 0) {
+      const emptyNote = this.el(
+        "div",
+        "film-empty-filter-note",
+        this.gallery.length === 0
+          ? "已预建分组文件夹 · 点击左侧「▴ 分栏归档」管理文件夹，或直接生图"
+          : "当前筛选条件下暂无图片（点击左侧「全部」返回）"
+      );
+      this.elFilmstripScroll.appendChild(emptyNote);
+      this.syncStageToolbar();
+      return;
+    }
+
+    let activeDomChild: HTMLElement | null = null;
+    for (const idx of filteredIndices) {
+      const rec = this.gallery[idx];
+      const item = this.createFilmThumbElement(rec, idx, filteredIndices, true);
+      if (idx === this.selectedGalleryIdx) activeDomChild = item;
+      this.elFilmstripScroll.appendChild(item);
+    }
+
+    activeDomChild?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+    this.syncStageToolbar();
   }
 
-  private exportGalleryZip(): void {
-    if (this.gallery.length === 0) {
+  private exportGalleryZip(
+    customTargets?: GeneratedImageRecord[],
+    customFolderLabel?: string
+  ): void {
+    if (this.gallery.length === 0 && (!customTargets || customTargets.length === 0)) {
       this.setStatus("⚠️ 当前画廊为空，无可打包图片", true);
       return;
     }
+    const filtered = this.getFilteredGalleryIndices().map((i) => this.gallery[i]);
     const targets =
-      this.checkedGalleryIds.size > 0
-        ? this.gallery.filter((g) => this.checkedGalleryIds.has(g.id))
-        : this.gallery;
+      customTargets && customTargets.length > 0
+        ? customTargets
+        : this.checkedGalleryIds.size > 0
+          ? this.gallery.filter((g) => this.checkedGalleryIds.has(g.id))
+          : filtered.length > 0
+            ? filtered
+            : this.gallery;
+
+    const resolveZipEntryPath = (g: GeneratedImageRecord): string => {
+      const safeFolder = g.group_folder ? sanitizeSubfolderName(g.group_folder) : "";
+      return safeFolder ? `${safeFolder}/${g.filename}` : g.filename;
+    };
+
     const entries: Array<{ name: string; data: Uint8Array | string }> = targets.map((g) => ({
-      name: g.filename,
+      name: resolveZipEntryPath(g),
       data: g.bytes,
     }));
     const logTxt = targets
-      .map(
-        (g) =>
-          `# ${g.filename} (${g.width}x${g.height}, Seed=${g.seed})\n[Positive]\n${g.prompt_pos || ""}\n[Negative]\n${g.prompt_neg || ""}\n`
-      )
+      .map((g) => {
+        const entryPath = resolveZipEntryPath(g);
+        return `# ${entryPath} (${g.width}x${g.height}, Seed=${g.seed}${g.is_starred ? ", STARRED" : ""})\n[Positive]\n${g.prompt_pos || ""}\n[Negative]\n${g.prompt_neg || ""}\n`;
+      })
       .join("\n----------------------------------------\n");
     entries.push({ name: "prompts.txt", data: logTxt });
     const zip = buildStoreZipBlob(entries);
-    triggerBlobDownload(zip, `NAI_Studio_${formatDateYYYYMMDD()}_${formatTimeHHMMSS()}.zip`);
-    this.setStatus(`📦 已打包下载 ${targets.length} 张图片与 prompts.txt`);
+    const safePrefix = customFolderLabel ? `_${sanitizeSubfolderName(customFolderLabel)}` : "";
+    triggerBlobDownload(
+      zip,
+      `NAI_Studio${safePrefix}_${formatDateYYYYMMDD()}_${formatTimeHHMMSS()}.zip`
+    );
+    this.setStatus(
+      `📦 已按文件夹层级打包下载 ${targets.length} 张图片与 prompts.txt`
+    );
   }
 
   private bindGlobalEvents(): void {
@@ -3920,19 +6320,80 @@ export class WorkbenchApp {
       if (ev.key === "Escape") {
         if (this.lightboxOpen) {
           this.closeLightbox();
+        } else if (this.stageViewMode === "grid" || this.stageViewMode === "compare") {
+          this.stageViewMode = "single";
+          this.renderHeroViewport();
         } else {
           this.closeAllPopovers();
         }
         return;
       }
+
+      // Never hijack keystrokes while typing inside form inputs / textareas / selects
+      const activeEl = document.activeElement as HTMLElement | null;
+      if (
+        ev.ctrlKey ||
+        ev.metaKey ||
+        ev.altKey ||
+        (activeEl &&
+          (activeEl.tagName === "INPUT" ||
+            activeEl.tagName === "TEXTAREA" ||
+            activeEl.tagName === "SELECT" ||
+            activeEl.isContentEditable))
+      ) {
+        return;
+      }
+
       if (this.lightboxOpen) {
+        const curRec = this.gallery[this.lightboxIdx];
         if (ev.key === "ArrowLeft") {
           ev.preventDefault();
           this.stepLightbox(-1, true);
         } else if (ev.key === "ArrowRight" || ev.key === " ") {
           ev.preventDefault();
           this.stepLightbox(1, true);
+        } else if ((ev.key === "f" || ev.key === "F") && curRec) {
+          ev.preventDefault();
+          void this.toggleGalleryStar(curRec.id);
+        } else if ((ev.key === "Delete" || ev.key === "Backspace") && curRec && !this.isGenerating) {
+          ev.preventDefault();
+          void this.deleteGalleryRecordsByIds([curRec.id], `🗑️ 已删除 ${curRec.scene_id}`);
+        } else if ((ev.key === "r" || ev.key === "R") && curRec && !this.isGenerating) {
+          ev.preventDefault();
+          this.selectedGalleryIdx = this.lightboxIdx;
+          this.closeLightbox();
+          void this.startOrContinueShootout(curRec.id, this.rerollCountPerRound);
         }
+        return;
+      }
+
+      if (this.gallery.length === 0) return;
+      const stageRec = this.gallery[this.selectedGalleryIdx];
+      if (ev.key === "ArrowLeft") {
+        ev.preventDefault();
+        this.stepCenterGallery(-1);
+      } else if (ev.key === "ArrowRight") {
+        ev.preventDefault();
+        this.stepCenterGallery(1);
+      } else if ((ev.key === "f" || ev.key === "F") && stageRec) {
+        ev.preventDefault();
+        void this.toggleGalleryStar(stageRec.id);
+      } else if ((ev.key === "Delete" || ev.key === "Backspace") && stageRec && !this.isGenerating) {
+        ev.preventDefault();
+        void this.deleteGalleryRecordsByIds([stageRec.id], `🗑️ 已删除 ${stageRec.scene_id}`);
+      } else if (ev.key === " " && stageRec) {
+        ev.preventDefault();
+        if (this.checkedGalleryIds.has(stageRec.id)) {
+          this.checkedGalleryIds.delete(stageRec.id);
+        } else {
+          this.checkedGalleryIds.add(stageRec.id);
+        }
+        this.lastClickedGalleryId = stageRec.id;
+        this.renderFilmstrip();
+        this.syncStageToolbar();
+      } else if ((ev.key === "r" || ev.key === "R") && stageRec && !this.isGenerating) {
+        ev.preventDefault();
+        void this.startOrContinueShootout(stageRec.id, this.rerollCountPerRound);
       }
     });
   }

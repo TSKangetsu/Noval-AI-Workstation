@@ -4,9 +4,11 @@ import path from "node:path";
 import {
   ALL_POSITIONS_CHAPTERS,
   ALL_POSITIONS_TEMPLATES,
+  BODY_PRESETS,
   BUNDLED_CUSTOM_PRESETS,
   EXPRESSION_PRESETS,
   FREE_ACTION_STARTERS,
+  LIGHTING_PRESETS,
   MODEL_V4_5_FULL,
   MODEL_V5_FULL,
   MODEL_V5_FULL_MEDIUM,
@@ -17,7 +19,11 @@ import {
   STYLE_PRESETS,
 } from "../src/data/engineConstants";
 import { BUNDLED_VIBE_PACKS, cloneBundledVibeItems } from "../src/data/bundledVibes";
-import { generateScenePrompts } from "../src/engine/storyEngine";
+import {
+  buildStageProgressionQueue,
+  formatStageFileTag,
+  generateScenePrompts,
+} from "../src/engine/storyEngine";
 import {
   computeSafePosTokenLimit,
   countPromptT5Tokens,
@@ -33,10 +39,14 @@ import {
   estimateNaiAnlas,
 } from "../src/services/naiApiClient";
 import {
+  buildStoreZipBlob,
   clearDeletedPresets,
+  filterStarredGalleryForPersist,
   loadCustomPresets,
   loadDeletedPresets,
   markPresetDeleted,
+  resolveRecordDiskSubpath,
+  sanitizeSubfolderName,
   unmarkPresetDeleted,
 } from "../src/services/storageService";
 import {
@@ -923,17 +933,19 @@ async function main(): Promise<void> {
     );
   }
 
-  // Group 4: front_face_visible POV retains face/expressions/eyes and blocks 3rd-person male back/head occlusion
+  // Group 4: front_face_visible POV retains face/expressions/eyes, blocks 3rd-person male back/head occlusion,
+  // and suppresses bare 'pov hands' on supine P01~P07 (using foreshortening + lower-body grip to prevent V5 upside-down inversion)
   for (const pid of ["P01", "P03", "P11", "P26", "P27", "P42"]) {
     const [ffItem] = generateScenePrompts(pid, povAuditCfg, "pov");
     const spFf = splitPromptPosAndNeg(ffItem.prompt);
     const ffNegSet = new Set(spFf.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+    const expectsPovHands = !/^P0[1-7]$/.test(pid);
     assert(
       spFf.posPrompt.includes("pov crotch") &&
-        spFf.posPrompt.includes("pov hands") &&
+        (expectsPovHands ? spFf.posPrompt.includes("pov hands") : !spFf.posPrompt.includes("pov hands") && spFf.posPrompt.includes("foreshortening")) &&
         spFf.posPrompt.includes("1.35::mesugaki::") &&
         spFf.posPrompt.includes("aqua eyes"),
-      `Frontal POV ${pid} must include pov crotch/hands and retain face expressions & eye color`
+      `Frontal POV ${pid} must include calibrated pov crotch/foreshortening and retain face expressions & eye color`
     );
     for (const reqCropNeg of ["from behind", "male back", "male head", "male shoulders", "over-the-shoulder"]) {
       assert(ffNegSet.has(reqCropNeg), `Frontal POV ${pid} missing male-back crop guard '${reqCropNeg}'`);
@@ -1830,8 +1842,242 @@ async function main(): Promise<void> {
     "Front-Lit Luminous Skin + Water Scene must combine pure optical lighting with water scene caustics within 512 T5 tokens"
   );
 
+  // 21. Verify V5 Supine POV Upright Lock (P01~P07, P45) & 3rd-Person Couple Geometry + Male-Safe UC
+  const pocketBodyKey =
+    Object.keys(BODY_PRESETS).find((k) => k.includes("short slender mini-lady")) ||
+    "纤细娇小（原版默认 slender, petite）";
+  const hdrContreLightKey =
+    Object.keys(LIGHTING_PRESETS).find((k) => k.includes("Contre-Jour HDR Backlight")) ||
+    "🔄 随画风默认光影（不额外叠加）";
+  for (const pid of ["P01", "P02", "P03", "P04", "P05", "P06", "P07"]) {
+    const [supPov] = generateScenePrompts(
+      pid,
+      {
+        ...createDefaultCharacterConfig(),
+        body_preset: pocketBodyKey,
+        lighting_preset: hdrContreLightKey,
+        pos_stage: "💦 2. 射精中 · 内射/迸发瞬间（climax / internal cumshot · 白浊喷涌）",
+      },
+      "pov"
+    );
+    const spSupPov = splitPromptPosAndNeg(supPov.prompt);
+    assert(
+      spSupPov.posPrompt.includes("1.45::pov crotch::, foreshortening") &&
+        spSupPov.posPrompt.includes("reclining") &&
+        !spSupPov.posPrompt.includes("pov hands") &&
+        spSupPov.posPrompt.includes("POV from his groin") &&
+        spSupPov.posPrompt.includes("bright rim halation") &&
+        spSupPov.negPrompt.includes("upside-down") &&
+        spSupPov.negPrompt.includes("x-ray") &&
+        spSupPov.negPrompt.includes("cross-section") &&
+        countPromptT5Tokens(supPov.prompt).api_pos_tokens <= 488,
+      `${pid} POV with Pocket Mini-Lady + HDR Contre-Jour must retain upright foreshortening + full HDR prose + anti-xray UC within 488 T5 tokens`
+    );
+
+    const [sup3rd] = generateScenePrompts(
+      pid,
+      {
+        ...createDefaultCharacterConfig(),
+        body_preset: pocketBodyKey,
+        lighting_preset: hdrContreLightKey,
+        pos_stage: "💦 2. 射精中 · 内射/迸发瞬间（climax / internal cumshot · 白浊喷涌）",
+      },
+      "3rd"
+    );
+    const spSup3rd = splitPromptPosAndNeg(sup3rd.prompt);
+    const neg3rdSet = new Set(spSup3rd.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+    assert(
+      spSup3rd.posPrompt.includes("1.35::sex::") &&
+        spSup3rd.posPrompt.includes("boy on top") &&
+        spSup3rd.posPrompt.includes("source#vaginal") &&
+        spSup3rd.posPrompt.includes("target#vaginal") &&
+        !neg3rdSet.has("broad shoulders") &&
+        !neg3rdSet.has("muscular") &&
+        countPromptT5Tokens(sup3rd.prompt).api_pos_tokens <= 512,
+      `${pid} 3rd-person must inject boy-on-top couple tags, source#/target# anchors, and strip male-erasing global UC`
+    );
+  }
+
+  // 22. Verify Rich Gallery Star-Only Persistence Filter & Store-ZIP Archive Builder
+  const mockGallery = [
+    {
+      id: "g_unstarred_1",
+      scene_id: "P01",
+      mode_label: "pov",
+      filename: "150001_P01_s111.png",
+      bytes: new Uint8Array([137, 80, 78, 71]),
+      objectUrl: "blob:mock-1",
+      seed: 111,
+      width: 832,
+      height: 1216,
+      elapsed_sec: 3.1,
+      estimated_anlas: 0,
+      created_at: 1000,
+      is_starred: false,
+      disk_subpath: ["20261120_Javelin"],
+    },
+    {
+      id: "g_starred_2",
+      scene_id: "P02",
+      mode_label: "pov",
+      filename: "150005_P02_s222_2x.png",
+      bytes: new Uint8Array([137, 80, 78, 71, 13, 10]),
+      objectUrl: "blob:mock-2",
+      seed: 222,
+      width: 1664,
+      height: 2432,
+      elapsed_sec: 6.4,
+      estimated_anlas: 1,
+      created_at: 2000,
+      is_upscaled: true,
+      is_starred: true,
+      disk_subpath: ["20261120_Javelin", "_favorites"],
+      config_snapshot: {
+        cfg: createDefaultCharacterConfig(),
+        action_mode: "positions" as const,
+        model: MODEL_V5_FULL,
+        steps: 28,
+        scale: 6.5,
+        cfg_rescale: 0,
+        uc_preset_mode: "heavy" as const,
+        extra_uc: "",
+        append_v5_quality: true,
+      },
+    },
+  ];
+  const persistedOnlyStarred = filterStarredGalleryForPersist(mockGallery);
+  assert.equal(persistedOnlyStarred.length, 1, "Only starred gallery records should be persisted to IndexedDB");
+  assert.equal(persistedOnlyStarred[0].id, "g_starred_2");
+  assert.equal("objectUrl" in persistedOnlyStarred[0], false, "Transient blob objectUrl must not be persisted");
+  assert.deepEqual(persistedOnlyStarred[0].disk_subpath, ["20261120_Javelin", "_favorites"]);
+
+  const zipBlob = buildStoreZipBlob([
+    { name: `兔女郎组/${mockGallery[1].filename}`, data: mockGallery[1].bytes },
+    { name: "prompts.txt", data: "# test" },
+  ]);
+  assert(zipBlob.size > 80, "Store ZIP archive must contain valid headers and entries");
+
+  // 14. Gallery Subfolder Path Resolution & Progressive Stage Generation Queue Verification
+  assert.equal(sanitizeSubfolderName("  兔女郎/逆光:A*B? "), "兔女郎_逆光_A_B");
+  assert.equal(sanitizeSubfolderName("_favorites"), "favorites");
+  assert.deepEqual(resolveRecordDiskSubpath("20261120_Javelin", undefined, false), [
+    "20261120_Javelin",
+  ]);
+  assert.deepEqual(resolveRecordDiskSubpath("20261120_Javelin", undefined, true), [
+    "20261120_Javelin",
+    "_favorites",
+  ]);
+  assert.deepEqual(resolveRecordDiskSubpath("20261120_Javelin", "P01_递进组", false), [
+    "20261120_Javelin",
+    "P01_递进组",
+  ]);
+  assert.deepEqual(resolveRecordDiskSubpath("20261120_Javelin", "P01_递进组", true), [
+    "20261120_Javelin",
+    "P01_递进组",
+    "_favorites",
+  ]);
+
+  assert.equal(formatStageFileTag("before"), "S1-before");
+  assert.equal(formatStageFileTag("prolapse"), "S5-prolapse");
+
+  let mockSeedSeq = 500001;
+  const singleChainTasks = buildStageProgressionQueue({
+    sceneIds: ["P01"],
+    selectedStageCodes: ["pull_out", "before", "after_inside", "during"], // out-of-order input must auto-sort 1->4
+    mode: "per_pose_chain",
+    lockSharedSeedPerPose: true,
+    baseFixedSeed: -1,
+    targetGroupFolder: "P01_四幕递进",
+    seedGenerator: () => mockSeedSeq++,
+  });
+  assert.equal(singleChainTasks.length, 4);
+  assert.deepEqual(
+    singleChainTasks.map((t) => t.stageCode),
+    ["before", "during", "after_inside", "pull_out"]
+  );
+  assert(
+    singleChainTasks.every((t) => t.fixedSeedOverride === 500001 && t.targetGroupFolder === "P01_四幕递进"),
+    "All stages of a single pose must share the same locked seed and target folder"
+  );
+
+  // Verify every stage in the progression generates distinct, valid <512-token prompts
+  const progCfg = createDefaultCharacterConfig();
+  const stagePosPrompts: string[] = [];
+  for (const stTask of singleChainTasks) {
+    const items = generateScenePrompts(stTask.sceneId, {
+      ...progCfg,
+      pos_stage: stTask.stagePresetKey,
+    });
+    const sp = splitPromptPosAndNeg(items[0].prompt);
+    const tok = countSeparatedT5Tokens({
+      posPrompt: sp.posPrompt,
+      sceneNegPrompt: sp.negPrompt,
+      ucPresetMode: "heavy",
+      extraUc: "",
+      appendQuality: true,
+    });
+    assert(tok.posTokens <= 512 && tok.negTokens <= 512, `Stage ${stTask.stageCode} exceeded 512 tokens`);
+    stagePosPrompts.push(sp.posPrompt);
+  }
+  assert.notEqual(stagePosPrompts[0], stagePosPrompts[1], "Stage 1 and Stage 2 prompts must differ");
+  assert.notEqual(stagePosPrompts[1], stagePosPrompts[3], "Stage 2 and Stage 4 prompts must differ");
+
+  // Multi-pose per_pose_chain: each pose gets its own shared seed across its stages
+  const twoPoseChain = buildStageProgressionQueue({
+    sceneIds: ["P01", "P02"],
+    selectedStageCodes: ["before", "during", "after_inside"],
+    mode: "per_pose_chain",
+    lockSharedSeedPerPose: true,
+    baseFixedSeed: -1,
+    seedGenerator: () => mockSeedSeq++,
+  });
+  assert.equal(twoPoseChain.length, 6);
+  assert.equal(twoPoseChain[0].fixedSeedOverride, twoPoseChain[2].fixedSeedOverride);
+  assert.equal(twoPoseChain[3].fixedSeedOverride, twoPoseChain[5].fixedSeedOverride);
+  assert.notEqual(twoPoseChain[0].fixedSeedOverride, twoPoseChain[3].fixedSeedOverride);
+
+  // Multi-pose across_poses_arc: smooth monotonic stage interpolation from start to end
+  const arc4 = buildStageProgressionQueue({
+    sceneIds: ["P01", "P08", "P17", "P22"],
+    selectedStageCodes: ["before", "during", "after_inside", "pull_out"],
+    mode: "across_poses_arc",
+    lockSharedSeedPerPose: false,
+    baseFixedSeed: -1,
+  });
+  assert.deepEqual(
+    arc4.map((t) => `${t.sceneId}:${t.stageCode}`),
+    ["P01:before", "P08:during", "P17:after_inside", "P22:pull_out"]
+  );
+
+  const arc6WithProlapse = buildStageProgressionQueue({
+    sceneIds: ["P01", "P02", "P08", "P12", "P17", "P22"],
+    selectedStageCodes: ["before", "during", "after_inside", "pull_out", "prolapse"],
+    mode: "across_poses_arc",
+    lockSharedSeedPerPose: false,
+    baseFixedSeed: -1,
+  });
+  assert.equal(arc6WithProlapse[0].stageCode, "before");
+  assert.equal(arc6WithProlapse[arc6WithProlapse.length - 1].stageCode, "prolapse");
+  for (let i = 1; i < arc6WithProlapse.length; i++) {
+    assert(
+      arc6WithProlapse[i].stageOrderNum >= arc6WithProlapse[i - 1].stageOrderNum,
+      "Across-poses stage progression must be monotonically non-decreasing"
+    );
+  }
+
+  // Tentacle poses gracefully bypass stage override
+  const tnTasks = buildStageProgressionQueue({
+    sceneIds: ["TN01"],
+    selectedStageCodes: ["before", "during"],
+    mode: "per_pose_chain",
+    lockSharedSeedPerPose: true,
+    baseFixedSeed: 777,
+  });
+  assert.equal(tnTasks.length, 1);
+  assert.equal(tnTasks[0].stageCode, "");
+
   console.log(
-    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts: 83 Positions x2 + MA0~MA11 + Free Action, POV Optical & Gaze Audit + Femboy/Futa/TN01~TN12/BG01~BG20 Conflict-Free Transform Passed, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
+    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts: 83 Positions x2 + MA0~MA11 + Free Action, 2-to-3-Col Folder Organizer + Stage Progression Verified, POV Optical & Gaze Audit + Femboy/Futa/TN01~TN12/BG01~BG20 Conflict-Free Transform Passed, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
   );
 }
 

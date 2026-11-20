@@ -3,6 +3,8 @@ import {
   createDefaultCharacterConfig,
   createDefaultNaiApiSettings,
   type CharacterConfig,
+  type GalleryFolderItem,
+  type GeneratedImageRecord,
   type NaiApiSettings,
   type StoredVibeItem,
 } from "../engine/types";
@@ -13,6 +15,7 @@ const LS_DELETED_PRESETS_KEY = "nai_wb_deleted_presets_v1";
 const LS_API_KEY = "nai_wb_api_settings_v1";
 const LS_MCP_ENABLED_KEY = "nai_wb_mcp_enabled_v1";
 const LS_MCP_ENDPOINT_KEY = "nai_wb_mcp_endpoint_v1";
+const LS_GALLERY_FOLDERS_KEY = "nai_wb_gallery_folders_v1";
 
 // File System Access API types (optional on Window in TS DOM)
 interface FSFileWritable {
@@ -26,6 +29,7 @@ export interface FSDirectoryHandle {
   name: string;
   getDirectoryHandle(name: string, opts?: { create?: boolean }): Promise<FSDirectoryHandle>;
   getFileHandle(name: string, opts?: { create?: boolean }): Promise<FSFileHandle>;
+  removeEntry?(name: string, opts?: { recursive?: boolean }): Promise<void>;
   queryPermission?(desc?: { mode?: "read" | "readwrite" }): Promise<string>;
   requestPermission?(desc?: { mode?: "read" | "readwrite" }): Promise<string>;
 }
@@ -100,6 +104,142 @@ export async function saveBytesToMountedDir(
     return [mountedRootDir.name, ...subPathParts, fileName].join("/");
   } catch {
     return null;
+  }
+}
+
+export async function deleteFileFromMountedDir(
+  subPathParts: string[],
+  fileName: string
+): Promise<boolean> {
+  if (!mountedRootDir || !fileName) return false;
+  try {
+    if (mountedRootDir.queryPermission) {
+      const perm = await mountedRootDir.queryPermission({ mode: "readwrite" });
+      if (perm !== "granted" && mountedRootDir.requestPermission) {
+        const req = await mountedRootDir.requestPermission({ mode: "readwrite" });
+        if (req !== "granted") return false;
+      }
+    }
+    let dir = mountedRootDir;
+    for (const part of subPathParts) {
+      if (!part) continue;
+      dir = await dir.getDirectoryHandle(part, { create: false });
+    }
+    if (typeof dir.removeEntry !== "function") return false;
+    await dir.removeEntry(fileName);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function sanitizeSubfolderName(rawName: string): string {
+  const trimmed = (rawName || "").trim();
+  if (trimmed.toLowerCase() === "_favorites") return "favorites";
+  const cleaned = trimmed
+    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/_+/g, "_")
+    .replace(/^[._\s]+|[._\s]+$/g, "")
+    .slice(0, 64);
+  if (!cleaned) return "";
+  if (cleaned.toLowerCase() === "_favorites") return "favorites";
+  return cleaned;
+}
+
+export function resolveRecordDiskSubpath(
+  baseSessionFolder: string,
+  groupFolder?: string,
+  isStarred?: boolean
+): string[] {
+  const root = baseSessionFolder || "Studio";
+  const safeGroup = groupFolder ? sanitizeSubfolderName(groupFolder) : "";
+  if (safeGroup) {
+    return isStarred ? [root, safeGroup, "_favorites"] : [root, safeGroup];
+  }
+  return isStarred ? [root, "_favorites"] : [root];
+}
+
+export async function deleteDirectoryFromMountedDir(
+  parentSubPath: string[],
+  dirName: string
+): Promise<boolean> {
+  const safeDir = sanitizeSubfolderName(dirName);
+  if (!mountedRootDir || !safeDir) return false;
+  try {
+    if (mountedRootDir.queryPermission) {
+      const perm = await mountedRootDir.queryPermission({ mode: "readwrite" });
+      if (perm !== "granted" && mountedRootDir.requestPermission) {
+        const req = await mountedRootDir.requestPermission({ mode: "readwrite" });
+        if (req !== "granted") return false;
+      }
+    }
+    let dir = mountedRootDir;
+    for (const part of parentSubPath) {
+      if (!part) continue;
+      dir = await dir.getDirectoryHandle(part, { create: false });
+    }
+    if (typeof dir.removeEntry !== "function") return false;
+    await dir.removeEntry(safeDir, { recursive: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function moveFileInMountedDir(
+  fromSubPath: string[],
+  toSubPath: string[],
+  fileName: string,
+  bytes: Uint8Array
+): Promise<boolean> {
+  if (!mountedRootDir || !fileName) return false;
+  const samePath =
+    fromSubPath.length === toSubPath.length &&
+    fromSubPath.every((seg, i) => seg === toSubPath[i]);
+  if (samePath) return true;
+
+  const written = await saveBytesToMountedDir(toSubPath, fileName, bytes);
+  if (!written) return false;
+  await deleteFileFromMountedDir(fromSubPath, fileName);
+  return true;
+}
+
+export async function syncPromptsLogToMountedDir(
+  records: GeneratedImageRecord[],
+  extraTouchedPaths: string[][] = []
+): Promise<void> {
+  if (!mountedRootDir) return;
+  const byPathKey = new Map<string, { parts: string[]; recs: GeneratedImageRecord[] }>();
+  for (const tp of extraTouchedPaths) {
+    if (!tp || tp.length === 0) continue;
+    const key = tp.join("/");
+    if (!byPathKey.has(key)) {
+      byPathKey.set(key, { parts: [...tp], recs: [] });
+    }
+  }
+  for (const r of records) {
+    if (!r.disk_subpath || r.disk_subpath.length === 0) continue;
+    const key = r.disk_subpath.join("/");
+    let bucket = byPathKey.get(key);
+    if (!bucket) {
+      bucket = { parts: [...r.disk_subpath], recs: [] };
+      byPathKey.set(key, bucket);
+    }
+    bucket.recs.push(r);
+  }
+  for (const { parts, recs } of byPathKey.values()) {
+    if (recs.length === 0) {
+      await deleteFileFromMountedDir(parts, "prompts.txt");
+      continue;
+    }
+    const content = recs
+      .map(
+        (g) =>
+          `# ${g.filename} | ${g.width}x${g.height} | Seed: ${g.seed}${g.is_starred ? " | ⭐STARRED" : ""}\n[POS] ${g.prompt_pos || ""}\n[NEG] ${g.prompt_neg || ""}\n`
+      )
+      .join("\n");
+    await saveBytesToMountedDir(parts, "prompts.txt", content);
   }
 }
 
@@ -457,6 +597,16 @@ export function loadApiSettings(): NaiApiSettings {
           ? def.keep_inline_negatives
           : Boolean(merged.keep_inline_negatives);
     }
+    if (!parsed.v5_rescale_migrated_v1) {
+      if (
+        (merged.model === "nai-diffusion-5-full" || merged.model === "nai-diffusion-5-full-medium") &&
+        Number(merged.cfg_rescale) > 0
+      ) {
+        merged.cfg_rescale = 0.0;
+      }
+      merged.v5_rescale_migrated_v1 = true;
+      needsSave = true;
+    }
     if (needsSave) {
       saveApiSettings(merged);
     }
@@ -570,5 +720,150 @@ export async function clearStoredVibeItems(): Promise<void> {
     db.close();
   } catch {
     // ignore
+  }
+}
+
+// ==========================================
+// IndexedDB Storage for ⭐ Starred Gallery Images Only
+// (Unstarred session images stay strictly in memory and clear on reload)
+// ==========================================
+const IDB_STARRED_GALLERY_KEY = "starred_gallery_items_v1";
+
+export type PersistedGalleryRecord = Omit<GeneratedImageRecord, "objectUrl">;
+
+export function filterStarredGalleryForPersist(
+  records: GeneratedImageRecord[]
+): PersistedGalleryRecord[] {
+  return records
+    .filter((r) => Boolean(r.is_starred) && r.bytes instanceof Uint8Array && r.bytes.byteLength > 0)
+    .map(({ objectUrl: _omit, ...rest }) => ({
+      ...rest,
+      bytes: new Uint8Array(rest.bytes),
+      is_starred: true,
+    }));
+}
+
+function guessMimeFromFilename(filename: string): string {
+  const low = (filename || "").toLowerCase();
+  if (low.endsWith(".webp")) return "image/webp";
+  if (low.endsWith(".jpg") || low.endsWith(".jpeg")) return "image/jpeg";
+  return "image/png";
+}
+
+export async function loadStarredGalleryRecords(): Promise<GeneratedImageRecord[]> {
+  try {
+    const db = await openWorkbenchIdb();
+    const raw = await new Promise<unknown>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const getReq = tx.objectStore(IDB_STORE).get(IDB_STARRED_GALLERY_KEY);
+      getReq.onsuccess = () => resolve(getReq.result);
+      getReq.onerror = () => reject(getReq.error);
+    });
+    db.close();
+    if (!Array.isArray(raw)) return [];
+
+    const out: GeneratedImageRecord[] = [];
+    for (const item of raw as Array<Partial<PersistedGalleryRecord>>) {
+      if (!item || typeof item !== "object" || typeof item.id !== "string" || !item.bytes) continue;
+      const rawBytes: unknown = item.bytes;
+      const u8 =
+        rawBytes instanceof Uint8Array
+          ? new Uint8Array(rawBytes)
+          : ArrayBuffer.isView(rawBytes)
+            ? new Uint8Array(rawBytes.buffer, rawBytes.byteOffset, rawBytes.byteLength)
+            : rawBytes instanceof ArrayBuffer
+              ? new Uint8Array(rawBytes)
+              : null;
+      if (!u8 || u8.byteLength === 0) continue;
+      const blobCopy = new Uint8Array(u8.byteLength);
+      blobCopy.set(u8);
+      const mime = guessMimeFromFilename(item.filename || "image.png");
+      const objectUrl =
+        typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
+          ? URL.createObjectURL(new Blob([blobCopy], { type: mime }))
+          : "";
+      out.push({
+        id: item.id,
+        scene_id: item.scene_id || "P01",
+        mode_label: item.mode_label || "pov",
+        filename: item.filename || `${item.id}.png`,
+        bytes: u8,
+        objectUrl,
+        seed: Number(item.seed ?? 0),
+        width: Number(item.width ?? 832),
+        height: Number(item.height ?? 1216),
+        elapsed_sec: Number(item.elapsed_sec ?? 0),
+        estimated_anlas: Number(item.estimated_anlas ?? 0),
+        created_at: Number(item.created_at ?? Date.now()),
+        prompt_pos: item.prompt_pos,
+        prompt_neg: item.prompt_neg,
+        is_upscaled: Boolean(item.is_upscaled),
+        is_starred: true,
+        saved_to_dir: Boolean(item.saved_to_dir),
+        disk_subpath: Array.isArray(item.disk_subpath) ? [...item.disk_subpath] : undefined,
+        config_snapshot: item.config_snapshot,
+        reroll_group_id: item.reroll_group_id,
+        group_folder: item.group_folder ? sanitizeSubfolderName(item.group_folder) || undefined : undefined,
+        stage_code: typeof item.stage_code === "string" ? item.stage_code : undefined,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+export function loadGalleryFolders(): GalleryFolderItem[] {
+  try {
+    if (typeof localStorage === "undefined") return [];
+    const raw = localStorage.getItem(LS_GALLERY_FOLDERS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const seen = new Set<string>();
+    const out: GalleryFolderItem[] = [];
+    for (const it of parsed) {
+      if (!it || typeof it !== "object") continue;
+      const safeName = sanitizeSubfolderName(String((it as { name?: unknown }).name ?? ""));
+      if (!safeName || seen.has(safeName.toLowerCase())) continue;
+      seen.add(safeName.toLowerCase());
+      out.push({
+        id: typeof (it as { id?: unknown }).id === "string" ? String((it as { id: string }).id) : `fld_${out.length + 1}`,
+        name: safeName,
+        created_at: Number((it as { created_at?: unknown }).created_at ?? Date.now()),
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+export function saveGalleryFolders(folders: GalleryFolderItem[]): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(LS_GALLERY_FOLDERS_KEY, JSON.stringify(folders));
+  } catch {
+    // ignore
+  }
+}
+
+export async function saveStarredGalleryRecords(records: GeneratedImageRecord[]): Promise<void> {
+  const payload = filterStarredGalleryForPersist(records);
+  try {
+    const db = await openWorkbenchIdb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      if (payload.length === 0) {
+        tx.objectStore(IDB_STORE).delete(IDB_STARRED_GALLERY_KEY);
+      } else {
+        tx.objectStore(IDB_STORE).put(payload, IDB_STARRED_GALLERY_KEY);
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // ignore IndexedDB quota/availability errors
   }
 }

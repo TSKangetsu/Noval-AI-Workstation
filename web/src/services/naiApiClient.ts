@@ -296,10 +296,12 @@ export function buildNaiGeneratePayload(options: {
   }
 
   let routedCustomNeg = customNegPrompt;
-  if (isV5High && !keepInlineNegs) {
-    // V5 Full High Dual-Channel Hybrid Routing:
+  const wantsLinelessForHybrid = /\b(no lineart|lineless)\b/i.test(baseCaption);
+  if (isV5High && !keepInlineNegs && wantsLinelessForHybrid) {
+    // V5 Full High Dual-Channel Hybrid Routing (Lineless / Soft-Painterly Styles):
     // Route brushwork/lineart/shading soft-ban tags into inline -0.95::...:: inside v4_prompt (preventing harsh
     // brown cel outlines on lineless/soft styles), while keeping structural/entity/anatomy/canon hard-bans in v4_negative_prompt.
+    // Standard lineart anime styles keep 100% of scene_negative in v4_negative_prompt (1:1 parity with Official NAI Web UI).
     const existingInlineCwSet = new Set<string>();
     const cwScanRe = /-0\.\d+::([\s\S]*?)::/g;
     let mCw: RegExpExecArray | null;
@@ -377,8 +379,10 @@ export function buildNaiGeneratePayload(options: {
     "2.8::photorealistic::",
     "no lineart",
   ].some((kw) => lowerCheck.includes(kw));
+  const baseBeforeQuality = baseCaption;
   const useStdQualityPreset = Boolean(appendV5Quality && !suppressAnimeQuality);
   baseCaption = applySmartQualitySuffix(baseCaption, useStdQualityPreset);
+  const appendedStdQuality = baseCaption !== baseBeforeQuality && baseCaption.toLowerCase().endsWith("very aesthetic, masterpiece, no text");
 
   const fullPosLower = (
     baseCaption +
@@ -518,7 +522,7 @@ export function buildNaiGeneratePayload(options: {
         steps: effectiveSteps,
         n_samples: 1,
         ucPresetId: effectiveUcPreset,
-        qualityPresetId: useStdQualityPreset ? "standard" : "none",
+        qualityPresetId: appendedStdQuality ? "standard" : "none",
         autoSmea: false,
         dynamic_thresholding: false,
         controlnet_strength: 1.0,
@@ -535,7 +539,7 @@ export function buildNaiGeneratePayload(options: {
         seed: actualSeed,
         characterPrompts: characterPromptsApi,
         straight_alpha: true,
-        tag_hint_qt: useStdQualityPreset ? 1 : 0,
+        tag_hint_qt: appendedStdQuality ? 1 : 0,
         tag_hint_transparent_background: baseCaption.toLowerCase().includes("transparent background")
           ? true
           : null,
@@ -553,6 +557,8 @@ export function buildNaiGeneratePayload(options: {
             base_caption: negativePrompt,
             char_captions: negCharCaptions,
           },
+          use_coords: false,
+          use_order: false,
           legacy_uc: false,
         },
         negative_prompt: negativePrompt,

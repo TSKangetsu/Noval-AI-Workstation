@@ -162,7 +162,7 @@ export function parseStructuredPrompt(rawPrompt: string): {
     if (cur.header.toLowerCase().startsWith("base prompt")) {
       baseCaption = body;
     } else {
-      let center = { x: 0, y: 0 };
+      let center = { x: 0.5, y: 0.5 };
       if (cur.coord && cur.coord in POSITION_GRID) {
         center = POSITION_GRID[cur.coord];
         useCoords = true;

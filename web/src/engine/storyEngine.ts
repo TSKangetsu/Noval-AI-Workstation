@@ -42,6 +42,8 @@ import type {
   CharacterGenderMode,
   PerspectiveMode,
   ScenePromptItem,
+  StageProgressionMode,
+  StageProgressionTask,
 } from "./types";
 
 export function sanitizeStyleForTransparentBg(headPos: string): string {
@@ -217,9 +219,9 @@ function adaptSceneStageForLightAxis(
     }
     if (axis === "backlit") {
       return {
-        tags: "indoors, 1.25::furry beige rug::, rug, wooden floor, 1.3::large floor-to-ceiling window::, window in background, bright sky outside, potted plant",
+        tags: "indoors, furry beige rug, wooden floor, 1.3::large floor-to-ceiling window::, 1.35::bright window::, window in background, bright sky outside, potted plant",
         prose:
-          " on a soft furry beige rug over a wooden floor right in front of a blazing sunlit floor-to-ceiling window and potted plant",
+          " on a furry beige rug right in front of a blazing sunlit floor-to-ceiling window and potted plant",
         extraNeg: rawExtraNeg,
       };
     }
@@ -807,14 +809,6 @@ export function proseIf(
   if (!body) return "";
   const resolvedLight = resolveLightingPresetEntry(cfg.lighting_preset);
   const hasCustomLight = resolvedLight.code !== "auto";
-  const is25dCelLight = is25dCelLightingCode(resolvedLight.code);
-  if (isPocketMiniLadyBodyActive(cfg) && !is25dCelLight) {
-    body =
-      (suppressFaceProse
-        ? "Pocket-sized slender mini-lady proportions with a slim petite body, narrow shoulders, tiny waist, trim narrow hips, and straight slender legs with a thigh gap; "
-        : "Pocket-sized slender mini-lady proportions with a cute large head, slim petite body, narrow shoulders, tiny waist, trim narrow hips, and straight slender legs with a thigh gap; ") +
-      body;
-  }
   if (isC5LowresPixelStyleActive(cfg)) {
     return (
       "Low-resolution retro pixel art game CG upscaled with nearest-neighbor scaling, " +
@@ -1434,9 +1428,11 @@ export function buildCommonModules(
       : "";
   const outfitExtraNeg = cfg.enable_outfit ? outfitInfo.extra_neg || "" : "";
   const isTune2 = cfg.style_preset.includes("M6-Tune2");
+  const isMangaStyle = cfg.style_preset.includes("黑白网点漫画") || cfg.style_preset.includes("Monochrome Manga");
+  const comicLineGuard = isMangaStyle ? "" : "motion lines, emphasis lines, speed lines";
   const commonTailNeg = isTune2
-    ? joinTags(anatNeg, outfitExtraNeg, canonNeg, intactNeg, envExtraNeg)
-    : joinTags(styleNeg, bodyFullNeg, anatNeg, outfitExtraNeg, canonNeg, intactNeg, envExtraNeg);
+    ? joinTags(canonNeg, comicLineGuard, anatNeg, outfitExtraNeg, intactNeg, envExtraNeg)
+    : joinTags(styleNeg, canonNeg, comicLineGuard, bodyFullNeg, anatNeg, outfitExtraNeg, intactNeg, envExtraNeg);
 
   return {
     head_pos: headPos,
@@ -2006,7 +2002,17 @@ export function generateScenePrompts(
         ? adaptedScene.prose.replace(/\bbright pink sky\b/gi, "pink sky")
         : adaptedScene.prose;
       poseUsed = scenePreset.strip_indoor_pose
-        ? poseRaw.replace(", head on pillow", "").replace(", hands gripping sheet", "")
+        ? poseRaw
+            .replace(/,\s*head on pillow/gi, "")
+            .replace(/,\s*hands gripping sheet/gi, "")
+            .replace(/,\s*(?:\d+(?:\.\d+)?::)?pressed against glass(?:::)?/gi, "")
+            .replace(/,\s*(?:\d+(?:\.\d+)?::)?against glass(?:::)?/gi, "")
+            .replace(/,\s*palms on glass/gi, "")
+            .replace(/,\s*window in front/gi, "")
+            .replace(/,\s*palms and flattened chest pressed against clear windowpane/gi, ", leaning forward, palms braced")
+            .replace(/,\s*fogged glass/gi, "")
+            .replace(/frontal view through glass/gi, "frontal view")
+            .replace(/standing pinned against wall/gi, "standing leaned back")
         : poseRaw;
       transNeg = adaptedScene.extraNeg;
       if (scenePreset.unblock_dark && tailNegUsed) {
@@ -2022,6 +2028,45 @@ export function generateScenePrompts(
       bgProse = m.loc_prose;
       poseUsed = poseRaw;
       transNeg = "";
+    }
+
+    if (!isTentacle && maleCode === "off") {
+      // Pure solo mode: strip ghost partner POV hands & ground suspended-carry poses
+      poseUsed = splitTopLevelCommaSegments(poseUsed)
+        .filter((seg) => {
+          const bare = stripWeightPrefix(seg);
+          return (
+            Boolean(bare) &&
+            bare !== "pov hands" &&
+            bare !== "male hands" &&
+            bare !== "grabbing thigh" &&
+            bare !== "grabbing waist" &&
+            bare !== "grabbing another's hip" &&
+            bare !== "holding hips"
+          );
+        })
+        .join(", ");
+      if (sceneId === "P27") {
+        poseUsed = isPov
+          ? "close cowboy shot, lying on back, 1.35::legs up::, knees drawn toward chest, looking at viewer"
+          : "three-quarter full-body shot, lying on back, 1.35::legs up::, knees drawn toward chest, feet up, looking at viewer";
+      } else if (sceneId === "P28") {
+        poseUsed = isPov
+          ? "1.45::pov::, 1.4::from above::, top-down, high angle, lying on back, 1.35::spread legs::, m legs"
+          : "frontal full-body shot, lying on back, facing viewer, 1.35::spread legs::, m legs, knees held wide apart";
+      } else if (sceneId === "P40") {
+        poseUsed = isPov
+          ? "1.45::pov::, 1.4::from above::, top-down, high angle, lying on back, 1.35::folded::, spread legs, knees wide apart"
+          : "frontal full-body shot, lying on back, 1.35::folded::, arms behind head, knees drawn high and wide apart, facing viewer";
+      } else if (sceneId === "P46") {
+        poseUsed = poseUsed.replace(/sitting held from behind against chest/gi, "sitting leaned back");
+      } else if (sceneId === "P49") {
+        poseUsed = poseUsed.replace(/kneeling on all fours/gi, "kneeling, arched back, one hand supporting");
+      } else if (sceneId === "P51") {
+        poseUsed = isPov
+          ? "1.45::pov::, 1.4::from above::, top-down, high angle, lying on back, 1.35::spread legs::, knees wide apart"
+          : "frontal full-body shot, lying on back, both knees drawn high and wide apart, facing viewer";
+      }
     }
 
     if (tpl.unlock_belly || (isTentacle && cfg.enable_uterus_xray)) {
@@ -2156,7 +2201,7 @@ export function generateScenePrompts(
       } else if (stageCode === "during") {
         organTags = joinTags(
           m.anat_pos,
-          "0.85::spread pussy::, orgasm, climax, female ejaculation, trembling, twitching",
+          "0.85::spread pussy::, orgasm, climax, female ejaculation, trembling",
           wtag("pussy juice", 1.4, f),
           wtag("squirting", 1.3, f),
           "pussy juice trail, sweat"
@@ -2177,7 +2222,7 @@ export function generateScenePrompts(
       } else if (stageCode === "prolapse") {
         organTags = joinTags(
           m.anat_pos,
-          "after vaginal, after sex, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, twitching, trembling",
+          "after vaginal, after sex, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, trembling",
           wtag("cum", 1.45, f),
           wtag("cum in pussy", 1.45, f),
           wtag("cumdrip", 1.45, f),
@@ -2190,7 +2235,7 @@ export function generateScenePrompts(
       } else {
         organTags = joinTags(
           m.anat_pos,
-          "0.95::spread pussy::, 1.45::creampie::, after vaginal, after sex, twitching",
+          "0.95::spread pussy::, 1.45::creampie::, after vaginal, after sex, trembling",
           wtag("cum", 1.45, f),
           wtag("cum in pussy", 1.45, f),
           wtag("cumdrip", 1.45, f),
@@ -2209,17 +2254,18 @@ export function generateScenePrompts(
     } else if (isManualFemale) {
       let partnerNeg: string;
       const isSelfTouch = maleCode === "off";
+      const suppressSupinePovHands = sceneId === "P45" || sceneId === "P47";
       if (maleCode === "normal") {
         actorTags = joinTags(
           "1girl, 1boy, hetero, faceless male, male hand",
-          isPov ? "1.35::pov::, 1.35::pov hands::" : ""
+          isPov ? (suppressSupinePovHands ? "1.4::pov::" : "1.35::pov::, 1.35::pov hands::") : ""
         );
         partnerProse = isPov ? "" : " with a faceless partner's hands";
         partnerNeg = isPov ? povMaleCropNeg : "";
       } else if (maleCode === "translucent") {
         actorTags = joinTags(
           "1girl, 1boy, hetero, faceless male, 1.35::male silhouette::, ghostly outline",
-          isPov ? "1.35::pov::, pov hands" : ""
+          isPov ? (suppressSupinePovHands ? "1.35::pov::" : "1.35::pov::, pov hands") : ""
         );
         partnerProse =
           " with a semi-transparent see-through male silhouette whose hands do not obscure her opaque body";
@@ -2299,7 +2345,7 @@ export function generateScenePrompts(
             organTags = joinTags(
               m.anat_pos,
               spreadTag,
-              "1.4::clitoral stimulation::, 1.0::spread pussy::, 1.25::clitoris::, orgasm, climax, 1.35::female ejaculation::, trembling, twitching",
+              "1.4::clitoral stimulation::, 1.0::spread pussy::, 1.25::clitoris::, orgasm, climax, 1.35::female ejaculation::, trembling",
               wtag("pussy juice", 1.45, f),
               wtag("squirting", 1.35, f),
               "pussy juice trail, sweat"
@@ -2310,7 +2356,7 @@ export function generateScenePrompts(
             organTags = joinTags(
               m.anat_pos,
               spreadTag,
-              "clitoral stimulation, 1.0::spread pussy::, clitoris, after orgasm, heavy breathing, trembling, twitching",
+              "clitoral stimulation, 1.0::spread pussy::, clitoris, after orgasm, heavy breathing, trembling",
               wtag("pussy juice", 1.45, f),
               "pussy juice on fingers, wet thighs, sweat"
             );
@@ -2319,7 +2365,7 @@ export function generateScenePrompts(
           } else if (stageCode === "prolapse") {
             organTags = joinTags(
               m.anat_pos,
-              "after masturbation, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, 1.25::clitoris::, twitching, wet fingers, glistening fingers",
+              "after masturbation, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, 1.25::clitoris::, trembling, wet fingers, glistening fingers",
               wtag("pussy juice", 1.45, f),
               wtag("pussy juice trail", 1.45, f),
               "pussy juice string, wet thighs, sweat"
@@ -2329,7 +2375,7 @@ export function generateScenePrompts(
           } else {
             organTags = joinTags(
               m.anat_pos,
-              "after masturbation, 1.0::spread pussy::, 1.25::clitoris::, twitching, wet fingers, glistening fingers",
+              "after masturbation, 1.0::spread pussy::, 1.25::clitoris::, trembling, wet fingers, glistening fingers",
               wtag("pussy juice", 1.45, f),
               wtag("pussy juice trail", 1.45, f),
               "pussy juice string, wet thighs, sweat"
@@ -2350,7 +2396,7 @@ export function generateScenePrompts(
             organTags = joinTags(
               m.anat_pos,
               gropePrefix,
-              "1.4::fingering::, hand between legs, 1.0::spread pussy::, orgasm, climax, 1.35::female ejaculation::, trembling, twitching",
+              "1.4::fingering::, hand between legs, 1.0::spread pussy::, orgasm, climax, 1.35::female ejaculation::, trembling",
               wtag("pussy juice", 1.45, f),
               wtag("squirting", 1.35, f),
               "pussy juice trail, sweat"
@@ -2360,7 +2406,7 @@ export function generateScenePrompts(
             organTags = joinTags(
               m.anat_pos,
               gropePrefix,
-              "1.35::fingering::, hand between legs, 1.0::spread pussy::, after orgasm, heavy breathing, trembling, twitching",
+              "1.35::fingering::, hand between legs, 1.0::spread pussy::, after orgasm, heavy breathing, trembling",
               wtag("pussy juice", 1.45, f),
               "pussy juice on fingers, wet thighs, sweat"
             );
@@ -2369,7 +2415,7 @@ export function generateScenePrompts(
             organTags = joinTags(
               m.anat_pos,
               gropePrefix,
-              "1.35::after fingering::, after masturbation, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, twitching, wet fingers, glistening fingers",
+              "1.35::after fingering::, after masturbation, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, trembling, wet fingers, glistening fingers",
               wtag("pussy juice", 1.45, f),
               wtag("pussy juice trail", 1.45, f),
               "pussy juice string, wet thighs, sweat"
@@ -2379,7 +2425,7 @@ export function generateScenePrompts(
             organTags = joinTags(
               m.anat_pos,
               gropePrefix,
-              "1.35::after fingering::, after masturbation, 1.0::spread pussy::, twitching, wet fingers, glistening fingers",
+              "1.35::after fingering::, after masturbation, 1.0::spread pussy::, trembling, wet fingers, glistening fingers",
               wtag("pussy juice", 1.45, f),
               wtag("pussy juice trail", 1.45, f),
               "pussy juice string, wet thighs, sweat"
@@ -2396,11 +2442,17 @@ export function generateScenePrompts(
       );
     } else {
       let partnerNeg: string;
+      const isSupineOrSidePov =
+        isPov && /^(P0[1-7]|P24)$/.test(sceneId);
+      const suppressGenericPovHands =
+        isPov && /^(P0[1-7]|P24|P30|P31|P32|P34|P35|P36|P37|P39)$/.test(sceneId);
       const povCrotchTag =
         isPov &&
         showP &&
         ["vaginal", "oral", "sixty_nine", "chest", "thigh", "glute"].includes(channel)
-          ? "pov crotch"
+          ? isSupineOrSidePov
+            ? "1.45::pov crotch::, foreshortening"
+            : "1.4::pov crotch::"
           : "";
       const povHipGrabTag =
         isRearNoFacePov && sceneId !== "P20" && (channel === "vaginal" || channel === "glute")
@@ -2409,7 +2461,11 @@ export function generateScenePrompts(
       if (maleCode === "normal") {
         actorTags = joinTags(
           "1girl, 1boy, hetero, faceless male",
-          isPov ? "1.4::pov::, pov hands" : "",
+          isPov
+            ? suppressGenericPovHands
+              ? "1.45::pov::"
+              : "1.4::pov::, pov hands"
+            : "",
           povCrotchTag,
           povHipGrabTag
         );
@@ -2418,7 +2474,11 @@ export function generateScenePrompts(
       } else if (maleCode === "translucent") {
         actorTags = joinTags(
           "1girl, 1boy, hetero, faceless male, 1.35::male silhouette::, ghostly outline",
-          isPov ? "1.35::pov::, pov hands" : "",
+          isPov
+            ? suppressGenericPovHands
+              ? "1.4::pov::"
+              : "1.35::pov::, pov hands"
+            : "",
           povCrotchTag,
           povHipGrabTag
         );
@@ -2440,29 +2500,29 @@ export function generateScenePrompts(
       }
 
       const isRearPosture = /^(P17|P18|P19|P20|P21|P22|P44|P49)$/.test(sceneId);
+      const cleanActiveAnatPos = m.anat_pos
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => {
+          const bare = t.replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+          return Boolean(bare) && bare !== "spread pussy";
+        })
+        .join(", ");
       if (channel === "vaginal") {
         if (stageCode === "before") {
           if (showP) {
             organTags = joinTags(
-              m.anat_pos,
+              cleanActiveAnatPos,
               "vaginal, insertion, penis",
               condomOn ? "1.35::condom::, 1.3::condom on penis::" : "",
               af ? wtag("pussy juice", 1.2, f) : ""
             );
             organProse = condomOn ? ", wearing a snug translucent condom" : "";
           } else if (isRearPosture) {
-            const cleanRearAnatPos = m.anat_pos
-              .split(",")
-              .map((t) => t.trim())
-              .filter((t) => {
-                const bare = t.replace(/^\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
-                return Boolean(bare) && bare !== "spread pussy";
-              })
-              .join(", ");
             organTags = joinTags(
-              cleanRearAnatPos,
+              cleanActiveAnatPos,
               "parted labia",
-              af ? wtag("pussy juice, cumdrip", 1.2, f) : ""
+              af ? wtag("pussy juice", 1.2, f) : ""
             );
             organProse = "";
             partnerNeg = joinTags(
@@ -2476,7 +2536,7 @@ export function generateScenePrompts(
             organTags = joinTags(
               m.anat_pos,
               "0.8::spread pussy::",
-              af ? wtag("pussy juice, cumdrip", 1.2, f) : ""
+              af ? wtag("pussy juice", 1.2, f) : ""
             );
             organProse = ", keeping her lower anatomy actively parted";
             partnerNeg = joinTags(partnerNeg, "motion lines, emphasis lines, speed lines");
@@ -2484,11 +2544,11 @@ export function generateScenePrompts(
         } else if (stageCode === "during") {
           if (condomOn) {
             const baseOrg = showP
-              ? joinTags(m.anat_pos, "vaginal, insertion, penis, 1.4::condom on penis::")
+              ? joinTags(cleanActiveAnatPos, "vaginal, insertion, penis, 1.4::condom on penis::")
               : joinTags(m.anat_pos, "0.85::spread pussy::, 1.4::condom::");
             organTags = joinTags(
               baseOrg,
-              "1.5::x-ray::, 1.45::cross-section::, 1.4::uterus::, cervix, 1.35::cervical penetration::, ejaculation, climax, 1.5::cum in condom::, cum inflation, stomach bulge, trembling, twitching",
+              "1.5::x-ray::, 1.45::cross-section::, 1.4::uterus::, cervix, 1.35::cervical penetration::, ejaculation, climax, 1.5::cum in condom::, cum inflation, stomach bulge, trembling",
               wtag("cum", 1.35, f),
               "pussy juice, sweat"
             );
@@ -2497,11 +2557,11 @@ export function generateScenePrompts(
               "; in a cutaway x-ray cross-section of her womb, the condom tip on his penis pushes through her cervix and inflates like a large taut white balloon stretching and filling the entire interior of her uterus with thick white cum";
           } else {
             const baseOrg = showP
-              ? joinTags(m.anat_pos, "vaginal, insertion, penis")
-              : joinTags(m.anat_pos, "0.85::spread pussy::, twitching");
+              ? joinTags(cleanActiveAnatPos, "vaginal, insertion, penis")
+              : joinTags(m.anat_pos, "0.85::spread pussy::");
             organTags = joinTags(
               baseOrg,
-              "internal cumshot, ejaculation, climax, trembling, twitching",
+              "internal cumshot, ejaculation, climax",
               wtag("cum", 1.35, f),
               wtag("cum in pussy", 1.4, f),
               wtag("cum overflow", 1.35, f),
@@ -2514,7 +2574,7 @@ export function generateScenePrompts(
         } else if (stageCode === "after_inside") {
           if (condomOn) {
             const baseOrg = showP
-              ? joinTags(m.anat_pos, "vaginal, insertion, penis, 1.4::condom on penis::")
+              ? joinTags(cleanActiveAnatPos, "vaginal, insertion, penis, 1.4::condom on penis::")
               : joinTags(m.anat_pos, "0.85::spread pussy::, 1.4::condom::");
             organTags = joinTags(
               baseOrg,
@@ -2527,11 +2587,11 @@ export function generateScenePrompts(
               "; in a cutaway x-ray cross-section of her womb, the condom on his penis stays ballooned wide open like a taut white pouch molding and filling the entire interior of her uterus";
           } else {
             const baseOrg = showP
-              ? joinTags(m.anat_pos, "vaginal, insertion, penis")
-              : joinTags(m.anat_pos, "0.85::spread pussy::, twitching");
+              ? joinTags(cleanActiveAnatPos, "vaginal, insertion, penis")
+              : joinTags(m.anat_pos, "0.85::spread pussy::");
             organTags = joinTags(
               baseOrg,
-              "after vaginal, after ejaculation, heavy breathing, trembling",
+              "after vaginal, after ejaculation, heavy breathing",
               wtag("cum", 1.35, f),
               wtag("cum in pussy", 1.45, f),
               wtag("cum overflow", 1.45, f),
@@ -2544,10 +2604,10 @@ export function generateScenePrompts(
           }
         } else if (stageCode === "prolapse") {
           if (condomOn) {
-            const shaftPart = showP ? ", 1.4::penis::, erection, glans, twitching penis" : "";
+            const shaftPart = showP ? ", 1.4::penis::, erection, glans" : "";
             organTags = joinTags(
               m.anat_pos,
-              `1.35::after vaginal::, 1.4::pull out::, after sex, 1.15::vaginal prolapse::, twitching${shaftPart}`,
+              `1.35::after vaginal::, 1.4::pull out::, after sex, 1.15::vaginal prolapse::${shaftPart}`,
               "1.85::used condom in pussy::, 1.2::used condom::, 1.5::condom::, 1.4::cum in condom::",
               wtag("cum", 1.4, f),
               wtag("cum overflow", 1.4, f),
@@ -2560,7 +2620,7 @@ export function generateScenePrompts(
           } else if (showP) {
             organTags = joinTags(
               m.anat_pos,
-              "1.35::after vaginal::, 1.4::pull out::, after sex, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, twitching, penis, erection, twitching penis, cum on penis",
+              "1.35::after vaginal::, 1.4::pull out::, after sex, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, penis, erection, cum on penis",
               wtag("cum", 1.45, f),
               wtag("cum in pussy", 1.45, f),
               wtag("cumdrip", 1.45, f),
@@ -2573,7 +2633,7 @@ export function generateScenePrompts(
           } else {
             organTags = joinTags(
               m.anat_pos,
-              "1.4::after vaginal::, pull out, after sex, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, twitching, trembling",
+              "1.4::after vaginal::, pull out, after sex, 1.55::vaginal prolapse::, 1.35::prolapse::, cervix, trembling",
               wtag("cum", 1.45, f),
               wtag("cum in pussy", 1.45, f),
               wtag("cumdrip", 1.45, f),
@@ -2586,7 +2646,7 @@ export function generateScenePrompts(
           }
         } else {
           if (condomOn) {
-            const shaftPart = showP ? ", 1.4::penis::, erection, glans, twitching penis" : "";
+            const shaftPart = showP ? ", 1.4::penis::, erection, glans" : "";
             organTags = joinTags(
               m.anat_pos,
               `1.35::after vaginal::, 1.4::pull out::, after sex${shaftPart}, 0.95::spread pussy::`,
@@ -2602,7 +2662,7 @@ export function generateScenePrompts(
           } else if (showP) {
             organTags = joinTags(
               m.anat_pos,
-              "1.35::after vaginal::, 1.4::pull out::, after sex, 0.95::spread pussy::, 1.45::creampie::, penis, erection, twitching penis, cum on penis",
+              "1.35::after vaginal::, 1.4::pull out::, after sex, 0.95::spread pussy::, 1.45::creampie::, penis, erection, cum on penis",
               isRearPosture ? "1.4::pussy from behind::" : "",
               wtag("cum", 1.55, f),
               wtag("cum in pussy", 1.75, f),
@@ -2617,7 +2677,7 @@ export function generateScenePrompts(
           } else {
             organTags = joinTags(
               m.anat_pos,
-              "1.4::after vaginal::, pull out, after sex, 0.95::spread pussy::, 1.45::creampie::, twitching",
+              "1.4::after vaginal::, pull out, after sex, 0.95::spread pussy::, 1.45::creampie::",
               isRearPosture ? "1.4::pussy from behind::" : "",
               wtag("cum", 1.55, f),
               wtag("cum in pussy", 1.75, f),
@@ -2708,16 +2768,13 @@ export function generateScenePrompts(
               ? condomOn
                 ? joinTags(
                     pov69Crotch,
-                    "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, 1.4::after fellatio::, pull out, open mouth, 1.35::penis::, 1.35::used condom::, 1.35::cum in condom::"
+                    "1.4::after fellatio::, pull out, open mouth, 1.35::penis::, 1.35::used condom::, 1.35::cum in condom::"
                   )
                 : joinTags(
                     pov69Crotch,
-                    "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, 1.4::after fellatio::, pull out, open mouth, 1.35::penis::, cum on penis"
+                    "1.4::after fellatio::, pull out, open mouth, 1.35::penis::, cum on penis"
                   )
-              : joinTags(
-                  pov69Crotch,
-                  "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, after cunnilingus"
-                );
+              : joinTags(pov69Crotch, "after cunnilingus, after orgasm");
             organTags = joinTags(
               basePov69,
               wtag("pussy juice", 1.45, f),
@@ -2727,7 +2784,7 @@ export function generateScenePrompts(
               "saliva trail, sweat"
             );
             organProse =
-              " right after mutual climax with a glistening prolapsed cervix overhead and sticky white cum strings at her mouth below";
+              " right after intense mutual sixty-nine with glistening fluids overhead and sticky white cum strings at her mouth below";
           } else {
             const basePov69 = showP
               ? condomOn
@@ -2812,9 +2869,9 @@ export function generateScenePrompts(
           } else if (stageCode === "prolapse") {
             const base3rd69 = showP
               ? condomOn
-                ? joinTags(third69Crotch, "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, 1.4::after fellatio::, pull out, open mouth, penis, 1.35::used condom::, 1.35::cum in condom::")
-                : joinTags(third69Crotch, "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, 1.4::after fellatio::, pull out, open mouth, penis, cum on penis")
-              : joinTags(third69Crotch, "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, after cunnilingus");
+                ? joinTags(third69Crotch, "1.4::after fellatio::, pull out, open mouth, penis, 1.35::used condom::, 1.35::cum in condom::")
+                : joinTags(third69Crotch, "1.4::after fellatio::, pull out, open mouth, penis, cum on penis")
+              : joinTags(third69Crotch, "after cunnilingus, after orgasm");
             organTags = joinTags(
               base3rd69,
               wtag("cum", 1.4, f),
@@ -2824,7 +2881,7 @@ export function generateScenePrompts(
               "saliva trail, sweat"
             );
             organProse =
-              ", right after mutual climax with a glistening prolapsed cervix and sticky white cum strings";
+              ", right after intense mutual sixty-nine with glistening fluids and sticky white cum strings";
           } else {
             const base3rd69 = showP
               ? condomOn
@@ -2941,7 +2998,7 @@ export function generateScenePrompts(
         } else if (channel === "foot") {
           baseBeforeP = "footjob, soles together, feet together, penis";
           baseBeforeNp = "1.4::soles together::, arched feet, feet together";
-          mildFluid = af ? wtag("cum on feet", 1.2, f) : "";
+          mildFluid = af ? joinTags(wtag("glistening", 1.15, f), "sweat") : "";
           npProse = ", keeping both soles arched and pressed together";
           surfaceTags = [wtag("cum on feet", 1.45, f), wtag("cum on toes", 1.35, f), "cum on soles"];
           surfaceEn = "pressed soles and toes";
@@ -3009,15 +3066,10 @@ export function generateScenePrompts(
               ? `, resting right after ejaculation with the swollen cum-filled condom pressed against her ${surfaceEn}`
               : `, resting right after ejaculation while still holding close as thick white cum pools and drips over her ${surfaceEn}`;
         } else if (stageCode === "prolapse") {
-          const lowerProlapse =
-            channel === "thigh" || channel === "glute" || channel === "foot"
-              ? "1.5::vaginal prolapse::, 1.3::prolapse::, cervix, after vaginal"
-              : "";
           organTags = showP && condomOn
             ? joinTags(
                 baseOrg,
                 "after ejaculation, pull out",
-                lowerProlapse,
                 wtag("cum", 1.4, f),
                 wtag("cum overflow", 1.3, f),
                 "sweat"
@@ -3025,7 +3077,6 @@ export function generateScenePrompts(
             : joinTags(
                 baseOrg,
                 "after ejaculation, pull out, excessive cum",
-                lowerProlapse,
                 wtag("cum", 1.45, f),
                 ...surfaceTags,
                 wtag("cum string", 1.45, f),
@@ -3034,9 +3085,7 @@ export function generateScenePrompts(
               );
           organProse += showP && condomOn
             ? `, pulling back right after ejaculation with white fluid brimming and leaking from the used condom`
-            : lowerProlapse
-              ? `, pulling back right after ejaculation with a glistening prolapsed cervix exposed and sticky white cum strings stretching across her ${surfaceEn}`
-              : `, pulling slightly back right after ejaculation with sticky white cum strings stretching across her ${surfaceEn}`;
+            : `, pulling slightly back right after ejaculation with sticky white cum strings stretching across her ${surfaceEn}`;
         } else {
           organTags = showP && condomOn
             ? joinTags(
@@ -3246,8 +3295,119 @@ export function generateScenePrompts(
         .join(", ");
     }
 
+    // Solo hands-busy 3-arm guard: when male is OFF and posture already occupies her hands,
+    // strip 'spread pussy' from organTags (replacing with 'parted labia') so NAI never grows a 3rd arm.
+    if (!isTentacle && maleCode === "off" && !isManualFemale) {
+      const handsBusyPose =
+        /\b(all fours|hands on|arms behind|arms around|holding|grabbing|supporting|palms on|gripping|arms above|arms folded|propped on elbows|on elbows|hugging)\b/i.test(
+          poseUsed
+        );
+      if (handsBusyPose && /\bspread pussy\b/i.test(organTags)) {
+        organTags = splitTopLevelCommaSegments(organTags)
+          .filter((seg) => stripWeightPrefix(seg) !== "spread pussy")
+          .join(", ");
+        if (/\bpussy\b/i.test(organTags) && !/\bparted labia\b/i.test(organTags)) {
+          organTags = joinTags(organTags, "parted labia");
+        }
+        organProse = organProse.replace(/,\s*keeping her lower anatomy actively parted/gi, "");
+        extraNeg = joinTags(
+          extraNeg,
+          "spread pussy, hands between legs, hands on pussy, fingers on labia, extra arms, extra hands"
+        );
+      }
+    }
+
+    // Global Anti-Spontaneous-X-Ray Guard:
+    // Prevents V5 from spontaneously drawing cutaway womb/x-ray insets when 'internal cumshot' / 'cum in pussy'
+    // or artist tags (mikozin, hori, kani bonara) are present while enable_uterus_xray is OFF.
+    const intentionalCondomXray =
+      condomOn && channel === "vaginal" && (stageCode === "during" || stageCode === "after_inside");
+    const effectiveUterusXray =
+      Boolean(cfg.enable_uterus_xray) && (cfg.gender_mode ?? "normal") !== "femboy";
+    const needsAntiXrayGuard =
+      !isTentacle &&
+      !effectiveUterusXray &&
+      !intentionalCondomXray &&
+      (channel === "vaginal" || (channel === "solo" && stageCode !== "before"));
+    if (needsAntiXrayGuard) {
+      extraNeg = joinTags(
+        extraNeg,
+        isRearNoFacePov ? "x-ray, cross-section" : "x-ray, cross-section, cutaway, uterus"
+      );
+    }
+
+    // Global Supine Upright Orientation Guard & 3rd-Person Couple Geometry:
+    // 1) Prevents V5 from flipping supine postures (P01..P07, P24, P43, P45, P47) upside-down
+    //    (head at bottom, legs at top) when backlit windows appear at the top of the frame.
+    // 2) Injects explicit 2-person couple-positioning tags in 3rd-person mode and strips male-anatomy-banning
+    //    proportion negatives from global UC so [Character 2] (the male partner) never vanishes.
+    if (
+      !isTentacle &&
+      sceneId !== "P32" &&
+      sceneId !== "P41" &&
+      /\b(lying on back|reclining on back)\b/i.test(poseUsed)
+    ) {
+      extraNeg = joinTags(extraNeg, "upside-down, inverted, head at bottom, legs at top, 69, sixty-nine");
+      const isMissionaryGroup =
+        channel === "vaginal" && maleCode !== "off" && showP && /^P0[1-7]$/.test(sceneId);
+      if (isPov && isMissionaryGroup) {
+        poseUsed = joinTags("1.35::missionary::", poseUsed);
+      }
+    }
+
+    if (
+      !isPov &&
+      !isTentacle &&
+      (maleCode === "normal" || maleCode === "translucent")
+    ) {
+      // Strip global female-body-preset UC tags that accidentally ban the male partner's torso/shoulders in 3rd-person
+      const maleSafeStripUc = new Set([
+        "muscular",
+        "broad shoulders",
+        "wide shoulders",
+        "long torso",
+        "towering",
+        "pointy chin",
+        "sharp chin",
+        "long face",
+      ]);
+      if (tailNegUsed) {
+        tailNegUsed = tailNegUsed
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => Boolean(t) && !maleSafeStripUc.has(t.toLowerCase()))
+          .join(", ");
+      }
+
+      if (showP && channel === "vaginal") {
+        let couple3rdTags = "1.35::sex::";
+        if (sceneId === "P03") {
+          couple3rdTags = "1.35::sex::, 1.4::mating press::, boy on top";
+        } else if (/^P0[124567]$/.test(sceneId)) {
+          couple3rdTags = "1.35::sex::, 1.35::missionary::, boy on top, between legs";
+        } else if (/^(P08|P09|P10|P11|P14|P16|P34)$/.test(sceneId)) {
+          couple3rdTags = "1.35::sex::, 1.35::cowgirl position::, straddling";
+        } else if (/^(P12|P13|P15)$/.test(sceneId)) {
+          couple3rdTags = "1.35::sex::, 1.35::reverse cowgirl::, straddling";
+        } else if (/^(P17|P18|P19|P20|P21|P22|P29)$/.test(sceneId)) {
+          couple3rdTags = "1.35::sex::, 1.35::sex from behind::, doggystyle";
+        } else if (sceneId === "P23") {
+          couple3rdTags = "1.35::sex::, 1.35::spooning::, sex from behind";
+        } else if (sceneId === "P24" || sceneId === "P25") {
+          couple3rdTags = "1.35::sex::, between legs";
+        } else if (/^(P26|P27|P42)$/.test(sceneId)) {
+          couple3rdTags = "1.35::sex::, 1.35::standing sex::, holding girl";
+        } else if (sceneId === "P28" || sceneId === "P40") {
+          couple3rdTags = "1.35::sex::, 1.35::standing sex::, sex from behind";
+        }
+        poseUsed = joinTags(couple3rdTags, poseUsed);
+      }
+    }
+
     const expPos = suppressPovFaceAndEyes
-      ? "trembling, twitching"
+      ? stageCode === "before"
+        ? "arched back, tense body"
+        : "trembling, arched back"
       : exprIf(
           cfg,
           tpl.default_expr_tags || "furrowed brow, half-closed eyes, watery eyes, blush",
@@ -3264,7 +3424,33 @@ export function generateScenePrompts(
         : "第一人称 (POV)"
       : "第三人称 (客观镜头)";
     const rawCoreProse = isPov && tpl.prose_pov ? tpl.prose_pov : tpl.prose_core;
-    const resolvedCoreProse = rawCoreProse.replaceAll("{name}", m.name);
+    let resolvedCoreProse = rawCoreProse.replaceAll("{name}", m.name);
+    if (cfg.enable_uterus_xray && (sceneId === "TN12" || sceneId === "BG06")) {
+      resolvedCoreProse = resolvedCoreProse.replace(/translucent belly/gi, "distended abdomen");
+    }
+    if (!isTentacle && maleCode === "off") {
+      if (sceneId === "P27") {
+        resolvedCoreProse = "lying on her back with both legs raised high and knees drawn toward her chest";
+      } else if (sceneId === "P28") {
+        resolvedCoreProse = "lying on her back facing forward with both knees drawn wide apart in an M-shape";
+      } else if (sceneId === "P40") {
+        resolvedCoreProse = "lying folded on her back with her knees drawn high and wide apart facing forward";
+      } else if (sceneId === "P46") {
+        resolvedCoreProse = "sitting leaned back with her thighs parted wide toward the camera";
+      } else if (sceneId === "P49") {
+        resolvedCoreProse = "kneeling with her spine arched low and hips raised while bracing with one hand";
+      } else if (sceneId === "P51") {
+        resolvedCoreProse = "lying on her back with both knees drawn wide apart facing forward";
+      } else if (sceneId === "P33") {
+        resolvedCoreProse = `${m.name} kneeling on all fours in side profile with her back arched`;
+      }
+    }
+    if (cfg.enable_background && scenePreset.strip_indoor_pose) {
+      resolvedCoreProse = resolvedCoreProse
+        .replace(/against a clear glass pane/gi, "leaning forward with her palms braced")
+        .replace(/against the glass window in front of her/gi, "braced ahead")
+        .replace(/on the floor/gi, "low to the ground");
+    }
     const effectivePartnerProse = rawCoreProse.includes("{name}") ? "" : partnerProse;
     const baseProseSentence = rawCoreProse.includes("{name}")
       ? `${resolvedCoreProse}${effectivePartnerProse}${organProse}${bgProse}.`
@@ -3401,6 +3587,9 @@ export function generateScenePrompts(
     const freeHasInherentNsfwOutfit = /\b(nude|reverse bunnysuit|pasties|nipples|micro bikini)\b/i.test(
       freeOutfit
     );
+    if (!cfg.enable_uterus_xray && !/\b(x-ray|cross-section|uterus)\b/i.test(rawFreeTags)) {
+      tailNegUsed = joinTags(tailNegUsed, "x-ray, cross-section, cutaway, uterus");
+    }
     if (!nsfwOn && !freeHasInherentNsfwOutfit && !/\bnsfw\b/i.test(rawFreeTags)) {
       const existingNegs = tailNegUsed
         .split(",")
@@ -3551,7 +3740,18 @@ export function generateScenePrompts(
     };
   });
 
-  const maxPosBudget = Math.max(280, Math.min(504, cfg.pos_token_limit ?? 502));
+  // Reserve ~24 server-side T5 tokens on 2-person partitioned scenes (`[Character 1/2]`) when no Vibe limit is active
+  // so 25~30 `w::...::` weight blocks + multi-character partitions NEVER clip lighting prose at NovelAI's 512 wall.
+  const rawLimit = cfg.pos_token_limit ?? 502;
+  const isSoloOrCreatureScene =
+    isCreatureSceneId ||
+    sceneId in MULTI_ANGLE_TEMPLATES ||
+    sceneId === "FREE" ||
+    POS_MALE_MODE_PRESETS[cfg.pos_male_mode] === "off" ||
+    POS_MALE_MODE_PRESETS[cfg.pos_male_mode] === "invisible";
+  const maxPosBudget = isSoloOrCreatureScene
+    ? Math.max(280, Math.min(504, rawLimit))
+    : Math.max(280, Math.min(rawLimit >= 490 ? 486 : rawLimit, 504));
 
   // Post-pass 4.5: Global Lighting Prose & Badge pass (preserves activeLight.prose 100% intact even when trimming scene prose)
   const activeLight = resolveLightingPresetEntry(cfg.lighting_preset);
@@ -3653,29 +3853,60 @@ export function generateScenePrompts(
           })
           .replace(/^[ ,]+|[ ,]+$/g, "");
         const negTail = negBlocks1.length > 0 ? `, ${negBlocks1.join(", ")}` : "";
-        const buildWithLightProse = (prefixStr: string): string => {
-          const sep = prefixStr.endsWith(".") ? " " : ", ";
-          return `${prefixStr}${sep}${resolvedLightProse}${cwSuffix}${negTail}`;
+        const attachFrontCw = (prefixStr: string): { withCw: string; placedFront: boolean } => {
+          if (!cwSuffix) return { withCw: prefixStr, placedFront: false };
+          const anchors = ["1.24::glossy highlights::", "depth of field", "1.3::shiny skin::"];
+          for (const anc of anchors) {
+            const idx = prefixStr.indexOf(anc);
+            if (idx !== -1 && idx < 620) {
+              const insertPos = idx + anc.length;
+              return {
+                withCw: `${prefixStr.slice(0, insertPos)}${cwSuffix}${prefixStr.slice(insertPos)}`,
+                placedFront: true,
+              };
+            }
+          }
+          return { withCw: prefixStr, placedFront: false };
         };
+        const buildWithLightProse = (prefixStr: string): string => {
+          const { withCw, placedFront } = attachFrontCw(prefixStr);
+          const sep = withCw.endsWith(".") ? " " : ", ";
+          return `${withCw}${sep}${resolvedLightProse}${placedFront ? "" : cwSuffix}${negTail}`;
+        };
+        const charDistReserve =
+          !isPov && /\b(hetero|faceless male|2boys)\b/i.test(rawPrefix) ? 24 : 0;
+        const effectiveLightBudget = Math.max(260, maxPosBudget - charDistReserve);
         let candidate = buildWithLightProse(rawPrefix);
-        if (countPromptT5Tokens(candidate).api_pos_tokens <= maxPosBudget) {
+        if (countPromptT5Tokens(candidate).api_pos_tokens <= effectiveLightBudget) {
           nextPrompt = candidate;
         } else {
-          // Trim scene prose first while keeping 100% of Danbooru tags, resolvedLightProse, and inline_counterweight intact!
-          const overhead = countPromptT5Tokens(`${resolvedLightProse}${cwSuffix}`).api_pos_tokens + 2;
-          const trimmedSceneOnly = enforcePositiveTokenBudget(
-            `${rawPrefix}${negTail}`,
-            Math.max(240, maxPosBudget - overhead),
-            false
-          );
-          const trimmedPrefix = trimmedSceneOnly
-            .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, "")
-            .replace(/^[ ,]+|[ ,]+$/g, "");
-          candidate = buildWithLightProse(trimmedPrefix);
-          nextPrompt =
-            countPromptT5Tokens(candidate).api_pos_tokens <= maxPosBudget
-              ? candidate
-              : enforcePositiveTokenBudget(candidate, maxPosBudget);
+          // Trim scene prose step-by-step until combined prompt fits effectiveLightBudget (reserving headroom for
+          // Post-pass 5 [Character 1]/[Character 2] headers), keeping Danbooru tags, core posture/POV clause,
+          // resolvedLightProse, and inline_counterweight intact!
+          const excess = countPromptT5Tokens(candidate).api_pos_tokens - effectiveLightBudget;
+          let sceneTarget = measureEffectivePosTokens(`${rawPrefix}${negTail}`) - excess;
+          let fitted = "";
+          while (sceneTarget >= 180) {
+            const trimmedSceneOnly = enforcePositiveTokenBudget(
+              `${rawPrefix}${negTail}`,
+              sceneTarget,
+              false
+            );
+            const trimmedPrefix = trimmedSceneOnly
+              .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, "")
+              .replace(/^[ ,]+|[ ,]+$/g, "");
+            const trial = buildWithLightProse(trimmedPrefix);
+            if (countPromptT5Tokens(trial).api_pos_tokens <= effectiveLightBudget) {
+              fitted = trial;
+              break;
+            }
+            if (trimmedSceneOnly === `${rawPrefix}${negTail}`) {
+              sceneTarget -= 6;
+              continue;
+            }
+            sceneTarget -= 4;
+          }
+          nextPrompt = fitted || enforcePositiveTokenBudget(candidate, effectiveLightBudget);
         }
       } else if (cwSuffix && !nextPrompt.startsWith("[Base Prompt]")) {
         const negBlocks1: string[] = [];
@@ -4185,17 +4416,30 @@ function enforcePositiveTokenBudget(
     const prosePart = segments.slice(proseIdx).join(", ").replace(/\.+\s*$/, "");
 
     const colonIdx = prosePart.indexOf(": ");
+    const locSplitRe =
+      /;\s+|,\s+|\s+(?=on a soft furry\b|on a furry beige\b|in shallow rippling\b|in a bedroom\b|on crisp white\b|in a narrow Japanese\b|on the living room\b)/;
     if (colonIdx !== -1) {
       const stylePrefix = prosePart.slice(0, colonIdx).trim();
       const bodyClauses = prosePart
         .slice(colonIdx + 2)
-        .split(/;\s+|,\s+/)
+        .split(locSplitRe)
         .filter(Boolean);
 
       for (let keep = bodyClauses.length - 1; keep >= 1; keep--) {
         const cand = rebuild(`${tagsPart}, ${stylePrefix}: ${bodyClauses.slice(0, keep).join(", ")}.`);
         if (measureEffectivePosTokens(cand) <= maxPosTokens) {
           return cand;
+        }
+      }
+
+      // If stylePrefix is just redundant body-proportion prose ("Petite slender mini-lady"), drop stylePrefix
+      // first so the core posture/POV spatial clause (bodyClauses[0]) survives under tight token budgets!
+      if (/^Petite slender mini-lady$/i.test(stylePrefix) && bodyClauses.length > 0) {
+        for (let keep = bodyClauses.length; keep >= 1; keep--) {
+          const bodyOnlyCand = rebuild(`${tagsPart}, ${bodyClauses.slice(0, keep).join(", ")}.`);
+          if (measureEffectivePosTokens(bodyOnlyCand) <= maxPosTokens) {
+            return bodyOnlyCand;
+          }
         }
       }
 
@@ -4212,7 +4456,7 @@ function enforcePositiveTokenBudget(
         }
       }
     } else {
-      const clauses = prosePart.split(/;\s+|,\s+/).filter(Boolean);
+      const clauses = prosePart.split(locSplitRe).filter(Boolean);
       for (let keep = clauses.length - 1; keep >= 1; keep--) {
         const cand = rebuild(`${tagsPart}, ${clauses.slice(0, keep).join(", ")}.`);
         if (measureEffectivePosTokens(cand) <= maxPosTokens) {
@@ -5332,6 +5576,26 @@ function distributePromptToCharacterCaptions(rawPrompt: string, cfg: CharacterCo
   }
 
   const char1Header = cfg.gender_mode === "femboy" ? "boy" : "girl";
+  const hasVaginalAction =
+    bareSet.has("vaginal") || bareSet.has("insertion") || bareSet.has("after vaginal");
+  const hasPenisService =
+    bareSet.has("penis") ||
+    bareSet.has("fellatio") ||
+    bareSet.has("paizuri") ||
+    bareSet.has("footjob") ||
+    bareSet.has("handjob") ||
+    bareSet.has("sumata") ||
+    bareSet.has("assjob");
+  const hasManualMaleHands =
+    bareSet.has("fingering") || bareSet.has("breast grab") || bareSet.has("clitoral stimulation");
+
+  // Bind native V4.5/V5 source#/target# interaction on 3rd-person vaginal scenes so the male partner
+  // never vanishes into solo composition when Character 1 carries heavy body/identity weights.
+  if (hasPartnerBoy && !isPov && hasVaginalAction && cfg.gender_mode !== "femboy") {
+    if (!char1Tags.includes("target#vaginal")) {
+      char1Tags.push("target#vaginal");
+    }
+  }
   const char1Line = `${char1Header}, ${char1Tags.join(", ")}`;
 
   const basePos = prosePart ? `${baseTags.join(", ")}, ${prosePart}` : baseTags.join(", ");
@@ -5339,12 +5603,178 @@ function distributePromptToCharacterCaptions(rawPrompt: string, cfg: CharacterCo
 
   const sections: string[] = [`[Base Prompt]\n${baseWithNeg}`, `[Character 1]\n${char1Line}`];
 
-  // In third-person 2-person scenes, add [Character 2] for the male partner so Character 1's
-  // gender/futa/body/outfit tags are spatially isolated from the male partner.
+  // In third-person 2-person scenes, add [Character 2] for the male partner with explicit anatomical
+  // interaction anchors so V5 renders the male partner consistently instead of dropping him.
   // In POV scenes, omit [Character 2] so the unseen camera-holder is not forced into frame.
   if (hasPartnerBoy && !isPov) {
-    sections.push(`[Character 2]\nboy, faceless male`);
+    const malePoseHint =
+      bareSet.has("missionary") || bareSet.has("mating press") || bareSet.has("boy on top")
+        ? ", boy on top, male thighs"
+        : bareSet.has("cowgirl position") || bareSet.has("reverse cowgirl") || bareSet.has("sixty-nine")
+          ? ", lying on back, male thighs"
+          : bareSet.has("sex from behind") || bareSet.has("doggystyle") || bareSet.has("spooning")
+            ? ", from behind, male hips"
+            : "";
+    let char2Line = `boy, faceless male, male torso${malePoseHint}`;
+    if (hasVaginalAction) {
+      char2Line =
+        cfg.gender_mode === "femboy"
+          ? `boy, faceless male, nude male, male torso${malePoseHint}, 1.25::penis::`
+          : `boy, faceless male, nude male, male torso${malePoseHint}, 1.25::penis::, source#vaginal`;
+    } else if (hasPenisService) {
+      char2Line = `boy, faceless male, nude male, male torso${malePoseHint}, 1.25::penis::`;
+    } else if (hasManualMaleHands) {
+      char2Line = "boy, faceless male, male hands";
+    }
+    sections.push(`[Character 2]\n${char2Line}`);
   }
 
   return sections.join("\n\n");
+}
+
+// ==========================================
+// Position Library Progressive Stage Orchestrator
+// ==========================================
+export interface PosStageMetaEntry {
+  key: string;
+  code: string;
+  orderNum: number;
+  shortLabel: string;
+  compactPill: string;
+  fileTag: string;
+}
+
+const STAGE_META_BY_CODE: Record<
+  string,
+  { orderNum: number; shortLabel: string; compactPill: string; fileTag: string }
+> = {
+  before: { orderNum: 1, shortLabel: "🔥1.进行", compactPill: "1.进行", fileTag: "S1-before" },
+  during: { orderNum: 2, shortLabel: "💦2.内射", compactPill: "2.内射", fileTag: "S2-during" },
+  after_inside: { orderNum: 3, shortLabel: "🌊3.溢流", compactPill: "3.溢流", fileTag: "S3-after" },
+  pull_out: { orderNum: 4, shortLabel: "🔗4.拔出", compactPill: "4.拔出", fileTag: "S4-pullout" },
+  prolapse: { orderNum: 5, shortLabel: "🌺5.宫脱", compactPill: "5.宫脱", fileTag: "S5-prolapse" },
+};
+
+export const ORDERED_POS_STAGE_ENTRIES: PosStageMetaEntry[] = Object.entries(POS_STAGE_PRESETS)
+  .map(([key, code]) => {
+    const meta = STAGE_META_BY_CODE[code] ?? {
+      orderNum: 9,
+      shortLabel: code,
+      compactPill: code,
+      fileTag: `S-${code}`,
+    };
+    return { key, code, ...meta };
+  })
+  .sort((a, b) => a.orderNum - b.orderNum);
+
+export function formatStageFileTag(stageCodeOrKey?: string): string {
+  if (!stageCodeOrKey) return "";
+  const resolvedCode = POS_STAGE_PRESETS[stageCodeOrKey] ?? stageCodeOrKey;
+  return STAGE_META_BY_CODE[resolvedCode]?.fileTag ?? "";
+}
+
+export function formatStageBadgeLabel(stageCode?: string): string {
+  if (!stageCode) return "";
+  return STAGE_META_BY_CODE[stageCode]?.compactPill ?? "";
+}
+
+export interface BuildStageProgressionQueueOptions {
+  sceneIds: string[];
+  selectedStageCodes: string[];
+  mode: StageProgressionMode;
+  lockSharedSeedPerPose: boolean;
+  baseFixedSeed: number;
+  repeatsPerStep?: number;
+  targetGroupFolder?: string;
+  seedGenerator?: () => number;
+}
+
+export function buildStageProgressionQueue(
+  opts: BuildStageProgressionQueueOptions
+): StageProgressionTask[] {
+  const validPoses = opts.sceneIds.filter(Boolean);
+  if (validPoses.length === 0) return [];
+
+  const codeSet = new Set(opts.selectedStageCodes);
+  let chain = ORDERED_POS_STAGE_ENTRIES.filter((e) => codeSet.has(e.code));
+  if (chain.length === 0) {
+    chain = ORDERED_POS_STAGE_ENTRIES.filter((e) => e.orderNum <= 4);
+  }
+
+  const repeats = Math.max(1, Math.floor(opts.repeatsPerStep ?? 1));
+  const rollSeed =
+    opts.seedGenerator ??
+    (() => Math.floor(100_000_000 + Math.random() * 899_999_999));
+  const tasks: StageProgressionTask[] = [];
+
+  // Single pose always runs the full selected stage chain so clicking progression on 1 pose is meaningful
+  const effectiveMode: StageProgressionMode =
+    validPoses.length === 1 ? "per_pose_chain" : opts.mode;
+
+  if (effectiveMode === "per_pose_chain") {
+    for (let pIdx = 0; pIdx < validPoses.length; pIdx++) {
+      const sceneId = validPoses[pIdx];
+      const isTentacle = ALL_POSITIONS_TEMPLATES[sceneId]?.channel === "tentacle";
+      for (let r = 0; r < repeats; r++) {
+        let sharedSeed: number | undefined;
+        if (opts.lockSharedSeedPerPose) {
+          sharedSeed =
+            validPoses.length === 1 && r === 0 && opts.baseFixedSeed >= 0
+              ? Math.floor(opts.baseFixedSeed)
+              : rollSeed();
+        }
+        if (isTentacle) {
+          // Tentacle/arthropod poses have built-in fixed stage anatomy; emit once per repeat
+          tasks.push({
+            sceneId,
+            stagePresetKey: "",
+            stageCode: "",
+            stageOrderNum: 0,
+            fixedSeedOverride: sharedSeed,
+            targetGroupFolder: opts.targetGroupFolder || undefined,
+          });
+          continue;
+        }
+        for (const st of chain) {
+          tasks.push({
+            sceneId,
+            stagePresetKey: st.key,
+            stageCode: st.code,
+            stageOrderNum: st.orderNum,
+            fixedSeedOverride: sharedSeed,
+            targetGroupFolder: opts.targetGroupFolder || undefined,
+          });
+        }
+      }
+    }
+    return tasks;
+  }
+
+  // across_poses_arc: Smoothly advance stages from start to end across the checked pose sequence
+  const nPoses = validPoses.length;
+  const nStages = chain.length;
+  for (let pIdx = 0; pIdx < nPoses; pIdx++) {
+    const sceneId = validPoses[pIdx];
+    const isTentacle = ALL_POSITIONS_TEMPLATES[sceneId]?.channel === "tentacle";
+    const sIdx =
+      nStages <= 1 || nPoses <= 1
+        ? 0
+        : Math.min(nStages - 1, Math.round((pIdx * (nStages - 1)) / (nPoses - 1)));
+    const st = chain[sIdx];
+    for (let r = 0; r < repeats; r++) {
+      const fixedSeed =
+        opts.lockSharedSeedPerPose && opts.baseFixedSeed >= 0 && r === 0
+          ? Math.floor(opts.baseFixedSeed)
+          : undefined;
+      tasks.push({
+        sceneId,
+        stagePresetKey: isTentacle ? "" : st.key,
+        stageCode: isTentacle ? "" : st.code,
+        stageOrderNum: isTentacle ? 0 : st.orderNum,
+        fixedSeedOverride: fixedSeed,
+        targetGroupFolder: opts.targetGroupFolder || undefined,
+      });
+    }
+  }
+  return tasks;
 }

@@ -215,6 +215,7 @@ export interface NaiApiSettings {
   uc_preset_mode: NaiUcPresetMode;
   uc_preset_migrated_v2?: boolean;
   pos_neg_split_migrated_v1?: boolean;
+  v5_rescale_migrated_v1?: boolean;
   keep_inline_negatives: boolean;
   extra_uc: string;
   append_v5_quality: boolean;
@@ -240,6 +241,7 @@ export function createDefaultNaiApiSettings(): NaiApiSettings {
     uc_preset_mode: "heavy",
     uc_preset_migrated_v2: true,
     pos_neg_split_migrated_v1: true,
+    v5_rescale_migrated_v1: true,
     keep_inline_negatives: false,
     extra_uc: "",
     append_v5_quality: true,
@@ -266,6 +268,37 @@ export interface SubscriptionInfo {
   expires_at: number;
 }
 
+export type GalleryFilterMode = "all" | "starred" | "upscaled" | "scene";
+export type GalleryStageViewMode = "single" | "grid" | "compare" | "shootout";
+export type StageProgressionMode = "per_pose_chain" | "across_poses_arc";
+
+export interface GalleryFolderItem {
+  id: string;
+  name: string;
+  created_at: number;
+}
+
+export interface StageProgressionTask {
+  sceneId: string;
+  stagePresetKey: string;
+  stageCode: string;
+  stageOrderNum: number;
+  fixedSeedOverride?: number;
+  targetGroupFolder?: string;
+}
+
+export interface GeneratedConfigSnapshot {
+  cfg: CharacterConfig;
+  action_mode: ActionMode;
+  model: NaiModelId;
+  steps: number;
+  scale: number;
+  cfg_rescale: number;
+  uc_preset_mode: NaiUcPresetMode;
+  extra_uc: string;
+  append_v5_quality: boolean;
+}
+
 export interface GeneratedImageRecord {
   id: string;
   scene_id: string;
@@ -282,5 +315,11 @@ export interface GeneratedImageRecord {
   prompt_pos?: string;
   prompt_neg?: string;
   is_upscaled?: boolean;
+  is_starred?: boolean;
   saved_to_dir?: boolean;
+  disk_subpath?: string[];
+  config_snapshot?: GeneratedConfigSnapshot;
+  reroll_group_id?: string;
+  group_folder?: string;
+  stage_code?: string;
 }
