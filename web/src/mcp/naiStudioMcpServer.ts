@@ -694,7 +694,22 @@ function lookupPresetCatalog(category: string, query = ""): Record<string, unkno
           c.id.toLowerCase().includes(q) ||
           c.title.toLowerCase().includes(q) ||
           c.sub.toLowerCase().includes(q)
-      ).map((c) => ({ id: c.id, title: c.title, category: c.category, camera_mode: c.camera_mode })),
+      ).map((c) => {
+        const sfCatMap: Record<string, string> = {
+          "1. 对镜私拍": "3. 对镜私拍",
+          "2. 场所露出": "4. 场所露出",
+          "3. 奇特机位": "5. 奇特机位",
+          "4. 束缚与UI": "6. 束缚与UI",
+        };
+        return {
+          id: c.id,
+          title: c.title,
+          sub: c.sub,
+          category: sfCatMap[c.category] || c.category,
+          camera_mode: c.camera_mode,
+          canvas: c.canvas,
+        };
+      }),
     ],
   };
 
@@ -725,7 +740,7 @@ const MCP_TOOLS = [
   {
     name: "nai_list_options",
     description:
-      "List exact built-in preset keys and pose IDs supported by NovelAI Studio 2.0 (styles, lighting, outfits, body, bust, anatomy, 51 poses P01~P51, MA0~MA10, etc.) before calling nai_update_config.",
+      "List exact built-in preset keys and pose IDs supported by NovelAI Studio 2.0 (styles, lighting including 6 Kitchen, 6 Pool, 4 Bathroom & 5 Housework dedicated lighting presets, outfits including 6 Pool swimwear presets, body, bust, anatomy, 51 poses P01~P51, MA0~MA11, SF01~SF30, KTD01~KTD60, KT01~KT46, PLD01~PLD22, PL01~PL11, CV01~CV07, BT01~BT08, HWD01~HWD15, PS01~PS04, etc.) before calling nai_update_config.",
     inputSchema: {
       type: "object",
       properties: {
@@ -744,7 +759,7 @@ const MCP_TOOLS = [
   {
     name: "nai_update_config",
     description:
-      "Directly push configuration changes to the open NovelAI_Workbench.html webpage in real time. Supports updating any CharacterConfig field (char_tag, extra_char_tags, gender_mode: 'normal'|'femboy'|'futa_no_balls'|'futa_with_balls', body_preset, bust_preset, outfit_preset, custom_outfit_tags, outfit_state_mode, style_preset, lighting_preset, pos_stage, pos_male_mode, pos_scene, enable_condom, enable_uterus_xray, pixiv_bar_censor: 'off'|'white'|'black'|'mosaic', other_use_scene_outfit, free_action_tags, free_action_prose, free_action_nsfw, etc.), NaiApiSettings (model, steps, scale, cfg_rescale, canvas_preset, seed, batch_count, auto_upscale_replace), action_mode ('positions' | 'multi_angle' | 'other' | 'free'), and active_scene_id ('P01'..'P51' | 'MP01'..'MP15' | 'TN01'..'TN12' | 'BG01'..'BG20' | 'MA0'..'MA11' | 'MA7A'..'MA7E' | 'SF01'..'SF30' | 'FREE').",
+      "Directly push configuration changes to the open NovelAI_Workbench.html webpage in real time. Supports updating any CharacterConfig field (char_tag, extra_char_tags, gender_mode: 'normal'|'femboy'|'futa_no_balls'|'futa_with_balls', body_preset, bust_preset, outfit_preset, custom_outfit_tags, outfit_state_mode, style_preset, lighting_preset, pos_stage, pos_male_mode, pos_scene, enable_condom, enable_uterus_xray, pixiv_bar_censor: 'off'|'white'|'black'|'mosaic', other_use_scene_outfit, free_action_tags, free_action_prose, free_action_nsfw, etc.), NaiApiSettings (model, steps, scale, cfg_rescale, canvas_preset, seed, batch_count, auto_upscale_replace), action_mode ('positions' | 'multi_angle' | 'other' | 'free'), and active_scene_id ('P01'..'P51' | 'MP01'..'MP15' | 'TN01'..'TN12' | 'BG01'..'BG20' | 'MA0'..'MA11' | 'MA7A'..'MA7E' | 'SF01'..'SF30' | 'KTD01'..'KTD60' | 'KT01'..'KT46' | 'PLD01'..'PLD22' | 'PL01'..'PL11' | 'CV01'..'CV07' | 'BT01'..'BT08' | 'HWD01'..'HWD15' | 'PS01'..'PS04' | 'FREE').",
     inputSchema: {
       type: "object",
       properties: {
@@ -764,7 +779,7 @@ const MCP_TOOLS = [
         },
         active_scene_id: {
           type: "string",
-          description: "Scene ID to activate, e.g. 'P22', 'MA10', 'SF01', or 'FREE'.",
+          description: "Scene ID to activate, e.g. 'P22', 'MA10', 'SF01', 'KTD01', 'KT01', 'PLD01', 'PL01', 'CV01', 'BT01', 'HWD01', 'PS01', or 'FREE'.",
         },
         checked_position_ids: {
           type: "array",
@@ -774,7 +789,7 @@ const MCP_TOOLS = [
         checked_other_action_ids: {
           type: "array",
           items: { type: "string" },
-          description: "Optional batch-checked SF01..SF30 other-action IDs.",
+          description: "Optional batch-checked TN01..TN12 / BG01..BG20 / SF01..SF30 / KTD01..KTD60 / KT01..KT46 / PLD01..PLD22 / PL01..PL11 / CV01..CV07 / BT01..BT08 / HWD01..HWD15 / PS01..PS04 other-action IDs.",
         },
       },
     },

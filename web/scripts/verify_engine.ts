@@ -4,19 +4,33 @@ import path from "node:path";
 import {
   ALL_POSITIONS_CHAPTERS,
   ALL_POSITIONS_TEMPLATES,
+  APRON_ONLY_UC,
+  BATHROOM_LIGHT_DEFAULTS,
+  BATHROOM_TOWEL_UC,
   BODY_PRESETS,
   BUNDLED_CUSTOM_PRESETS,
   EXPRESSION_PRESETS,
+  FOOT_ANAT_UC,
   FREE_ACTION_STARTERS,
+  HOUSEWORK_LIGHT_DEFAULTS,
   LIGHTING_PRESETS,
   MODEL_V4_5_FULL,
   MODEL_V5_FULL,
   MODEL_V5_FULL_MEDIUM,
   MULTI_ANGLE_CHAPTERS,
+  OTHER_ACTION_CATEGORIES,
   OTHER_ACTION_CHAPTERS,
   OTHER_ACTION_TEMPLATES,
+  OUTFIT_PRESETS,
+  PHOTO_SUBSTITUTE_GUARD_UC,
+  POOL_LIGHT_DEFAULTS,
+  POOL_SWIM_UC,
+  POOL_SWIMWEAR_SPECS,
   POS_STAGE_PRESETS,
+  resolveContrastingPhotoPortrait,
   resolveLightingForStyle,
+  SPECIMEN_STOCKED_FRIDGE_GROCERY_UC,
+  SPECIMEN_YANDERE_GUARD_UC,
   STYLE_BUNDLED_VIBE_PACK,
   STYLE_PRESETS,
 } from "../src/data/engineConstants";
@@ -45,6 +59,11 @@ import {
   selectGalleryRecordIndices,
 } from "../src/services/galleryFileHelpers";
 import { resolveMcpEndpoints } from "../src/services/mcpBridgeClient";
+import {
+  computePortraitCompactStage,
+  EXPECTED_DUAL_STACK_H,
+  EXPECTED_FILM_TOOLBAR_W,
+} from "../src/ui/app";
 import {
   buildNaiGeneratePayload,
   estimateNaiAnlas,
@@ -2330,7 +2349,86 @@ async function main(): Promise<void> {
     }
   }
 
-  assert.equal(OTHER_ACTION_CHAPTERS.length, 30, "Expected 30 Other Actions (SF01..SF30)");
+  assert.equal(
+    OTHER_ACTION_CHAPTERS.length,
+    203,
+    "Expected 203 Other Actions (30 SF + 60 KTD duo + 46 KT solo + 22 PLD duo + 11 PL solo + 7 CV + 8 BT + 15 HWD + 4 PS)"
+  );
+  assert(
+    OTHER_ACTION_CATEGORIES.includes("7. 裸围厨房") &&
+      OTHER_ACTION_CATEGORIES.includes("8. 厨房干扰") &&
+      OTHER_ACTION_CATEGORIES.includes("9. 厨房单人") &&
+      OTHER_ACTION_CATEGORIES.includes("10. 饭菜双人") &&
+      OTHER_ACTION_CATEGORIES.includes("11. 饭菜单人") &&
+      OTHER_ACTION_CATEGORIES.includes("12. 泳池双人") &&
+      OTHER_ACTION_CATEGORIES.includes("13. 泳池伪装") &&
+      OTHER_ACTION_CATEGORIES.includes("14. 泳池单人") &&
+      OTHER_ACTION_CATEGORIES.includes("15. 储精自注") &&
+      OTHER_ACTION_CATEGORIES.includes("16. 浴室玩具") &&
+      OTHER_ACTION_CATEGORIES.includes("17. 家务干扰") &&
+      OTHER_ACTION_CATEGORIES.includes("18. 替身盖照"),
+    "OTHER_ACTION_CATEGORIES must export all 5 Kitchen + 3 Public Pool + 1 Specimen + 1 Bathroom + 1 Housework + 1 PhotoSubstitute categories"
+  );
+  assert.equal(
+    OTHER_ACTION_CHAPTERS.filter((c) => c.category === "7. 裸围厨房").length,
+    20,
+    "Expected 20 scenes in 7. 裸围厨房 (KTD01..KTD20)"
+  );
+  assert.equal(
+    OTHER_ACTION_CHAPTERS.filter((c) => c.category === "8. 厨房干扰").length,
+    10,
+    "Expected 10 scenes in 8. 厨房干扰 (KTD21..KTD30)"
+  );
+  assert.equal(
+    OTHER_ACTION_CHAPTERS.filter((c) => c.category === "9. 厨房单人").length,
+    20,
+    "Expected 20 scenes in 9. 厨房单人 (KT01..KT20)"
+  );
+  assert.equal(
+    OTHER_ACTION_CHAPTERS.filter((c) => c.category === "10. 饭菜双人").length,
+    30,
+    "Expected 30 scenes in 10. 饭菜双人 (KTD31..KTD60)"
+  );
+  assert.equal(
+    OTHER_ACTION_CHAPTERS.filter((c) => c.category === "11. 饭菜单人").length,
+    26,
+    "Expected 26 scenes in 11. 饭菜单人 (KT21..KT46)"
+  );
+  assert.equal(
+    OTHER_ACTION_CHAPTERS.filter((c) => c.category === "12. 泳池双人").length,
+    12,
+    "Expected 12 scenes in 12. 泳池双人 (PLD01..PLD10, PLD21..PLD22)"
+  );
+  assert.equal(
+    OTHER_ACTION_CHAPTERS.filter((c) => c.category === "13. 泳池伪装").length,
+    10,
+    "Expected 10 scenes in 13. 泳池伪装 (PLD11..PLD20)"
+  );
+  assert.equal(
+    OTHER_ACTION_CHAPTERS.filter((c) => c.category === "14. 泳池单人").length,
+    11,
+    "Expected 11 scenes in 14. 泳池单人 (PL01..PL11)"
+  );
+  assert.equal(
+    OTHER_ACTION_CHAPTERS.filter((c) => c.category === "15. 储精自注").length,
+    7,
+    "Expected 7 scenes in 15. 储精自注 (CV01..CV07)"
+  );
+  assert.equal(
+    OTHER_ACTION_CHAPTERS.filter((c) => c.category === "16. 浴室玩具").length,
+    8,
+    "Expected 8 scenes in 16. 浴室玩具 (BT01..BT08)"
+  );
+  assert.equal(
+    OTHER_ACTION_CHAPTERS.filter((c) => c.category === "17. 家务干扰").length,
+    15,
+    "Expected 15 scenes in 17. 家务干扰 (HWD01..HWD15)"
+  );
+  assert.equal(
+    OTHER_ACTION_CHAPTERS.filter((c) => c.category === "18. 替身盖照").length,
+    4,
+    "Expected 4 scenes in 18. 替身盖照 (PS01..PS04)"
+  );
   assert.equal(OTHER_ACTION_TEMPLATES["SF06"].canvas, "横图 1216x832", "SF06 must use landscape canvas");
 
   // Verify SF Dedicated Lighting Engine across both 'auto' (随画风默认) and 'cool_warm_25d_cel':
@@ -2377,19 +2475,50 @@ async function main(): Promise<void> {
     "SF02/16/19/22/26 must emit their exact skill-calibrated per-scene dedicated light tags"
   );
 
-  // Verify zero >=8-word unweighted tag segments in otherActionsData.ts (prevents findTrailingProseIndex false positives)
+  // Verify zero >=8-word unweighted tag segments in otherActionsData.ts, kitchenActionsData.ts & poolActionsData.ts
   for (const ch of OTHER_ACTION_CHAPTERS) {
     const tpl = OTHER_ACTION_TEMPLATES[ch.id];
+    const duoFields = tpl.kitchen_duo
+      ? [
+          tpl.kitchen_duo.apron_detail_female,
+          tpl.kitchen_duo.apron_detail_femboy,
+          tpl.kitchen_duo.single_partner_tags,
+          tpl.kitchen_duo.single_expr_tags,
+          tpl.kitchen_duo.femboy_base_action,
+          tpl.kitchen_duo.femboy_char1_pose,
+          tpl.kitchen_duo.femboy_char2_pose,
+          tpl.kitchen_duo.futa_male_tags,
+          tpl.kitchen_duo.futa_yuri_spec?.base_action || "",
+          tpl.kitchen_duo.futa_yuri_spec?.top_apron_tags || "",
+          tpl.kitchen_duo.futa_yuri_spec?.top_pose_tags || "",
+          tpl.kitchen_duo.futa_yuri_spec?.bottom_apron_detail || "",
+          tpl.kitchen_duo.futa_yuri_spec?.bottom_pose_tags || "",
+        ]
+      : tpl.pool_duo
+        ? [tpl.pool_duo.partner_tags, tpl.pool_duo.expr_tags]
+        : tpl.specimen_duo
+          ? [tpl.specimen_duo.partner_tags, tpl.specimen_duo.expr_tags]
+          : tpl.housework_duo
+            ? [tpl.housework_duo.apron_detail, tpl.housework_duo.partner_tags, tpl.housework_duo.expr_tags]
+            : [];
     for (const fieldVal of [
       tpl.framing_tags,
+      tpl.femboy_framing_tags || "",
       tpl.env_tags,
       tpl.light_tags,
       tpl.core_prop_tags || "",
+      tpl.femboy_core_prop_tags || "",
+      tpl.pool_expr_tags || "",
+      tpl.specimen_expr_tags || "",
+      tpl.bathroom_expr_tags || "",
+      tpl.photo_substitute_expr_tags || "",
+      tpl.swimsuit_state_override || "",
       tpl.builtin_outfit,
       tpl.femboy_outfit || "",
       tpl.female_tags,
       tpl.femboy_tags,
       tpl.futa_tags,
+      ...duoFields,
     ]) {
       for (const rawSeg of fieldVal.split(",")) {
         const seg = rawSeg.trim();
@@ -2480,7 +2609,8 @@ async function main(): Promise<void> {
   );
 
   const sfGenders = ["normal", "femboy", "futa_no_balls", "futa_with_balls"] as const;
-  for (const ch of OTHER_ACTION_CHAPTERS) {
+  const sfOnlyChapters = OTHER_ACTION_CHAPTERS.filter((c) => c.id.startsWith("SF"));
+  for (const ch of sfOnlyChapters) {
     const tpl = OTHER_ACTION_TEMPLATES[ch.id];
     for (const gm of sfGenders) {
       const sfCfg = {
@@ -2581,6 +2711,1811 @@ async function main(): Promise<void> {
     }
   }
 
+  // 17.5 Verify Unified Naked-Apron Kitchen Series (KTD01..KTD60 & KT01..KT46 x 4 Gender Modes = 424 Prompts)
+  const kitchenChapters = OTHER_ACTION_CHAPTERS.filter(
+    (c) => c.id.startsWith("KTD") || c.id.startsWith("KT")
+  );
+  assert.equal(kitchenChapters.length, 106, "Expected 106 Kitchen chapters (KTD01..KTD60 + KT01..KT46)");
+  const apronUcTokens = APRON_ONLY_UC.split(",").map((s) => s.trim().toLowerCase());
+  const footUcTokens = FOOT_ANAT_UC.split(",").map((s) => s.trim().toLowerCase());
+
+  const assertZeroNestedColons = (promptText: string, label: string): void => {
+    assert(!promptText.includes(":::"), `${label} contains corrupt triple/quadruple colons`);
+    let openSpan = false;
+    for (let i = 0; i < promptText.length - 1; i++) {
+      if (promptText[i] === ":" && promptText[i + 1] === ":") {
+        const prefixSlice = promptText.slice(Math.max(0, i - 6), i);
+        const looksLikeWeightStart = /(?:^|[\s,(\n])-?\d+(?:\.\d+)?$/.test(prefixSlice);
+        if (!openSpan) {
+          assert(looksLikeWeightStart, `${label} has stray closing '::' without weight prefix near index ${i}`);
+          openSpan = true;
+        } else {
+          assert(!looksLikeWeightStart, `${label} has nested 'w::...::' inside another '::' span near index ${i}`);
+          openSpan = false;
+        }
+        i++;
+      }
+    }
+    assert(!openSpan, `${label} has unclosed 'w::...::' weight block`);
+  };
+
+  const validKitchenLightModes = new Set([
+    "midnight_fridge",
+    "oven_warm_bottom",
+    "stove_steam_hood",
+    "digital_screen_glow",
+    "doorway_blind_slit",
+    "sunlit_or_pendant",
+  ]);
+  const expectedNonSunlitModeById: Record<string, string> = {
+    KTD06: "midnight_fridge",
+    KTD38: "midnight_fridge",
+    KT06: "midnight_fridge",
+    KT26: "midnight_fridge",
+    KT35: "midnight_fridge",
+    KT39: "midnight_fridge",
+    KTD09: "oven_warm_bottom",
+    KTD35: "oven_warm_bottom",
+    KTD45: "oven_warm_bottom",
+    KTD48: "oven_warm_bottom",
+    KTD55: "oven_warm_bottom",
+    KT07: "oven_warm_bottom",
+    KT28: "oven_warm_bottom",
+    KT34: "oven_warm_bottom",
+    KT38: "oven_warm_bottom",
+    KT45: "oven_warm_bottom",
+    KTD04: "stove_steam_hood",
+    KTD33: "stove_steam_hood",
+    KTD44: "stove_steam_hood",
+    KTD56: "stove_steam_hood",
+    KT10: "stove_steam_hood",
+    KT23: "stove_steam_hood",
+    KT27: "stove_steam_hood",
+    KTD07: "digital_screen_glow",
+    KTD21: "digital_screen_glow",
+    KTD25: "digital_screen_glow",
+    KT09: "digital_screen_glow",
+    KTD14: "doorway_blind_slit",
+    KTD15: "doorway_blind_slit",
+    KTD28: "doorway_blind_slit",
+    KT14: "doorway_blind_slit",
+  };
+  const expectedYuriShowcaseSet = new Set(["KTD12", "KTD18", "KTD34", "KTD42", "KTD50", "KTD52"]);
+  const expectedMultiBox490Set = new Set(["KTD12", "KTD30", "KTD34", "KTD42", "KTD50", "KTD52"]);
+  const expectedLandscapeKitchenSet = new Set(["KTD03", "KTD09", "KTD18", "KTD31", "KT15", "KT21"]);
+
+  let kitchenVerifiedCount = 0;
+  let maxKitchenPosTokens = 0;
+  let maxMultiBox490PosTokens = 0;
+  for (const ch of kitchenChapters) {
+    const tpl = OTHER_ACTION_TEMPLATES[ch.id];
+    assert(
+      tpl.kitchen_light_mode && validKitchenLightModes.has(tpl.kitchen_light_mode),
+      `${ch.id} missing valid kitchen_light_mode: got '${String(tpl.kitchen_light_mode)}'`
+    );
+    const expectedMode = expectedNonSunlitModeById[ch.id] ?? "sunlit_or_pendant";
+    assert.equal(
+      tpl.kitchen_light_mode,
+      expectedMode,
+      `${ch.id} expected kitchen_light_mode='${expectedMode}', got '${tpl.kitchen_light_mode}'`
+    );
+    if (tpl.kitchen_light_mode === "midnight_fridge") {
+      assert(tpl.light_tags.includes("strong chiaroscuro"), `${ch.id} missing strong chiaroscuro`);
+    } else if (tpl.kitchen_light_mode === "oven_warm_bottom") {
+      assert(
+        tpl.light_tags.includes("warm cozy kitchen") &&
+          tpl.light_tags.includes("warm orange bottom lighting"),
+        `${ch.id} missing warm cozy kitchen / warm orange bottom lighting`
+      );
+    } else if (tpl.kitchen_light_mode === "stove_steam_hood") {
+      assert(
+        tpl.light_tags.includes("range hood spotlight") && tpl.light_tags.includes("steam"),
+        `${ch.id} missing range hood spotlight / steam`
+      );
+      if (ch.id === "KTD04" || ch.id === "KTD33" || ch.id === "KT10") {
+        assert(
+          tpl.light_tags.includes("blue gas flame, boiling pot with rising white steam, range hood spotlight"),
+          `${ch.id} missing stove_steam_hood canonical phrase`
+        );
+      }
+    }
+    if (ch.id === "KTD25") {
+      assert(tpl.light_tags.includes("red chime indicator light"), "KTD25 missing red chime indicator light");
+    }
+    if (ch.id === "KTD14") {
+      assert(
+        tpl.light_tags.includes("warm blurred living room sofa") &&
+          tpl.light_tags.includes("TV glow through doorway, depth of field"),
+        "KTD14 missing doorway bokeh phrase"
+      );
+    }
+    if (ch.id === "KTD15") {
+      assert(tpl.light_tags.includes("dim doorway slit light"), "KTD15 missing dim doorway slit light");
+    }
+    if (ch.id === "KTD28") {
+      assert(
+        tpl.light_tags.includes("half-open horizontal 1.55::window blinds:: showing sunlit street"),
+        "KTD28 missing window blinds phrase"
+      );
+    }
+    if (ch.id === "KTD03") {
+      assert(
+        tpl.light_tags.includes("warm sunlit kitchen counter") &&
+          tpl.light_tags.includes("flour dust in air"),
+        "KTD03 missing warm sunlit kitchen counter / flour dust in air"
+      );
+    }
+    if (ch.id === "KTD11") {
+      assert(tpl.light_tags.includes("warm breakfast bar pendant light"), "KTD11 missing pendant light");
+    }
+    if (ch.id === "KTD12") {
+      assert(tpl.light_tags.includes("sunlit kitchen island"), "KTD12 missing sunlit kitchen island");
+    }
+    if (ch.id === "KTD13") {
+      assert(tpl.light_tags.includes("bright modern kitchen"), "KTD13 missing bright modern kitchen");
+    }
+    if (ch.id === "KTD26") {
+      assert(tpl.light_tags.includes("morning kitchen counter"), "KTD26 missing morning kitchen counter");
+    }
+    if (ch.id === "KTD27") {
+      assert(
+        tpl.light_tags.includes("sunlit kitchen counter with fruit basket"),
+        "KTD27 missing sunlit kitchen counter with fruit basket"
+      );
+    }
+
+    const isDuo = ch.id.startsWith("KTD");
+    const isYuriShowcase = Boolean(tpl.kitchen_duo?.futa_2girls_yuri);
+    assert.equal(
+      isYuriShowcase,
+      expectedYuriShowcaseSet.has(ch.id),
+      `${ch.id} futa_2girls_yuri mismatch`
+    );
+    const isOralDuo = tpl.kitchen_duo?.channel === "oral";
+    const isLandscapeKitchen = expectedLandscapeKitchenSet.has(ch.id);
+
+    for (const gm of sfGenders) {
+      const ktCfg = {
+        ...createDefaultCharacterConfig(),
+        char_tag: "javelin (azur lane)",
+        eng_name: "Javelin",
+        canon_neg_tags: "neckerchief, serafuku, plaid, gloves, crown",
+        gender_mode: gm,
+        style_preset: style6Key,
+        lighting_preset: "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）",
+        body_preset: "袖珍娇小窄肩细腰笔直长腿·微Q萌圆脸（0.25 chibi + short slender mini-lady）",
+        bust_preset: "小巧适中（small breasts）",
+        other_use_scene_outfit: true,
+        pos_token_limit: 502,
+      };
+      const [item] = generateScenePrompts(ch.id, ktCfg, "3rd");
+      assert(item, `Missing Kitchen prompt for ${ch.id} (${gm})`);
+      assertZeroNestedColons(item.prompt, `${ch.id} (${gm})`);
+
+      const sp = splitPromptPosAndNeg(item.prompt);
+      assert(!/-?\d+(?:\.\d+)?::/.test(sp.negPrompt), `${ch.id} (${gm}) negative must never contain w::tag:: syntax`);
+      const negSet = new Set(sp.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+
+      // APRON_ONLY_UC check when other_use_scene_outfit !== false
+      assert(
+        sp.posPrompt.includes("naked apron"),
+        `${ch.id} (${gm}) must inject naked apron when other_use_scene_outfit=true`
+      );
+      for (const apTok of apronUcTokens) {
+        assert(negSet.has(apTok), `${ch.id} (${gm}) missing APRON_ONLY_UC token '${apTok}'`);
+      }
+
+      // Foot-focus anatomy & bare-feet legwear isolation checks
+      if (tpl.is_foot_focus) {
+        for (const ftTok of footUcTokens) {
+          assert(negSet.has(ftTok), `${ch.id} (${gm}) foot-focus scene missing FOOT_ANAT_UC token '${ftTok}'`);
+        }
+      }
+      if (tpl.footwear_mode === "bare_feet") {
+        assert(
+          negSet.has("thighhighs") &&
+            negSet.has("stockings") &&
+            !/\bwhite thighhighs\b/i.test(sp.posPrompt),
+          `${ch.id} (${gm}) bare_feet scene must block legwear in UC and omit white thighhighs from Positive`
+        );
+      }
+
+      // Landscape anti-letterbox check
+      if (isLandscapeKitchen) {
+        assert.equal(tpl.canvas, "横图 1216x832", `${ch.id} must use 1216x832 landscape canvas`);
+        for (const lbTok of ["letterboxed", "pillarboxed", "black bars", "border", "cropped"]) {
+          assert(negSet.has(lbTok), `${ch.id} (${gm}) landscape must block '${lbTok}' in UC`);
+        }
+      }
+
+      // 4-Mode Gender Isolation checks
+      if (isDuo) {
+        if (gm === "normal") {
+          assert(
+            !sp.posPrompt.startsWith("[Base Prompt]") &&
+              sp.posPrompt.includes("1girl, 1boy, hetero, faceless male") &&
+              sp.posPrompt.includes("shirtless faceless male"),
+            `${ch.id} (normal) must compile single-box female x shirtless faceless male`
+          );
+        } else if (gm === "femboy") {
+          const expectedTarget = isOralDuo ? "target#oral" : "target#anal";
+          const expectedSource = isOralDuo ? "source#oral" : "source#anal";
+          const expectedChar2Header =
+            ch.id === "KTD23" ? "1boy, shirtless faceless male" : "1boy, tall shirtless faceless male";
+          assert(
+            sp.posPrompt.startsWith("[Base Prompt]") &&
+              sp.posPrompt.includes("[Character 1 (") &&
+              sp.posPrompt.includes("[Character 2 (") &&
+              sp.posPrompt.includes("1.45::1boy::, 1.55::otoko no ko::") &&
+              sp.posPrompt.includes("1.55::flat chest::") &&
+              sp.posPrompt.includes(expectedChar2Header) &&
+              sp.posPrompt.includes(expectedTarget) &&
+              sp.posPrompt.includes(expectedSource) &&
+              sp.posPrompt.includes("-2.5::breasts, pussy, female::") &&
+              sp.posPrompt.includes("-2.5::otoko no ko, crossdressing, petite, feminine::"),
+            `${ch.id} (femboy) must compile Multi-Box 2boys with Character 1/2 role & inline per-char UC`
+          );
+          if (ch.id === "KTD23") {
+            assert(
+              !negSet.has("cutaway") &&
+                !negSet.has("multiple views") &&
+                sp.posPrompt.includes("1.55::insertion::") &&
+                sp.posPrompt.includes("sunlit modern kitchen"),
+              "KTD23 (femboy) must omit cutaway/multiple views from UC and include flush insertion + bright kitchen lighting"
+            );
+          }
+          assert(
+            negSet.has("twins") && negSet.has("identical hair") && negSet.has("3boys") && !negSet.has("otoko no ko"),
+            `${ch.id} (femboy) global UC must include twins/identical hair/3boys and NEVER leak Char2's 'otoko no ko'`
+          );
+          const apiFemboy = buildNaiGeneratePayload({
+            model: MODEL_V5_FULL,
+            rawPrompt: sp.posPrompt,
+            customNegPrompt: sp.negPrompt,
+            steps: 28,
+            scale: 6.8,
+          });
+          const v4Neg = (apiFemboy.payload.parameters as Record<string, unknown>).v4_negative_prompt as {
+            caption: { base_caption: string; char_captions: Array<{ char_caption: string }> };
+          };
+          assert.equal(v4Neg.caption.char_captions.length, 2);
+          assert(v4Neg.caption.char_captions[0].char_caption.includes("breasts, pussy, female"));
+          assert(v4Neg.caption.char_captions[1].char_caption.includes("otoko no ko, crossdressing, petite, feminine"));
+          assert(!v4Neg.caption.base_caption.includes("otoko no ko"));
+        } else if (isYuriShowcase) {
+          assert(
+            sp.posPrompt.startsWith("[Base Prompt]") &&
+              sp.posPrompt.includes("2girls, 1.5::futanari::, 1.45::futa on female::, yuri") &&
+              sp.posPrompt.includes("blue frilly naked apron") &&
+              sp.posPrompt.includes("white frilly naked apron") &&
+              sp.posPrompt.includes("source#vaginal") &&
+              sp.posPrompt.includes("target#vaginal") &&
+              sp.posPrompt.includes("-2.5::pussy::") &&
+              sp.posPrompt.includes("-2.5::futanari, penis, testicles::"),
+            `${ch.id} (${gm}) must compile 2girls Multi-Box with blue & white naked aprons`
+          );
+          assert(
+            !negSet.has("futanari") && !negSet.has("pussy"),
+            `${ch.id} (${gm}) 2girls global UC must NOT leak per-char futanari or pussy bans`
+          );
+          const apiYuri = buildNaiGeneratePayload({
+            model: MODEL_V5_FULL,
+            rawPrompt: sp.posPrompt,
+            customNegPrompt: sp.negPrompt,
+            steps: 28,
+            scale: 6.8,
+          });
+          const v4NegY = (apiYuri.payload.parameters as Record<string, unknown>).v4_negative_prompt as {
+            caption: { base_caption: string; char_captions: Array<{ char_caption: string }> };
+          };
+          assert.equal(v4NegY.caption.char_captions.length, 2);
+          assert.equal(v4NegY.caption.char_captions[0].char_caption, "pussy");
+          assert.equal(v4NegY.caption.char_captions[1].char_caption, "futanari, penis, testicles");
+        } else {
+          assert(
+            !sp.posPrompt.startsWith("[Base Prompt]") &&
+              sp.posPrompt.includes("1girl, 1boy, hetero, faceless male, 1.55::futanari::") &&
+              sp.posPrompt.includes("0.25::artist:pija (pianiishimo)::") &&
+              /1\.45?::small penis::/.test(sp.posPrompt),
+            `${ch.id} (${gm}) must compile Male-on-Futa dual-line with Style #6 pija artist tweak`
+          );
+          if (gm === "futa_no_balls") {
+            assert(negSet.has("testicles"), `${ch.id} (futa_no_balls) must block testicles`);
+          } else {
+            assert(sp.posPrompt.includes("1.3::small testicles::") && !negSet.has("testicles"));
+          }
+        }
+      }
+
+      // Token ceiling assertions (<=490 on KTD12/30/34/42/50/52, <=500 on all 106 scenes)
+      const tok = countSeparatedT5Tokens({
+        posPrompt: sp.posPrompt,
+        sceneNegPrompt: sp.negPrompt,
+        ucPresetMode: "heavy",
+        appendQuality: true,
+      });
+      const maxExpectedPos = expectedMultiBox490Set.has(ch.id) ? 490 : 500;
+      assert(
+        tok.posTokens <= maxExpectedPos && tok.negTokens <= 512,
+        `${ch.id} (${gm}) exceeded T5 budget (${maxExpectedPos}): pos=${tok.posTokens}, neg=${tok.negTokens}`
+      );
+      if (tok.posTokens > maxKitchenPosTokens) maxKitchenPosTokens = tok.posTokens;
+      if (expectedMultiBox490Set.has(ch.id) && tok.posTokens > maxMultiBox490PosTokens) {
+        maxMultiBox490PosTokens = tok.posTokens;
+      }
+      kitchenVerifiedCount++;
+    }
+  }
+
+  // Verify 6-mode Kitchen dynamic lighting overrides across all non-explicit (auto / style-paired / directional) lighting presets:
+  const nonExplicitLightKeys = Object.keys(LIGHTING_PRESETS).filter((k) => {
+    const c = LIGHTING_PRESETS[k].code;
+    return (
+      !c.startsWith("kitchen_") &&
+      !c.startsWith("pool_") &&
+      !c.startsWith("bathroom_") &&
+      !c.startsWith("housework_")
+    );
+  });
+  for (const kNoSunId of Object.keys(expectedNonSunlitModeById)) {
+    const kTpl = OTHER_ACTION_TEMPLATES[kNoSunId];
+    const firstLightAnchor = kTpl.light_tags.split(",")[0].trim();
+    for (const lKey of nonExplicitLightKeys) {
+      for (const gmProbe of ["normal", "femboy"] as const) {
+        const [kItem] = generateScenePrompts(
+          kNoSunId,
+          {
+            ...createDefaultCharacterConfig(),
+            gender_mode: gmProbe,
+            lighting_preset: lKey,
+            custom_style_pos:
+              "sunlight, dappled sunlight, morning sunlight, afternoon sunlight, sun glare, light rays, daylight, clear blue sky, bright sky",
+            custom_style_neg: "depth of field, blurry, harsh shadow, harsh shadows, lowres",
+            style_preset: "自定义画风（使用下方自定义画风框）",
+          },
+          "3rd"
+        );
+        const kSp = splitPromptPosAndNeg(kItem.prompt);
+        assert(
+          !/\bsunlight\b|\bdappled sunlight\b|\bmorning sunlight\b|\bafternoon sunlight\b|\blight rays\b|\bsun glare\b|\bdaylight\b|\bclear blue sky\b|\bbright sky\b/i.test(
+            kSp.posPrompt
+          ),
+          `Kitchen override scene ${kNoSunId} (${gmProbe}) under '${lKey}' leaked outdoor sun/sky tag: ${kSp.posPrompt}`
+        );
+        assert(
+          kSp.posPrompt.includes(firstLightAnchor) && !/\bwater caustics\b/i.test(kSp.posPrompt),
+          `Kitchen override scene ${kNoSunId} (${gmProbe}) under '${lKey}' failed to inject tpl.light_tags ('${firstLightAnchor}') or cross-bled pool caustics`
+        );
+        if (kTpl.kitchen_light_mode === "doorway_blind_slit") {
+          const kNegSet = new Set(kSp.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+          for (const unblocked of ["depth of field", "blurry", "harsh shadow", "harsh shadows"]) {
+            assert(
+              !kNegSet.has(unblocked),
+              `doorway_blind_slit scene ${kNoSunId} (${gmProbe}) under '${lKey}' failed to unblock '${unblocked}' from style_neg`
+            );
+          }
+        }
+      }
+    }
+  }
+
+  // Verify other_use_scene_outfit=false fallback + enable_condom + enable_uterus_xray (femboy intestines cutaway) + pos_transparent_bg + 3-Vibe 400 token cap
+  const [ktd01Fallback] = generateScenePrompts(
+    "KTD01",
+    { ...hostileSfCfg, other_use_scene_outfit: false },
+    "3rd"
+  );
+  const spKtd01Fb = splitPromptPosAndNeg(ktd01Fallback.prompt);
+  const fbNegSet = new Set(spKtd01Fb.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    !spKtd01Fb.posPrompt.includes("naked apron") &&
+      spKtd01Fb.posPrompt.includes("1.5::reverse bunnysuit::") &&
+      !fbNegSet.has("shirt") &&
+      !fbNegSet.has("pleated skirt"),
+    "KTD01 with other_use_scene_outfit=false must use left-column outfit without APRON_ONLY_UC"
+  );
+
+  const [ktd21FemboyAux] = generateScenePrompts(
+    "KTD21",
+    {
+      ...createDefaultCharacterConfig(),
+      gender_mode: "femboy",
+      enable_condom: true,
+      enable_uterus_xray: true,
+      pos_transparent_bg: true,
+      pos_token_limit: computeSafePosTokenLimit({ isV45: true, activeVibeCount: 3 }),
+    },
+    "3rd"
+  );
+  const spKtd21Aux = splitPromptPosAndNeg(ktd21FemboyAux.prompt);
+  const tokKtd21Aux = countSeparatedT5Tokens({
+    posPrompt: spKtd21Aux.posPrompt,
+    sceneNegPrompt: spKtd21Aux.negPrompt,
+    ucPresetMode: "heavy",
+    appendQuality: true,
+  });
+  assert(
+    spKtd21Aux.posPrompt.includes("1.5::intestines::, 1.5::cum in ass::") &&
+      spKtd21Aux.posPrompt.includes("1.4::condom::") &&
+      spKtd21Aux.posPrompt.includes("2.0::transparent background::") &&
+      tokKtd21Aux.posTokens <= 400,
+    `KTD21 femboy with condom+xray+transparent_bg+3Vibes failed checks (posTokens=${tokKtd21Aux.posTokens})`
+  );
+
+  // 17.6 Verify 6 Swimwear Presets, 12 Dedicated Kitchen/Pool LIGHTING_PRESETS, & 33 Public Pool Scenes (PLD01..22 + PL01..11 = 132 Prompts)
+  for (const swSpec of Object.values(POOL_SWIMWEAR_SPECS)) {
+    const outPreset = OUTFIT_PRESETS[swSpec.out_data_key];
+    assert(outPreset, `Missing swimwear OUTFIT_PRESETS entry '${swSpec.out_data_key}'`);
+    assert(
+      !/-?\d+(?:\.\d+)?::/.test(outPreset.extra_neg || ""),
+      `Swimwear preset '${swSpec.out_data_key}' extra_neg must never contain w::tag:: weights`
+    );
+    for (const gmSw of ["normal", "femboy"] as const) {
+      const [pSw] = generateScenePrompts(
+        "P22",
+        {
+          ...createDefaultCharacterConfig(),
+          gender_mode: gmSw,
+          outfit_preset: swSpec.out_data_key,
+          outfit_state_mode: "🔄 智能适配穿脱（原设/裙装自动撩裙拨内裤 · 单件上衣自动真空）",
+        },
+        "3rd"
+      );
+      assertZeroNestedColons(pSw.prompt, `P22 (${gmSw} / ${swSpec.style_id})`);
+      const spSw = splitPromptPosAndNeg(pSw.prompt);
+      assert(!/-?\d+(?:\.\d+)?::/.test(spSw.negPrompt), `P22 (${swSpec.style_id}) neg weights`);
+      if (swSpec.style_id === "comp_highleg") {
+        assert(
+          spSw.posPrompt.includes("1.55::competition swimsuit::") &&
+            spSw.posPrompt.includes("1.45::swimsuit aside::") &&
+            !/\bbikini aside\b/i.test(spSw.posPrompt),
+          `comp_highleg on P22 (${gmSw}) must emit swimsuit aside without colliding bikini aside`
+        );
+      }
+      if (gmSw === "femboy") {
+        assert(
+          !/\bexposed sideboob\b|\bexposing cleavage\b|\bbreasts out\b/i.test(spSw.posPrompt),
+          `Swimwear '${swSpec.style_id}' on P22 (femboy) leaked female chest tags`
+        );
+      }
+    }
+  }
+
+  // Verify all 21 Dedicated Kitchen (6), Public Pool (6), Bathroom (4) & Housework (5) LIGHTING_PRESETS + Explicit Override Precedence
+  const expectedDedicatedLightCodes = [
+    "kitchen_midnight_fridge",
+    "kitchen_oven_warm_bottom",
+    "kitchen_stove_steam_hood",
+    "kitchen_digital_screen_glow",
+    "kitchen_doorway_blind_slit",
+    "kitchen_sunlit_pendant",
+    "pool_sunlit_caustics",
+    "pool_split_waterline",
+    "pool_deep_underwater",
+    "pool_indoor_natatorium",
+    "pool_night_pool_glow",
+    "pool_shower_frosted_glass",
+    "bathroom_backlit_shower",
+    "bathroom_steamy_bath",
+    "bathroom_vanity_mirror",
+    "bathroom_laundry_alcove",
+    "housework_sunlit_living",
+    "housework_sunny_balcony",
+    "housework_hallway_sheen",
+    "housework_warm_bedroom",
+    "housework_closet_dim",
+  ];
+  for (const expCode of expectedDedicatedLightCodes) {
+    const lMatchKey = Object.keys(LIGHTING_PRESETS).find((k) => LIGHTING_PRESETS[k].code === expCode);
+    assert(lMatchKey, `Missing dedicated LIGHTING_PRESETS entry for code='${expCode}'`);
+    const lEntry = LIGHTING_PRESETS[lMatchKey];
+    assert(lEntry.tags && lEntry.prose && lEntry.badge, `${expCode} must define tags, prose, and badge`);
+    assert(
+      !/-?\d+(?:\.\d+)?::/.test(lEntry.extra_neg || ""),
+      `${expCode} extra_neg must never contain w::tag:: weights`
+    );
+
+    // Explicit selection works cleanly across P22, FREE, KTD01, PLD01, BT01, HWD01, and PS01
+    for (const probeScene of ["P22", "FREE", "KTD01", "PLD01", "BT01", "HWD01", "PS01"] as const) {
+      const [probeItem] = generateScenePrompts(
+        probeScene,
+        {
+          ...createDefaultCharacterConfig(),
+          lighting_preset: lMatchKey,
+          free_action_tags: "sitting, looking at viewer",
+          free_action_nsfw: true,
+        },
+        "3rd"
+      );
+      assertZeroNestedColons(probeItem.prompt, `${probeScene} (${expCode})`);
+      const spProbe = splitPromptPosAndNeg(probeItem.prompt);
+      const firstAnchor = lEntry.tags.split(",")[0].trim();
+      assert(
+        spProbe.posPrompt.includes(firstAnchor) && probeItem.subTitle.includes(`[${lEntry.badge}]`),
+        `${probeScene} under explicit '${expCode}' must inject '${firstAnchor}' and badge '[${lEntry.badge}]'`
+      );
+      if (expCode === "pool_night_pool_glow") {
+        const pNegSet = new Set(spProbe.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+        assert(
+          !/\bbacklighting\b|\bsunlight\b/i.test(spProbe.posPrompt) &&
+            pNegSet.has("bright sunlight") &&
+            pNegSet.has("sunny sky") &&
+            pNegSet.has("daytime"),
+          `${probeScene} under pool_night_pool_glow must strip backlighting/sunlight and guard bright sunlight/sunny sky/daytime`
+        );
+      } else if (expCode === "pool_split_waterline") {
+        const pNegSet = new Set(spProbe.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+        assert(
+          pNegSet.has("split-screen comic panels") && pNegSet.has("2koma"),
+          `${probeScene} under pool_split_waterline must guard 2koma/split-screen comic panels`
+        );
+      } else if (expCode === "pool_deep_underwater") {
+        const pNegSet = new Set(spProbe.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+        assert(
+          pNegSet.has("dry hair") && pNegSet.has("dry ground") && pNegSet.has("sky horizon"),
+          `${probeScene} under pool_deep_underwater must guard dry hair/dry ground/sky horizon`
+        );
+      } else if (expCode === "kitchen_doorway_blind_slit") {
+        const pNegSet = new Set(spProbe.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+        assert(
+          !pNegSet.has("depth of field") && !pNegSet.has("blurry") && !pNegSet.has("harsh shadows"),
+          `${probeScene} under kitchen_doorway_blind_slit must unblock depth of field/blurry/harsh shadows`
+        );
+      }
+    }
+  }
+
+  // Verify all 33 Public Swimming Pool chapters (PLD01..PLD22 & PL01..PL11 x 4 Gender Modes = 132 Prompts)
+  const poolChapters = OTHER_ACTION_CHAPTERS.filter(
+    (c) => c.id.startsWith("PLD") || (c.id.startsWith("PL") && !c.id.startsWith("PLD"))
+  );
+  assert.equal(poolChapters.length, 33, "Expected 33 Public Pool chapters (PLD01..PLD22 + PL01..PL11)");
+  const poolSwimUcTokens = POOL_SWIM_UC.split(",").map((s) => s.trim().toLowerCase());
+  const validPoolLightModes = new Set(Object.keys(POOL_LIGHT_DEFAULTS));
+  const validPoolSwimStyles = new Set(Object.keys(POOL_SWIMWEAR_SPECS));
+
+  let poolVerifiedCount = 0;
+  let maxPoolPosTokens = 0;
+  let maxPld18PosTokens = 0;
+  for (const ch of poolChapters) {
+    const tpl = OTHER_ACTION_TEMPLATES[ch.id];
+    assert(
+      tpl.pool_light_mode && validPoolLightModes.has(tpl.pool_light_mode),
+      `${ch.id} missing valid pool_light_mode`
+    );
+    assert(
+      tpl.swimsuit_style && validPoolSwimStyles.has(tpl.swimsuit_style),
+      `${ch.id} missing valid swimsuit_style`
+    );
+    const poolLightDef = POOL_LIGHT_DEFAULTS[tpl.pool_light_mode];
+    const isPoolDuo = ch.id.startsWith("PLD");
+    const isPoolYuriShowcase = ch.id === "PLD18";
+    const isPoolOral = tpl.pool_duo?.channel === "oral";
+    const isPoolLandscape = ch.id === "PLD04";
+
+    for (const gm of sfGenders) {
+      const plCfg = {
+        ...createDefaultCharacterConfig(),
+        char_tag: "javelin (azur lane)",
+        eng_name: "Javelin",
+        canon_neg_tags: "neckerchief, serafuku, plaid, gloves, crown",
+        gender_mode: gm,
+        style_preset: style6Key,
+        lighting_preset: "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）",
+        body_preset: "袖珍娇小窄肩细腰笔直长腿·微Q萌圆脸（0.25 chibi + short slender mini-lady）",
+        bust_preset: "小巧适中（small breasts）",
+        other_use_scene_outfit: true,
+        pos_token_limit: 502,
+      };
+      const [item] = generateScenePrompts(ch.id, plCfg, "3rd");
+      assert(item, `Missing Pool prompt for ${ch.id} (${gm})`);
+      assertZeroNestedColons(item.prompt, `${ch.id} (${gm})`);
+
+      const sp = splitPromptPosAndNeg(item.prompt);
+      assert(!/-?\d+(?:\.\d+)?::/.test(sp.negPrompt), `${ch.id} (${gm}) negative must never contain w::tag:: syntax`);
+      const negSet = new Set(sp.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+
+      // Zero Kitchen <-> Pool cross-bleed + POOL_SWIM_UC check
+      assert(
+        !sp.posPrompt.includes("naked apron") && !sp.posPrompt.includes("open refrigerator"),
+        `${ch.id} (${gm}) must never cross-bleed Kitchen naked apron or appliance tags`
+      );
+      for (const swTok of poolSwimUcTokens) {
+        assert(negSet.has(swTok), `${ch.id} (${gm}) missing POOL_SWIM_UC token '${swTok}'`);
+      }
+
+      // Pool dedicated lighting positive & negative checks
+      const firstPoolLightAnchor = poolLightDef.pos.split(",")[0].trim();
+      assert(
+        sp.posPrompt.includes(firstPoolLightAnchor),
+        `${ch.id} (${gm}) missing pool_light_mode anchor '${firstPoolLightAnchor}'`
+      );
+      for (const plNegTok of poolLightDef.neg.split(",").map((s) => s.trim().toLowerCase())) {
+        assert(negSet.has(plNegTok), `${ch.id} (${gm}) missing pool_light_mode neg '${plNegTok}'`);
+      }
+      if (tpl.pool_light_mode === "night_pool_glow") {
+        assert(
+          !/\bbacklighting\b|\bsunlight\b/i.test(sp.posPrompt),
+          `${ch.id} (${gm}) night_pool_glow must strip backlighting and sunlight`
+        );
+      }
+
+      if (tpl.is_foot_focus) {
+        for (const ftTok of footUcTokens) {
+          assert(negSet.has(ftTok), `${ch.id} (${gm}) foot-focus pool scene missing '${ftTok}'`);
+        }
+      }
+      if (isPoolLandscape) {
+        assert.equal(tpl.canvas, "横图 1216x832", "PLD04 must use landscape 1216x832 canvas");
+        assert(negSet.has("letterboxed") && negSet.has("pillarboxed"), "PLD04 missing anti-letterbox UC");
+      }
+
+      if (isPoolDuo) {
+        if (gm === "femboy") {
+          const expTarget = isPoolOral ? "target#oral" : "target#anal";
+          const expSource = isPoolOral ? "source#oral" : "source#anal";
+          assert(
+            sp.posPrompt.startsWith("[Base Prompt]") &&
+              sp.posPrompt.includes("2boys, 1.55::yaoi::, bare feet") &&
+              sp.posPrompt.includes("1.45::1boy::, 1.55::otoko no ko::") &&
+              sp.posPrompt.includes("tall athletic shirtless faceless male swimmer") &&
+              sp.posPrompt.includes(expTarget) &&
+              sp.posPrompt.includes(expSource) &&
+              sp.posPrompt.includes("-2.5::breasts, pussy, female::"),
+            `${ch.id} (femboy) must compile Multi-Box 2boys pool swimmer layout`
+          );
+        } else if (isPoolYuriShowcase && gm === "normal") {
+          assert(
+            sp.posPrompt.startsWith("[Base Prompt]") &&
+              sp.posPrompt.includes("2girls, 1.55::yuri::, bare feet") &&
+              sp.posPrompt.includes("1.55::competition swimsuit::") &&
+              sp.posPrompt.includes("1.55::white one-piece swimsuit::") &&
+              sp.posPrompt.includes("1.55::tribadism::"),
+            "PLD18 (normal) must compile 2girls contrast-swimsuit Yuri Multi-Box"
+          );
+        } else if (isPoolYuriShowcase) {
+          assert(
+            sp.posPrompt.startsWith("[Base Prompt]") &&
+              sp.posPrompt.includes("2girls, 1.5::futanari::, 1.45::futa on female::, yuri") &&
+              sp.posPrompt.includes("source#vaginal") &&
+              sp.posPrompt.includes("target#vaginal") &&
+              !negSet.has("futanari") &&
+              !negSet.has("pussy"),
+            `PLD18 (${gm}) must compile 2girls Futa-on-Female contrast-swimsuit Yuri Multi-Box`
+          );
+        } else if (gm === "normal") {
+          assert(
+            !sp.posPrompt.startsWith("[Base Prompt]") &&
+              sp.posPrompt.includes("1girl, 1boy, hetero, faceless male, bare feet"),
+            `${ch.id} (normal) must compile single-box female x male swimmer`
+          );
+        } else {
+          assert(
+            !sp.posPrompt.startsWith("[Base Prompt]") &&
+              sp.posPrompt.includes("1girl, 1boy, hetero, faceless male, 1.55::futanari::") &&
+              sp.posPrompt.includes("0.25::artist:pija (pianiishimo)::") &&
+              /1\.45?::small penis::/.test(sp.posPrompt),
+            `${ch.id} (${gm}) must compile Male-on-Futa pool scene with Style #6 pija tweak`
+          );
+        }
+      }
+
+      const tok = countSeparatedT5Tokens({
+        posPrompt: sp.posPrompt,
+        sceneNegPrompt: sp.negPrompt,
+        ucPresetMode: "heavy",
+        appendQuality: true,
+      });
+      const maxExpectedPoolPos = ch.id === "PLD18" ? 490 : 500;
+      assert(
+        tok.posTokens <= maxExpectedPoolPos && tok.negTokens <= 512,
+        `${ch.id} (${gm}) exceeded Pool T5 budget (${maxExpectedPoolPos}): pos=${tok.posTokens}, neg=${tok.negTokens}`
+      );
+      if (tok.posTokens > maxPoolPosTokens) maxPoolPosTokens = tok.posTokens;
+      if (ch.id === "PLD18" && tok.posTokens > maxPld18PosTokens) maxPld18PosTokens = tok.posTokens;
+      poolVerifiedCount++;
+    }
+  }
+
+  // Verify non-sunlit Pool scenes strip outdoor sun/sky tags across ALL non-explicit lighting presets
+  for (const pNoSunId of ["PLD02", "PLD03", "PLD07", "PLD08", "PL03", "PL05", "PL07", "PL08"]) {
+    const pTpl = OTHER_ACTION_TEMPLATES[pNoSunId];
+    const pAnchor = POOL_LIGHT_DEFAULTS[pTpl.pool_light_mode!].pos.split(",")[0].trim();
+    for (const lKey of nonExplicitLightKeys) {
+      const [pItem] = generateScenePrompts(
+        pNoSunId,
+        {
+          ...createDefaultCharacterConfig(),
+          lighting_preset: lKey,
+          custom_style_pos:
+            "sunlight, dappled sunlight, morning sunlight, afternoon sunlight, sun glare, light rays, daylight, clear blue sky, bright sky",
+          style_preset: "自定义画风（使用下方自定义画风框）",
+        },
+        "3rd"
+      );
+      const pSp = splitPromptPosAndNeg(pItem.prompt);
+      const forbiddenSunRe =
+        pTpl.pool_light_mode === "deep_underwater"
+          ? /\bmorning sunlight\b|\bafternoon sunlight\b|\blight rays\b|\bsun glare\b|\bdaylight\b|\bclear blue sky\b|\bbright sky\b/i
+          : /\bsunlight\b|\bdappled sunlight\b|\bmorning sunlight\b|\bafternoon sunlight\b|\blight rays\b|\bsun glare\b|\bdaylight\b|\bclear blue sky\b|\bbright sky\b/i;
+      assert(
+        !forbiddenSunRe.test(pSp.posPrompt) && pSp.posPrompt.includes(pAnchor),
+        `Non-sunlit Pool scene ${pNoSunId} under '${lKey}' leaked outdoor sun/sky or dropped '${pAnchor}'`
+      );
+    }
+  }
+
+  // Verify Pool other_use_scene_outfit=false fallback + enable_condom + femboy enable_uterus_xray + 3-Vibe 400 cap
+  const [pld01Fallback] = generateScenePrompts(
+    "PLD01",
+    { ...hostileSfCfg, other_use_scene_outfit: false },
+    "3rd"
+  );
+  const spPld01Fb = splitPromptPosAndNeg(pld01Fallback.prompt);
+  const pld01FbNeg = new Set(spPld01Fb.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    !spPld01Fb.posPrompt.includes("competition swimsuit") &&
+      spPld01Fb.posPrompt.includes("1.5::reverse bunnysuit::") &&
+      !pld01FbNeg.has("shirt") &&
+      !pld01FbNeg.has("thighhighs"),
+    "PLD01 with other_use_scene_outfit=false must use left-column outfit without POOL_SWIM_UC"
+  );
+
+  const [pld16FemboyAux] = generateScenePrompts(
+    "PLD16",
+    {
+      ...createDefaultCharacterConfig(),
+      gender_mode: "femboy",
+      enable_condom: true,
+      enable_uterus_xray: true,
+      pos_transparent_bg: true,
+      pos_token_limit: computeSafePosTokenLimit({ isV45: true, activeVibeCount: 3 }),
+    },
+    "3rd"
+  );
+  const spPld16Aux = splitPromptPosAndNeg(pld16FemboyAux.prompt);
+  const tokPld16Aux = countSeparatedT5Tokens({
+    posPrompt: spPld16Aux.posPrompt,
+    sceneNegPrompt: spPld16Aux.negPrompt,
+    ucPresetMode: "heavy",
+    appendQuality: true,
+  });
+  assert(
+    spPld16Aux.posPrompt.includes("1.5::intestines::, 1.5::cum in ass::") &&
+      spPld16Aux.posPrompt.includes("1.4::condom::") &&
+      spPld16Aux.posPrompt.includes("2.0::transparent background::") &&
+      tokPld16Aux.posTokens <= 400,
+    `PLD16 femboy with condom+xray+transparent_bg+3Vibes failed checks (posTokens=${tokPld16Aux.posTokens})`
+  );
+
+  // 17.7 Verify 7 Restrained-Yandere Specimen Collection Scenes (CV01..CV07 x 4 Gender Modes = 28 Prompts) + Skill Hygiene
+  const specimenChapters = OTHER_ACTION_CHAPTERS.filter((c) => c.id.startsWith("CV"));
+  assert.equal(specimenChapters.length, 7, "Expected 7 Specimen chapters (CV01..CV07)");
+  const yandereGuardTokens = SPECIMEN_YANDERE_GUARD_UC.split(",").map((s) => s.trim().toLowerCase());
+  const fridgeGroceryTokens = SPECIMEN_STOCKED_FRIDGE_GROCERY_UC.split(",").map((s) => s.trim().toLowerCase());
+  const expectedNocturnalCvSet = new Set(["CV02", "CV04", "CV05", "CV06"]);
+
+  let specimenVerifiedCount = 0;
+  let maxSpecimenPosTokens = 0;
+  let maxSpecimenNegTokens = 0;
+  for (const ch of specimenChapters) {
+    const tpl = OTHER_ACTION_TEMPLATES[ch.id];
+    assert.equal(Boolean(tpl.is_specimen_scene), true, `${ch.id} must set is_specimen_scene=true`);
+    assert.equal(Boolean(tpl.is_specimen_duo), ch.id === "CV04", `${ch.id} is_specimen_duo mismatch`);
+    assert.equal(Boolean(tpl.builtin_xray), ch.id === "CV01", `${ch.id} builtin_xray mismatch`);
+    assert.equal(Boolean(tpl.allow_speculum), ch.id === "CV07", `${ch.id} allow_speculum mismatch`);
+    assert.equal(
+      Boolean(tpl.is_nocturnal_fridge),
+      expectedNocturnalCvSet.has(ch.id),
+      `${ch.id} is_nocturnal_fridge mismatch`
+    );
+
+    for (const gm of sfGenders) {
+      const cvCfg = {
+        ...createDefaultCharacterConfig(),
+        char_tag: "javelin (azur lane)",
+        eng_name: "Javelin",
+        canon_neg_tags: "neckerchief, serafuku, plaid, gloves, crown",
+        gender_mode: gm,
+        style_preset: style6Key,
+        lighting_preset: "💎✨ 2.5D 冷暖撞色水润高反差光影（Coral-Peach Skin + Cool Violet Rim & Specular）",
+        body_preset: "袖珍娇小窄肩细腰笔直长腿·微Q萌圆脸（0.25 chibi + short slender mini-lady）",
+        bust_preset: "小巧适中（small breasts）",
+        other_use_scene_outfit: true,
+        enable_uterus_xray: false,
+        pos_token_limit: 502,
+      };
+      const [item] = generateScenePrompts(ch.id, cvCfg, "3rd");
+      assert(item, `Missing Specimen prompt for ${ch.id} (${gm})`);
+      assertZeroNestedColons(item.prompt, `${ch.id} (${gm})`);
+
+      const sp = splitPromptPosAndNeg(item.prompt);
+      assert(!/-?\d+(?:\.\d+)?::/.test(sp.negPrompt), `${ch.id} (${gm}) negative must never contain w::tag:: syntax`);
+      const negSet = new Set(sp.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+
+      // Invariant 1: Restrained subtle yandere expression + anti-cartoon-horror UC guards
+      assert(
+        sp.posPrompt.includes("1.15::yandere::") && sp.posPrompt.includes("1.15::heart-shaped pupils::"),
+        `${ch.id} (${gm}) missing default restrained yandere expression anchors`
+      );
+      for (const yg of yandereGuardTokens) {
+        assert(negSet.has(yg), `${ch.id} (${gm}) missing SPECIMEN_YANDERE_GUARD_UC '${yg}'`);
+      }
+
+      // Invariant 2: CV01 Built-in Syringe X-Ray
+      if (ch.id === "CV01") {
+        assert(
+          item.subTitle.includes("[🔬内置透视]") &&
+            sp.posPrompt.includes("1.7::syringe::") &&
+            sp.posPrompt.includes("1.65::x-ray::") &&
+            sp.posPrompt.includes("1.65::cross-section::") &&
+            !negSet.has("x-ray") &&
+            !negSet.has("cross-section") &&
+            negSet.has("graduated cylinder") &&
+            negSet.has("beaker") &&
+            negSet.has("test tube") &&
+            negSet.has("hypodermic needle") &&
+            negSet.has("blood"),
+          `CV01 (${gm}) failed built-in syringe X-Ray invariants`
+        );
+      } else {
+        assert(
+          negSet.has("x-ray") && negSet.has("cross-section"),
+          `${ch.id} (${gm}) must block x-ray/cross-section when enable_uterus_xray=false`
+        );
+      }
+
+      // Invariant 3: CV07 Flush-Inserted Thumbscrew Speculum & Exposed Cervix
+      if (ch.id === "CV07") {
+        assert(
+          !negSet.has("gaping") &&
+            sp.posPrompt.includes("speculum") &&
+            sp.posPrompt.includes("object insertion") &&
+            negSet.has("strainer") &&
+            negSet.has("colander") &&
+            negSet.has("funnel") &&
+            negSet.has("scoop") &&
+            negSet.has("wrench") &&
+            negSet.has("two side handles") &&
+            negSet.has("tongs"),
+          `CV07 (${gm}) failed speculum hardware & anti-gaping UC invariants`
+        );
+        if (gm !== "femboy") {
+          assert(sp.posPrompt.includes("cervix"), `CV07 (${gm}) must expose cervix`);
+        }
+      }
+
+      // Invariant 4: Nocturnal Stocked-Fridge Lighting & Grocery Bans (CV02, CV04, CV05, CV06) + FOOT_ANAT_UC on CV02
+      if (expectedNocturnalCvSet.has(ch.id)) {
+        assert(
+          !/\bbacklighting\b|\bsunlight\b/i.test(sp.posPrompt),
+          `${ch.id} (${gm}) nocturnal fridge scene must strip backlighting and sunlight`
+        );
+        for (const grTok of fridgeGroceryTokens) {
+          assert(negSet.has(grTok), `${ch.id} (${gm}) missing fridge grocery ban '${grTok}'`);
+        }
+      }
+      if (ch.id === "CV02") {
+        for (const ftTok of footUcTokens) {
+          assert(negSet.has(ftTok), `CV02 (${gm}) missing FOOT_ANAT_UC '${ftTok}'`);
+        }
+      }
+
+      // 4-Mode Gender Isolation checks
+      if (gm === "femboy") {
+        assert(
+          !/\bpussy\b|\bcervix\b|\bvulva\b|\blabia\b/i.test(sp.posPrompt.split("-2.5::")[0]),
+          `${ch.id} (femboy) leaked female genital tag into Positive`
+        );
+      }
+      if (ch.id === "CV04") {
+        if (gm === "femboy") {
+          assert(
+            sp.posPrompt.startsWith("[Base Prompt]") &&
+              sp.posPrompt.includes("2boys, 1.55::yaoi::") &&
+              sp.posPrompt.includes("1.45::1boy::, 1.55::otoko no ko::") &&
+              sp.posPrompt.includes("1boy, tall shirtless faceless male"),
+            "CV04 (femboy) must compile Multi-Box 2boys layout"
+          );
+        } else if (gm === "normal") {
+          assert(
+            !sp.posPrompt.startsWith("[Base Prompt]") &&
+              sp.posPrompt.includes("1girl, 1boy, hetero, faceless male"),
+            "CV04 (normal) must compile Single-Box 1girl x 1boy layout"
+          );
+        } else {
+          assert(
+            !sp.posPrompt.startsWith("[Base Prompt]") &&
+              sp.posPrompt.includes("1girl, 1boy, hetero, faceless male, 1.55::futanari::") &&
+              sp.posPrompt.includes("0.25::artist:pija (pianiishimo)::") &&
+              /1\.45?::small penis::/.test(sp.posPrompt),
+            `CV04 (${gm}) must compile Male-on-Futa with Style #6 pija tweak`
+          );
+        }
+      }
+
+      const tok = countSeparatedT5Tokens({
+        posPrompt: sp.posPrompt,
+        sceneNegPrompt: sp.negPrompt,
+        ucPresetMode: "heavy",
+        appendQuality: true,
+      });
+      assert(
+        tok.posTokens <= 500 && tok.negTokens <= 512,
+        `${ch.id} (${gm}) exceeded Specimen T5 budget: pos=${tok.posTokens}/500, neg=${tok.negTokens}/512`
+      );
+      if (tok.posTokens > maxSpecimenPosTokens) maxSpecimenPosTokens = tok.posTokens;
+      if (tok.negTokens > maxSpecimenNegTokens) maxSpecimenNegTokens = tok.negTokens;
+      specimenVerifiedCount++;
+    }
+  }
+
+  // Verify nocturnal CV02/CV04/CV05/CV06 strip backlighting & sun/sky under ALL non-explicit presets while honoring explicit kitchen_*/pool_* overrides
+  for (const cvNoctId of ["CV02", "CV04", "CV05", "CV06"]) {
+    for (const lKey of nonExplicitLightKeys) {
+      const [cvNoct] = generateScenePrompts(
+        cvNoctId,
+        {
+          ...createDefaultCharacterConfig(),
+          lighting_preset: lKey,
+          custom_style_pos: "backlighting, sunlight, morning sunlight, sun glare, daylight, clear blue sky",
+          style_preset: "自定义画风（使用下方自定义画风框）",
+        },
+        "3rd"
+      );
+      const spNoct = splitPromptPosAndNeg(cvNoct.prompt);
+      assert(
+        !/\bbacklighting\b|\bsunlight\b|\bmorning sunlight\b|\bsun glare\b|\bdaylight\b|\bclear blue sky\b/i.test(
+          spNoct.posPrompt
+        ),
+        `Nocturnal Specimen ${cvNoctId} under '${lKey}' leaked backlighting or sun/sky`
+      );
+    }
+  }
+
+  // Verify explicit UI expression override + other_use_scene_outfit=false + condom + femboy X-Ray + 3-Vibe 400 cap on CV04
+  const exprOverrideKey = Object.keys(EXPRESSION_PRESETS).find((k) => k.includes("温柔浅笑"))!;
+  const [cv03ExprOverride] = generateScenePrompts(
+    "CV03",
+    { ...createDefaultCharacterConfig(), expr_preset: exprOverrideKey },
+    "3rd"
+  );
+  assert(
+    cv03ExprOverride.subTitle.includes("[😊") && cv03ExprOverride.prompt.includes("gentle smile"),
+    "CV03 must honor explicit UI expression_preset override"
+  );
+
+  const [cv02Fallback] = generateScenePrompts(
+    "CV02",
+    { ...hostileSfCfg, other_use_scene_outfit: false },
+    "3rd"
+  );
+  const spCv02Fb = splitPromptPosAndNeg(cv02Fallback.prompt);
+  const cv02FbNeg = new Set(spCv02Fb.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    !spCv02Fb.posPrompt.includes("loose white off-shoulder camisole") &&
+      spCv02Fb.posPrompt.includes("1.5::reverse bunnysuit::") &&
+      !cv02FbNeg.has("collared shirt") &&
+      !cv02FbNeg.has("thighhighs"),
+    "CV02 with other_use_scene_outfit=false must use left-column outfit without specimen_outfit_neg"
+  );
+
+  const [cv04FemboyAux] = generateScenePrompts(
+    "CV04",
+    {
+      ...createDefaultCharacterConfig(),
+      gender_mode: "femboy",
+      enable_condom: true,
+      enable_uterus_xray: true,
+      pos_transparent_bg: true,
+      pos_token_limit: computeSafePosTokenLimit({ isV45: true, activeVibeCount: 3 }),
+    },
+    "3rd"
+  );
+  const spCv04Aux = splitPromptPosAndNeg(cv04FemboyAux.prompt);
+  const tokCv04Aux = countSeparatedT5Tokens({
+    posPrompt: spCv04Aux.posPrompt,
+    sceneNegPrompt: spCv04Aux.negPrompt,
+    ucPresetMode: "heavy",
+    appendQuality: true,
+  });
+  assert(
+    spCv04Aux.posPrompt.includes("1.5::intestines::, 1.5::cum in ass::") &&
+      spCv04Aux.posPrompt.includes("1.4::condom::") &&
+      spCv04Aux.posPrompt.includes("2.0::transparent background::") &&
+      tokCv04Aux.posTokens <= 400,
+    `CV04 femboy with condom+xray+transparent_bg+3Vibes failed checks (posTokens=${tokCv04Aux.posTokens})`
+  );
+
+  // Verify .agents/skills/nai-specimen-collection/ hygiene (zero code/build vocabulary leaks)
+  const specimenSkillDir = path.resolve(process.cwd(), "../.agents/skills/nai-specimen-collection");
+  for (const relDoc of ["SKILL.md", "references/specimen_scene_catalog.md"]) {
+    const docPath = path.join(specimenSkillDir, relDoc);
+    assert(fs.existsSync(docPath), `Missing specimen skill doc: ${docPath}`);
+    const docText = fs.readFileSync(docPath, "utf8");
+    assert(
+      !/storyEngine|engineConstants|otherActionsData|specimenActionsData|verify_engine|NovelAI_Workbench\.html|vite build|tsc --noEmit|npm --prefix/i.test(
+        docText
+      ),
+      `${relDoc} leaked codebase/build vocabulary`
+    );
+  }
+
+  // 17.8 Verify 8 Solo Bathroom Adult-Toy Scenes (BT01..BT08 = 32 Prompts), 4 Bathroom Light Modes, & Skill Hygiene
+  const bathroomChapters = OTHER_ACTION_CHAPTERS.filter((c) => c.id.startsWith("BT"));
+  assert.equal(bathroomChapters.length, 8, "Expected 8 Bathroom Solo-Toy scenes (BT01..BT08)");
+  const bathroomTowelUcTokens = BATHROOM_TOWEL_UC.split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const footAnatUcTokensForBt = FOOT_ANAT_UC.split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  let maxBathroomPosTokens = 0;
+  let maxBathroomNegTokens = 0;
+  let bathroomVerifiedCount = 0;
+
+  for (const ch of bathroomChapters) {
+    const tpl = OTHER_ACTION_TEMPLATES[ch.id];
+    assert(tpl && tpl.is_bathroom_scene, `Missing or unmarked Bathroom template ${ch.id}`);
+    assert(
+      tpl.bathroom_light_mode && tpl.bathroom_light_mode in BATHROOM_LIGHT_DEFAULTS,
+      `${ch.id} must declare a valid bathroom_light_mode`
+    );
+    for (const gm of ["normal", "femboy", "futa_no_balls", "futa_with_balls"] as const) {
+      const btCfg = {
+        ...createDefaultCharacterConfig(),
+        gender_mode: gm,
+        style_preset: gm.startsWith("futa_") ? style6FutaKey : style6Key,
+        lighting_preset: "🔄 随画风与本幕默认光影（不额外覆盖）",
+        body_preset: Object.keys(BODY_PRESETS).find((k) => k.includes("丰满沙漏")) || createDefaultCharacterConfig().body_preset,
+      };
+      const [item] = generateScenePrompts(ch.id, btCfg, "3rd");
+      assertZeroNestedColons(item.prompt, `${ch.id} (${gm})`);
+      const sp = splitPromptPosAndNeg(item.prompt);
+      assert(
+        !/-?\d+(?:\.\d+)?::/.test(sp.negPrompt),
+        `${ch.id} (${gm}) negPrompt must contain zero w::tag:: weights`
+      );
+      const negSet = new Set(sp.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+
+      // Zero cross-bleed with Kitchen or Public Pool vocabulary
+      assert(
+        !sp.posPrompt.includes("naked apron") &&
+          !sp.posPrompt.includes("competition swimsuit") &&
+          !sp.posPrompt.includes("water caustics"),
+        `${ch.id} (${gm}) cross-bled Kitchen or Pool tags into Positive`
+      );
+
+      // Subtitle badge check
+      assert(
+        item.subTitle.includes("🛁浴室玩具"),
+        `${ch.id} (${gm}) subTitle must include 🛁浴室玩具`
+      );
+
+      // BATHROOM_TOWEL_UC check when other_use_scene_outfit=true
+      for (const btTok of bathroomTowelUcTokens) {
+        assert(
+          negSet.has(btTok),
+          `${ch.id} (${gm}) missing BATHROOM_TOWEL_UC token '${btTok}' in Negative`
+        );
+      }
+
+      // FOOT_ANAT_UC check on barefoot scenes (BT01, BT02, BT03, BT05, BT07)
+      if (tpl.is_foot_focus) {
+        for (const ftTok of footAnatUcTokensForBt) {
+          assert(
+            negSet.has(ftTok),
+            `${ch.id} (${gm}) missing FOOT_ANAT_UC token '${ftTok}' in Negative`
+          );
+        }
+      }
+
+      // Scene-specific empirical toy-physics & camera locks
+      if (ch.id === "BT01") {
+        assert(
+          negSet.has("two dildos") && negSet.has("multiple dildos") && negSet.has("floating dildo"),
+          `BT01 (${gm}) must guard two dildos / multiple dildos / floating dildo`
+        );
+      } else if (ch.id === "BT02" || ch.id === "BT03") {
+        assert(
+          !negSet.has("motion lines"),
+          `${ch.id} (${gm}) must strip 'motion lines' from comic_line_guard so vibrator ripples render`
+        );
+        if (ch.id === "BT03") {
+          assert(
+            negSet.has("two controllers") && negSet.has("extra remote"),
+            `BT03 (${gm}) must guard two controllers / extra remote`
+          );
+        }
+      } else if (ch.id === "BT04") {
+        assert(
+          negSet.has("mirror selfie") &&
+            negSet.has("holding phone") &&
+            negSet.has("smartphone") &&
+            negSet.has("camera"),
+          `BT04 (${gm}) must block mirror selfie / holding phone / smartphone / camera`
+        );
+      } else if (ch.id === "BT06") {
+        assert(
+          sp.posPrompt.includes("1.5::from above::"),
+          `BT06 (${gm}) must retain high-angle 1.5::from above:: framing`
+        );
+      } else if (ch.id === "BT08") {
+        assert(
+          !negSet.has("motion lines") &&
+            !negSet.has("holding phone") &&
+            !negSet.has("smartphone") &&
+            negSet.has("mirror") &&
+            negSet.has("mirror selfie") &&
+            negSet.has("camera lens") &&
+            negSet.has("taking picture") &&
+            negSet.has("phone covering face"),
+          `BT08 (${gm}) must allow smartphone app controller while blocking mirror/selfie/camera lens`
+        );
+      }
+
+      // Gender isolation checks
+      if (gm === "femboy") {
+        assert(
+          sp.posPrompt.includes("otoko no ko") &&
+            sp.posPrompt.includes("flat chest") &&
+            !/\bpussy\b|\bvaginal\b|\bclit\b|\bbare breasts\b/i.test(sp.posPrompt),
+          `${ch.id} (femboy) leaked female anatomy into Positive: ${sp.posPrompt}`
+        );
+      } else if (gm.startsWith("futa_")) {
+        assert(
+          sp.posPrompt.includes("0.25::artist:pija (pianiishimo)::") &&
+            /1\.45?::small penis::/.test(sp.posPrompt),
+          `${ch.id} (${gm}) must include Style #6 Futa pija tweak and small penis anchor`
+        );
+      }
+
+      const tok = countSeparatedT5Tokens({
+        posPrompt: sp.posPrompt,
+        sceneNegPrompt: sp.negPrompt,
+        ucPresetMode: "heavy",
+        appendQuality: true,
+      });
+      assert(
+        tok.posTokens <= 500 && tok.negTokens <= 512,
+        `${ch.id} (${gm}) exceeded Bathroom T5 budget: pos=${tok.posTokens}/500, neg=${tok.negTokens}/512`
+      );
+      if (tok.posTokens > maxBathroomPosTokens) maxBathroomPosTokens = tok.posTokens;
+      if (tok.negTokens > maxBathroomNegTokens) maxBathroomNegTokens = tok.negTokens;
+      bathroomVerifiedCount++;
+    }
+  }
+
+  // Verify BT01..BT08 strip outdoor sun/daylight/sky tags across ALL non-explicit presets
+  for (const ch of bathroomChapters) {
+    const firstBtLightAnchor = OTHER_ACTION_TEMPLATES[ch.id].light_tags.split(",")[0].trim();
+    for (const lKey of nonExplicitLightKeys) {
+      const [btLightItem] = generateScenePrompts(
+        ch.id,
+        {
+          ...createDefaultCharacterConfig(),
+          lighting_preset: lKey,
+          custom_style_pos:
+            "sunlight, dappled sunlight, morning sunlight, afternoon sunlight, sun glare, light rays, daylight, clear blue sky, bright sky",
+          style_preset: "自定义画风（使用下方自定义画风框）",
+        },
+        "3rd"
+      );
+      const spBtLight = splitPromptPosAndNeg(btLightItem.prompt);
+      assert(
+        spBtLight.posPrompt.includes(firstBtLightAnchor) &&
+          !/\bsunlight\b|\bdappled sunlight\b|\bmorning sunlight\b|\bafternoon sunlight\b|\blight rays\b|\bsun glare\b|\bdaylight\b|\bclear blue sky\b|\bbright sky\b/i.test(
+            spBtLight.posPrompt
+          ),
+        `Bathroom scene ${ch.id} under '${lKey}' leaked outdoor sun/sky or missed '${firstBtLightAnchor}'`
+      );
+    }
+  }
+
+  // Verify BT01 with other_use_scene_outfit=false + BT05 femboy condom + X-Ray + transparent_bg + 3-Vibe 400 cap
+  const [bt01Fallback] = generateScenePrompts(
+    "BT01",
+    { ...hostileSfCfg, other_use_scene_outfit: false },
+    "3rd"
+  );
+  const spBt01Fb = splitPromptPosAndNeg(bt01Fallback.prompt);
+  const bt01FbNeg = new Set(spBt01Fb.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    spBt01Fb.posPrompt.includes("1.5::reverse bunnysuit::") &&
+      !bt01FbNeg.has("collared shirt") &&
+      !bt01FbNeg.has("thighhighs"),
+    "BT01 with other_use_scene_outfit=false must use left-column outfit without BATHROOM_TOWEL_UC"
+  );
+
+  const [bt05FemboyAux] = generateScenePrompts(
+    "BT05",
+    {
+      ...createDefaultCharacterConfig(),
+      gender_mode: "femboy",
+      enable_condom: true,
+      enable_uterus_xray: true,
+      pos_transparent_bg: true,
+      pos_token_limit: computeSafePosTokenLimit({ isV45: true, activeVibeCount: 3 }),
+    },
+    "3rd"
+  );
+  const spBt05Aux = splitPromptPosAndNeg(bt05FemboyAux.prompt);
+  const tokBt05Aux = countSeparatedT5Tokens({
+    posPrompt: spBt05Aux.posPrompt,
+    sceneNegPrompt: spBt05Aux.negPrompt,
+    ucPresetMode: "heavy",
+    appendQuality: true,
+  });
+  assert(
+    spBt05Aux.posPrompt.includes("1.5::intestines::, 1.5::cum in ass::") &&
+      spBt05Aux.posPrompt.includes("1.55::used condom::") &&
+      spBt05Aux.posPrompt.includes("2.0::transparent background::") &&
+      tokBt05Aux.posTokens <= 400,
+    `BT05 femboy with condom+xray+transparent_bg+3Vibes failed checks (posTokens=${tokBt05Aux.posTokens})`
+  );
+
+  // Verify .agents/skills/nai-bathroom-solo-toys/ hygiene (zero code/build vocabulary leaks)
+  const bathroomSkillDir = path.resolve(process.cwd(), "../.agents/skills/nai-bathroom-solo-toys");
+  for (const relDoc of ["SKILL.md", "references/bathroom_toy_catalog.md"]) {
+    const docPath = path.join(bathroomSkillDir, relDoc);
+    assert(fs.existsSync(docPath), `Missing bathroom skill doc: ${docPath}`);
+    const docText = fs.readFileSync(docPath, "utf8");
+    assert(
+      !/storyEngine|engineConstants|otherActionsData|bathroomActionsData|verify_engine|NovelAI_Workbench\.html|vite build|tsc --noEmit|npm --prefix/i.test(
+        docText
+      ),
+      `${relDoc} leaked codebase/build vocabulary`
+    );
+  }
+
+  // 17.9 Verify 15 Unified Naked-Apron Housework Distraction Scenes (HWD01..HWD15 = 60 Prompts), 5 Housework Light Modes, Selective Garment-Prop Unblocking, & Skill Hygiene
+  const houseworkChapters = OTHER_ACTION_CHAPTERS.filter((c) => c.id.startsWith("HWD"));
+  assert.equal(houseworkChapters.length, 15, "Expected 15 Housework Distraction scenes (HWD01..HWD15)");
+  const expectedChestCoveredHwd = new Set(["HWD04", "HWD10", "HWD13", "HWD15"]);
+  const expectedUnblockShirtHwd = new Set(["HWD05", "HWD07", "HWD12", "HWD13"]);
+  const expectedUnblockJacketHwd = new Set(["HWD12", "HWD14"]);
+  const expectedBarefootHwd = new Set(["HWD02", "HWD03", "HWD08", "HWD10"]);
+  const footAnatUcTokensForHwd = FOOT_ANAT_UC.split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  let maxHouseworkPosTokens = 0;
+  let maxHouseworkMultiBoxPosTokens = 0;
+  let maxHouseworkNegTokens = 0;
+  let houseworkVerifiedCount = 0;
+
+  for (const ch of houseworkChapters) {
+    const tpl = OTHER_ACTION_TEMPLATES[ch.id];
+    assert(
+      tpl && tpl.is_housework_scene && tpl.is_housework_duo && tpl.housework_duo,
+      `Missing or unmarked Housework duo template ${ch.id}`
+    );
+    assert(
+      tpl.housework_light_mode && tpl.housework_light_mode in HOUSEWORK_LIGHT_DEFAULTS,
+      `${ch.id} must declare a valid housework_light_mode`
+    );
+    assert.equal(
+      Boolean(tpl.chest_covered),
+      expectedChestCoveredHwd.has(ch.id),
+      `${ch.id} chest_covered mismatch`
+    );
+    assert.equal(
+      Boolean(tpl.unblock_prop_shirt),
+      expectedUnblockShirtHwd.has(ch.id),
+      `${ch.id} unblock_prop_shirt mismatch`
+    );
+    assert.equal(
+      Boolean(tpl.unblock_prop_jacket),
+      expectedUnblockJacketHwd.has(ch.id),
+      `${ch.id} unblock_prop_jacket mismatch`
+    );
+    assert.equal(
+      Boolean(tpl.barefoot),
+      expectedBarefootHwd.has(ch.id),
+      `${ch.id} barefoot mismatch`
+    );
+    if (ch.id === "HWD09") {
+      assert.equal(tpl.canvas, "横图 1216x832", "HWD09 must use landscape 1216x832 canvas");
+    }
+
+    for (const gm of ["normal", "femboy", "futa_no_balls", "futa_with_balls"] as const) {
+      const hwdCfg = {
+        ...createDefaultCharacterConfig(),
+        gender_mode: gm,
+        style_preset: gm.startsWith("futa_") ? style6FutaKey : style6Key,
+        lighting_preset: "🔄 随画风与本幕默认光影（不额外覆盖）",
+        body_preset:
+          Object.keys(BODY_PRESETS).find((k) => k.includes("丰满沙漏")) ||
+          createDefaultCharacterConfig().body_preset,
+      };
+      const [item] = generateScenePrompts(ch.id, hwdCfg, "3rd");
+      assertZeroNestedColons(item.prompt, `${ch.id} (${gm})`);
+      const sp = splitPromptPosAndNeg(item.prompt);
+      assert(
+        !/-?\d+(?:\.\d+)?::/.test(sp.negPrompt),
+        `${ch.id} (${gm}) negPrompt must contain zero w::tag:: weights`
+      );
+      const negSet = new Set(sp.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+
+      // Zero cross-bleed with Public Pool swimwear/caustics
+      assert(
+        !sp.posPrompt.includes("competition swimsuit") && !sp.posPrompt.includes("water caustics"),
+        `${ch.id} (${gm}) cross-bled Pool vocabulary into Positive`
+      );
+
+      // Subtitle badge check
+      const expHwdBadge = ch.id === "HWD15" && gm === "normal" ? "👯家务双裸围百合" : "🏠家务干扰";
+      assert(
+        item.subTitle.includes(expHwdBadge),
+        `${ch.id} (${gm}) subTitle must include ${expHwdBadge} (got: ${item.subTitle})`
+      );
+
+      // Selective Garment-Prop Unblocking checks
+      assert(
+        negSet.has("pleated skirt") && negSet.has("maid headdress"),
+        `${ch.id} (${gm}) must enforce core APRON_ONLY_UC garment locks`
+      );
+      if (expectedUnblockShirtHwd.has(ch.id)) {
+        assert(
+          !negSet.has("shirt") &&
+            !negSet.has("collared shirt") &&
+            negSet.has("dressed male") &&
+            negSet.has("man wearing suit"),
+          `${ch.id} (${gm}) must unblock shirt/collared shirt prop while guarding dressed male/man wearing suit`
+        );
+      } else {
+        assert(
+          negSet.has("shirt") && negSet.has("collared shirt"),
+          `${ch.id} (${gm}) must keep shirt/collared shirt blocked in APRON_ONLY_UC`
+        );
+      }
+      if (expectedUnblockJacketHwd.has(ch.id)) {
+        assert(
+          !negSet.has("jacket") &&
+            !negSet.has("red jacket") &&
+            negSet.has("dressed male") &&
+            negSet.has("man wearing suit"),
+          `${ch.id} (${gm}) must unblock jacket/red jacket prop while guarding dressed male/man wearing suit`
+        );
+      } else {
+        assert(
+          negSet.has("jacket"),
+          `${ch.id} (${gm}) must keep jacket blocked in APRON_ONLY_UC`
+        );
+      }
+
+      // Chest-bib coverage vs. chest-interaction checks
+      if (expectedChestCoveredHwd.has(ch.id)) {
+        assert(
+          sp.posPrompt.includes("intact apron bib covering front chest") &&
+            negSet.has("nipples") &&
+            negSet.has("areolae"),
+          `${ch.id} (${gm}) chest_covered scene must keep intact front bib and block nipples/areolae`
+        );
+        if (gm === "femboy") {
+          assert(
+            !sp.posPrompt.includes("tiny pink nipples"),
+            `${ch.id} (femboy) chest_covered scene must omit tiny pink nipples to avoid pos/neg conflict`
+          );
+        }
+      } else if (ch.id === "HWD05" || ch.id === "HWD06" || ch.id === "HWD11" || ch.id === "HWD12") {
+        assert(
+          !negSet.has("nipples"),
+          `${ch.id} (${gm}) active chest-interaction scene must not block nipples in Negative`
+        );
+      }
+
+      // Barefoot & FOOT_ANAT_UC checks
+      if (expectedBarefootHwd.has(ch.id)) {
+        assert(
+          negSet.has("thighhighs") && negSet.has("stockings") && negSet.has("socks"),
+          `${ch.id} (${gm}) barefoot scene must block thighhighs/stockings/socks`
+        );
+        for (const ftTok of footAnatUcTokensForHwd) {
+          assert(negSet.has(ftTok), `${ch.id} (${gm}) barefoot scene missing FOOT_ANAT_UC '${ftTok}'`);
+        }
+      }
+      if (ch.id === "HWD09") {
+        assert(
+          negSet.has("letterboxed") && negSet.has("pillarboxed"),
+          "HWD09 missing landscape anti-letterbox UC"
+        );
+      }
+
+      // Multi-Box vs Single-Box & Gender Mode layout checks
+      const isHwdMultiBox = gm !== "normal" || ch.id === "HWD15";
+      assert.equal(
+        sp.posPrompt.startsWith("[Base Prompt]"),
+        isHwdMultiBox,
+        `${ch.id} (${gm}) Multi-Box routing mismatch`
+      );
+      if (gm === "femboy") {
+        const posWithoutNegWeights = sp.posPrompt.replace(/-\d+(?:\.\d+)?::[\s\S]*?::/g, "");
+        assert(
+          sp.posPrompt.includes("2boys, 1.55::yaoi::") &&
+            sp.posPrompt.includes("1.45::1boy::, 1.55::otoko no ko::") &&
+            sp.posPrompt.includes("target#anal") &&
+            sp.posPrompt.includes("source#anal") &&
+            sp.posPrompt.includes("-2.5::breasts, pussy, female::") &&
+            !/\bpussy\b|\bvaginal\b|\bbare breasts\b/i.test(posWithoutNegWeights),
+          `${ch.id} (femboy) must compile Multi-Box 2boys layout with zero female anatomy leaks`
+        );
+      } else if (ch.id === "HWD15" && gm === "normal") {
+        assert(
+          sp.posPrompt.includes("2girls, 1.55::yuri::") &&
+            sp.posPrompt.includes("pastel-blue frilly apron") &&
+            sp.posPrompt.includes("short periwinkle hair") &&
+            sp.posPrompt.includes("1.5::scissoring::"),
+          "HWD15 (normal) must compile contrast-hair/apron 2girls Yuri Multi-Box"
+        );
+      } else if (gm.startsWith("futa_")) {
+        assert(
+          sp.posPrompt.includes("1.6::futanari::") &&
+            /1\.45?::small penis::/.test(sp.posPrompt) &&
+            sp.posPrompt.includes("0.25::artist:pija (pianiishimo)::") &&
+            sp.posPrompt.includes("target#vaginal") &&
+            sp.posPrompt.includes("source#vaginal"),
+          `${ch.id} (${gm}) must compile Multi-Box Male-on-Futa layout with Style #6 pija tweak`
+        );
+      } else {
+        assert(
+          sp.posPrompt.includes("1girl, 1boy, hetero, faceless male"),
+          `${ch.id} (normal) must compile single-box 1girl+1boy hetero housework duo`
+        );
+      }
+
+      const tok = countSeparatedT5Tokens({
+        posPrompt: sp.posPrompt,
+        sceneNegPrompt: sp.negPrompt,
+        ucPresetMode: "heavy",
+        appendQuality: true,
+      });
+      const maxExpectedHwdPos = isHwdMultiBox ? 490 : 500;
+      assert(
+        tok.posTokens <= maxExpectedHwdPos && tok.negTokens <= 512,
+        `${ch.id} (${gm}) exceeded Housework T5 budget (${maxExpectedHwdPos}): pos=${tok.posTokens}, neg=${tok.negTokens}`
+      );
+      if (tok.posTokens > maxHouseworkPosTokens) maxHouseworkPosTokens = tok.posTokens;
+      if (isHwdMultiBox && tok.posTokens > maxHouseworkMultiBoxPosTokens) {
+        maxHouseworkMultiBoxPosTokens = tok.posTokens;
+      }
+      if (tok.negTokens > maxHouseworkNegTokens) maxHouseworkNegTokens = tok.negTokens;
+      houseworkVerifiedCount++;
+    }
+  }
+
+  // Verify non-sunlit Housework scenes (HWD03, HWD08, HWD12, HWD14) strip outdoor sun/daylight/sky tags across ALL non-explicit presets
+  for (const hNoSunId of ["HWD03", "HWD08", "HWD12", "HWD14"] as const) {
+    const firstHwdAnchor = OTHER_ACTION_TEMPLATES[hNoSunId].light_tags.split(",")[0].trim();
+    for (const lKey of nonExplicitLightKeys) {
+      const [hItem] = generateScenePrompts(
+        hNoSunId,
+        {
+          ...createDefaultCharacterConfig(),
+          lighting_preset: lKey,
+          custom_style_pos:
+            "sunlight, dappled sunlight, morning sunlight, afternoon sunlight, sun glare, light rays, daylight, clear blue sky, bright sky",
+          style_preset: "自定义画风（使用下方自定义画风框）",
+        },
+        "3rd"
+      );
+      const spH = splitPromptPosAndNeg(hItem.prompt);
+      assert(
+        spH.posPrompt.includes(firstHwdAnchor) &&
+          !/\bsunlight\b|\bdappled sunlight\b|\bmorning sunlight\b|\bafternoon sunlight\b|\blight rays\b|\bsun glare\b|\bdaylight\b|\bclear blue sky\b|\bbright sky\b/i.test(
+            spH.posPrompt
+          ),
+        `Non-sunlit Housework scene ${hNoSunId} under '${lKey}' leaked outdoor sun/sky or missed '${firstHwdAnchor}'`
+      );
+    }
+  }
+
+  // Verify HWD01 with other_use_scene_outfit=false + HWD08 femboy condom + X-Ray + transparent_bg + 3-Vibe 400 cap
+  const [hwd01Fallback] = generateScenePrompts(
+    "HWD01",
+    { ...hostileSfCfg, other_use_scene_outfit: false },
+    "3rd"
+  );
+  const spHwd01Fb = splitPromptPosAndNeg(hwd01Fallback.prompt);
+  const hwd01FbNeg = new Set(spHwd01Fb.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    !spHwd01Fb.posPrompt.includes("naked apron") &&
+      spHwd01Fb.posPrompt.includes("1.5::reverse bunnysuit::") &&
+      !hwd01FbNeg.has("collared shirt") &&
+      !hwd01FbNeg.has("pleated skirt"),
+    "HWD01 with other_use_scene_outfit=false must use left-column outfit without APRON_ONLY_UC"
+  );
+
+  const [hwd08FemboyAux] = generateScenePrompts(
+    "HWD08",
+    {
+      ...createDefaultCharacterConfig(),
+      gender_mode: "femboy",
+      enable_condom: true,
+      enable_uterus_xray: true,
+      pos_transparent_bg: true,
+      pos_token_limit: computeSafePosTokenLimit({ isV45: true, activeVibeCount: 3 }),
+    },
+    "3rd"
+  );
+  const spHwd08Aux = splitPromptPosAndNeg(hwd08FemboyAux.prompt);
+  const tokHwd08Aux = countSeparatedT5Tokens({
+    posPrompt: spHwd08Aux.posPrompt,
+    sceneNegPrompt: spHwd08Aux.negPrompt,
+    ucPresetMode: "heavy",
+    appendQuality: true,
+  });
+  assert(
+    spHwd08Aux.posPrompt.includes("1.5::intestines::, 1.5::cum in ass::") &&
+      spHwd08Aux.posPrompt.includes("1.4::condom::") &&
+      spHwd08Aux.posPrompt.includes("2.0::transparent background::") &&
+      tokHwd08Aux.posTokens <= 400,
+    `HWD08 femboy with condom+xray+transparent_bg+3Vibes failed checks (posTokens=${tokHwd08Aux.posTokens})`
+  );
+
+  // Verify .agents/skills/nai-housework-distraction/ hygiene (zero code/build vocabulary leaks)
+  const houseworkSkillDir = path.resolve(process.cwd(), "../.agents/skills/nai-housework-distraction");
+  for (const relDoc of ["SKILL.md", "references/housework_scene_catalog.md"]) {
+    const docPath = path.join(houseworkSkillDir, relDoc);
+    assert(fs.existsSync(docPath), `Missing housework skill doc: ${docPath}`);
+    const docText = fs.readFileSync(docPath, "utf8");
+    assert(
+      !/storyEngine|engineConstants|otherActionsData|houseworkActionsData|verify_engine|NovelAI_Workbench\.html|vite build|tsc --noEmit|npm --prefix/i.test(
+        docText
+      ),
+      `${relDoc} leaked codebase/build vocabulary`
+    );
+  }
+
+  // 17.10 Verify 4-Stage Substitute Photo-Over-Face & Post-Coital Belly-Press Series (PS01..PS04 = 16 Prompts), Dynamic Photo Swap, Photo-Safe UC, & Skill Hygiene
+  const photoSubChapters = OTHER_ACTION_CHAPTERS.filter((c) => c.id.startsWith("PS"));
+  assert.equal(photoSubChapters.length, 4, "Expected 4 Photo-Substitute scenes (PS01..PS04)");
+  assert.equal(
+    resolveContrastingPhotoPortrait("laffey (azur lane)", "").char_tag,
+    "javelin (azur lane)",
+    "Laffey supine must pair Javelin portrait photo"
+  );
+  assert.equal(
+    resolveContrastingPhotoPortrait("javelin (azur lane)", "").char_tag,
+    "laffey (azur lane)",
+    "Javelin supine must dynamically swap portrait photo to Laffey"
+  );
+  assert.equal(
+    resolveContrastingPhotoPortrait("custom_char", "short purple hair").char_tag,
+    "laffey (azur lane)",
+    "Purple-haired supine character must dynamically swap portrait photo to Laffey"
+  );
+
+  const photoGuardUcTokens = PHOTO_SUBSTITUTE_GUARD_UC.split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  let maxPhotoSubPosTokens = 0;
+  let maxPs02MultiBoxTokens = 0;
+  let maxPhotoSubNegTokens = 0;
+  let photoSubVerifiedCount = 0;
+
+  for (const ch of photoSubChapters) {
+    const tpl = OTHER_ACTION_TEMPLATES[ch.id];
+    assert(tpl && tpl.is_photo_substitute_scene, `Missing or unmarked Photo-Substitute template ${ch.id}`);
+    assert.equal(Boolean(tpl.is_multibox_photo_anchor), ch.id === "PS02", `${ch.id} multibox flag mismatch`);
+    assert.equal(Boolean(tpl.is_aftersex_belly_press), ch.id === "PS04", `${ch.id} belly-press flag mismatch`);
+
+    for (const gm of ["normal", "femboy", "futa_no_balls", "futa_with_balls"] as const) {
+      const psCfg = {
+        ...createDefaultCharacterConfig(),
+        extra_char_tags: "long white hair, red eyes",
+        expr_heart_eyes: true,
+        gender_mode: gm,
+        style_preset: gm.startsWith("futa_") ? style6FutaKey : style6Key,
+        lighting_preset: "🔄 随画风与本幕默认光影（不额外覆盖）",
+        body_preset:
+          Object.keys(BODY_PRESETS).find((k) => k.includes("丰满沙漏")) ||
+          createDefaultCharacterConfig().body_preset,
+      };
+      const [item] = generateScenePrompts(ch.id, psCfg, "3rd");
+      assertZeroNestedColons(item.prompt, `${ch.id} (${gm})`);
+      const sp = splitPromptPosAndNeg(item.prompt);
+      assert(
+        !/-?\d+(?:\.\d+)?::/.test(sp.negPrompt),
+        `${ch.id} (${gm}) negPrompt must contain zero w::tag:: weights`
+      );
+      const negSet = new Set(sp.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+
+      // Critical Rule 1 (#70 §3.1): NEVER put bare `2girls` in Negative UC
+      assert(
+        !negSet.has("2girls"),
+        `${ch.id} (${gm}) must NEVER place bare '2girls' in Negative UC`
+      );
+      for (const pgTok of photoGuardUcTokens) {
+        assert(
+          negSet.has(pgTok),
+          `${ch.id} (${gm}) missing PHOTO_SUBSTITUTE_GUARD_UC token '${pgTok}'`
+        );
+      }
+
+      // Critical Rule 2 (#70 §3.2): Default Laffey supine pairs Javelin photo & strips supine eye tags
+      const posWithoutNegWeights = sp.posPrompt.replace(/-\d+(?:\.\d+)?::[\s\S]*?::/g, "");
+      assert(
+        item.subTitle.includes("📸替身盖照·标枪笑颜照") &&
+          posWithoutNegWeights.includes("javelin (azur lane)") &&
+          posWithoutNegWeights.includes("purple hair") &&
+          posWithoutNegWeights.includes("bright green eyes") &&
+          !/\bred eyes\b|\bgradient eyes\b|\bheart-shaped pupils\b/i.test(posWithoutNegWeights),
+        `${ch.id} (${gm}) failed default Javelin photo pairing or leaked supine Laffey eye/pupil tags through photo`
+      );
+
+      // Stage-specific checks (PS01/02/03/04)
+      if (ch.id === "PS02") {
+        assert(
+          sp.posPrompt.startsWith("[Base Prompt]") &&
+            sp.posPrompt.includes("[Character 1 (C3)]") &&
+            sp.posPrompt.includes("[Character 2 (C2)]") &&
+            sp.posPrompt.includes("1.75::photograph::") &&
+            sp.posPrompt.includes("head and neck portrait photo only"),
+          `PS02 (${gm}) must compile Multi-Box [C3 Body + C2 Photo] coordinate anchor`
+        );
+      } else {
+        assert(
+          !sp.posPrompt.startsWith("[Base Prompt]"),
+          `${ch.id} (${gm}) must compile Single-Box T5 spatial containment layout`
+        );
+      }
+
+      if (ch.id === "PS03") {
+        assert(
+          sp.posPrompt.includes("unbuttoned open white ruffled bodice") &&
+            sp.posPrompt.includes("1.5::tears::") &&
+            !negSet.has("nipples"),
+          `PS03 (${gm}) must render unbuttoned bodice & tears without blocking nipples`
+        );
+      } else {
+        assert(
+          negSet.has("nipples") && negSet.has("areolae"),
+          `${ch.id} (${gm}) covered-bodice stage must block nipples/areolae`
+        );
+      }
+
+      // Critical Rule 3 (#70 §3.3): PS04 Continuous Arm Guard (NEVER `male torso` in UC!)
+      if (ch.id === "PS04") {
+        assert(
+          !negSet.has("male torso") &&
+            negSet.has("floating arm") &&
+            negSet.has("detached arm") &&
+            negSet.has("severed arm") &&
+            negSet.has("penetration") &&
+            sp.posPrompt.includes("1.65::after sex::") &&
+            sp.posPrompt.includes("1.65::bare stomach::") &&
+            sp.posPrompt.includes("1.65::pov hands::") &&
+            sp.posPrompt.includes("continuous tanned male arm"),
+          `PS04 (${gm}) failed continuous bottom-border arm or post-coital belly-press guards`
+        );
+        if (gm === "normal") {
+          assert(
+            negSet.has("penis") && negSet.has("testicles"),
+            "PS04 (normal) must block penis/testicles during post-coital belly press"
+          );
+        }
+      }
+
+      if (gm === "femboy") {
+        assert(
+          sp.posPrompt.includes("otoko no ko") &&
+            sp.posPrompt.includes("flat chest") &&
+            !/\bpussy\b|\bvaginal\b|\bbare breasts\b/i.test(posWithoutNegWeights),
+          `${ch.id} (femboy) leaked female anatomy into Positive`
+        );
+      } else if (gm.startsWith("futa_")) {
+        assert(
+          sp.posPrompt.includes("0.25::artist:pija (pianiishimo)::") &&
+            /1\.45?::small penis::/.test(posWithoutNegWeights),
+          `${ch.id} (${gm}) must include Style #6 Futa pija tweak and small penis anchor`
+        );
+      }
+
+      const tok = countSeparatedT5Tokens({
+        posPrompt: sp.posPrompt,
+        sceneNegPrompt: sp.negPrompt,
+        ucPresetMode: "heavy",
+        appendQuality: true,
+      });
+      const maxExpectedPsPos = ch.id === "PS02" ? 490 : 500;
+      assert(
+        tok.posTokens <= maxExpectedPsPos && tok.negTokens <= 512,
+        `${ch.id} (${gm}) exceeded Photo-Substitute T5 budget (${maxExpectedPsPos}): pos=${tok.posTokens}, neg=${tok.negTokens}`
+      );
+      if (tok.posTokens > maxPhotoSubPosTokens) maxPhotoSubPosTokens = tok.posTokens;
+      if (ch.id === "PS02" && tok.posTokens > maxPs02MultiBoxTokens) {
+        maxPs02MultiBoxTokens = tok.posTokens;
+      }
+      if (tok.negTokens > maxPhotoSubNegTokens) maxPhotoSubNegTokens = tok.negTokens;
+      photoSubVerifiedCount++;
+    }
+
+    // Dynamic Photo-Swap Anti-Collision Check when Supine Character IS Javelin!
+    const [javItem] = generateScenePrompts(
+      ch.id,
+      {
+        ...createDefaultCharacterConfig(),
+        preset_name: "标枪 Javelin（碧蓝航线）",
+        char_tag: "javelin (azur lane)",
+        eng_name: "Javelin",
+        extra_char_tags: "short purple hair, bright green eyes",
+      },
+      "3rd"
+    );
+    const spJav = splitPromptPosAndNeg(javItem.prompt);
+    const javPosNoNegW = spJav.posPrompt.replace(/-\d+(?:\.\d+)?::[\s\S]*?::/g, "");
+    assert(
+      javItem.subTitle.includes("📸替身盖照·拉菲笑颜照") &&
+        javPosNoNegW.includes("javelin (azur lane)") &&
+        javPosNoNegW.includes("laffey (azur lane)") &&
+        javPosNoNegW.includes("white rabbit-ear hairband") &&
+        !/\bbright green eyes\b/i.test(javPosNoNegW),
+      `${ch.id} with Javelin supine failed to swap photo portrait to Laffey or leaked Javelin's green eyes`
+    );
+  }
+
+  // Verify PS01 with other_use_scene_outfit=false + PS04 condom + femboy X-Ray + transparent_bg + 3-Vibe 400 cap
+  const [ps01Fallback] = generateScenePrompts(
+    "PS01",
+    { ...hostileSfCfg, other_use_scene_outfit: false },
+    "3rd"
+  );
+  const spPs01Fb = splitPromptPosAndNeg(ps01Fallback.prompt);
+  const ps01FbNeg = new Set(spPs01Fb.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  assert(
+    !spPs01Fb.posPrompt.includes("cold-shoulder maid dress") &&
+      spPs01Fb.posPrompt.includes("1.5::reverse bunnysuit::") &&
+      !ps01FbNeg.has("2girls"),
+    "PS01 with other_use_scene_outfit=false must use left-column outfit while keeping photo-safe UC"
+  );
+
+  const [ps04FemboyAux] = generateScenePrompts(
+    "PS04",
+    {
+      ...createDefaultCharacterConfig(),
+      gender_mode: "femboy",
+      enable_condom: true,
+      enable_uterus_xray: true,
+      pos_transparent_bg: true,
+      pos_token_limit: computeSafePosTokenLimit({ isV45: true, activeVibeCount: 3 }),
+    },
+    "3rd"
+  );
+  const spPs04Aux = splitPromptPosAndNeg(ps04FemboyAux.prompt);
+  const ps04AuxNeg = new Set(spPs04Aux.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+  const tokPs04Aux = countSeparatedT5Tokens({
+    posPrompt: spPs04Aux.posPrompt,
+    sceneNegPrompt: spPs04Aux.negPrompt,
+    ucPresetMode: "heavy",
+    appendQuality: true,
+  });
+  assert(
+    spPs04Aux.posPrompt.includes("1.5::intestines::") &&
+      spPs04Aux.posPrompt.includes("cum in ass") &&
+      spPs04Aux.posPrompt.includes("1.65::used condom::") &&
+      ps04AuxNeg.has("condom on penis") &&
+      !ps04AuxNeg.has("2girls") &&
+      !ps04AuxNeg.has("male torso") &&
+      spPs04Aux.posPrompt.includes("2.0::transparent background::") &&
+      tokPs04Aux.posTokens <= 400,
+    `PS04 femboy with condom+xray+transparent_bg+3Vibes failed checks (posTokens=${tokPs04Aux.posTokens})`
+  );
+
+  // Verify .agents/skills/nai-photo-substitute/ hygiene (zero code/build vocabulary leaks)
+  const photoSubSkillDir = path.resolve(process.cwd(), "../.agents/skills/nai-photo-substitute");
+  for (const relDoc of ["SKILL.md", "references/photo_substitute_catalog.md"]) {
+    const docPath = path.join(photoSubSkillDir, relDoc);
+    assert(fs.existsSync(docPath), `Missing photo-substitute skill doc: ${docPath}`);
+    const docText = fs.readFileSync(docPath, "utf8");
+    assert(
+      !/storyEngine|engineConstants|otherActionsData|photoSubstituteActionsData|verify_engine|NovelAI_Workbench\.html|vite build|tsc --noEmit|npm --prefix/i.test(
+        docText
+      ),
+      `${relDoc} leaked codebase/build vocabulary`
+    );
+  }
+
   // 18. Verify Opus Battery Percentage & Recharge Formatter
   const mockSubBase = {
     tier: 3,
@@ -2623,8 +4558,138 @@ async function main(): Promise<void> {
   assert.equal(battNeg.level, "low");
   assert.equal(battNeg.rechargeHint, "约15分恢复+1%");
 
+  // 19. Verify Responsive Space-Budget Portrait Compact Stage Math & CSS/UI Invariants
+  assert.equal(EXPECTED_FILM_TOOLBAR_W, 680, "EXPECTED_FILM_TOOLBAR_W must equal 680");
+  assert.equal(EXPECTED_DUAL_STACK_H, 882, "EXPECTED_DUAL_STACK_H must equal 882");
+
+  // Landscape Guard: ANY landscape orientation (desktop, laptop, tablet landscape, phone landscape) -> false
+  assert.equal(
+    computePortraitCompactStage({ winW: 1920, winH: 1080, colW: 1166, colH: 1030 }),
+    false,
+    "Desktop landscape 1920x1080 must never activate portrait-compact-stage"
+  );
+  assert.equal(
+    computePortraitCompactStage({ winW: 1366, winH: 768, colW: 612, colH: 718 }),
+    false,
+    "Laptop landscape 1366x768 (even with narrow colW) must never activate portrait-compact-stage"
+  );
+  assert.equal(
+    computePortraitCompactStage({ winW: 844, winH: 390, colW: 844, colH: 290 }),
+    false,
+    "Phone landscape 844x390 must never activate portrait-compact-stage"
+  );
+  assert.equal(
+    computePortraitCompactStage({ winW: 667, winH: 375, colW: 667, colH: 275 }),
+    false,
+    "Small phone landscape 667x375 must never activate portrait-compact-stage"
+  );
+
+  // Portrait Space Check: wide tablets >= 680px or tall center stage >= 922px stay uncramped (false)
+  assert.equal(
+    computePortraitCompactStage({ winW: 820, winH: 1180, colW: 820, colH: 1040 }),
+    false,
+    "Wide portrait tablet 820x1180 must stay uncramped (colW >= 680)"
+  );
+  assert.equal(
+    computePortraitCompactStage({ winW: 768, winH: 1024, colW: 768, colH: 884 }),
+    false,
+    "iPad Mini portrait 768x1024 must stay uncramped (colW >= 680)"
+  );
+  assert.equal(
+    computePortraitCompactStage({ winW: 520, winH: 1120, colW: 520, colH: 980 }),
+    false,
+    "Tall portrait container (colH >= 922) can fit stacked drawers and must stay false"
+  );
+
+  // Narrow Portrait Viewports (< 680px width AND < 922px height) -> true
+  assert.equal(
+    computePortraitCompactStage({ winW: 390, winH: 844, colW: 390, colH: 704 }),
+    true,
+    "Phone portrait 390x844 must activate portrait-compact-stage"
+  );
+  assert.equal(
+    computePortraitCompactStage({ winW: 430, winH: 932, colW: 430, colH: 792 }),
+    true,
+    "Large phone portrait 430x932 must activate portrait-compact-stage"
+  );
+  assert.equal(
+    computePortraitCompactStage({ winW: 520, winH: 860, colW: 520, colH: 720 }),
+    true,
+    "Resized narrow portrait window 520x860 must activate portrait-compact-stage"
+  );
+
+  // Transient virtual keyboard shrink vs real rotation to landscape
+  assert.equal(
+    computePortraitCompactStage({
+      winW: 390,
+      winH: 360,
+      colW: 390,
+      colH: 220,
+      wasCompact: true,
+      lastCompactWinW: 390,
+      isTextInputFocused: true,
+    }),
+    true,
+    "On-screen keyboard shrinking innerHeight at identical portrait width must preserve compact overlay"
+  );
+  assert.equal(
+    computePortraitCompactStage({
+      winW: 844,
+      winH: 390,
+      colW: 844,
+      colH: 290,
+      wasCompact: true,
+      lastCompactWinW: 390,
+      isTextInputFocused: true,
+    }),
+    false,
+    "Rotating phone to 844x390 landscape even with focused input must immediately exit portrait-compact-stage"
+  );
+
+  const appTsSrc = fs.readFileSync(path.resolve(process.cwd(), "src/ui/app.ts"), "utf8");
+  const wbCssSrc = fs.readFileSync(path.resolve(process.cwd(), "src/styles/workbench.css"), "utf8");
+  assert(
+    !/navigator\.userAgent/i.test(appTsSrc),
+    "app.ts must use pure space-budget math with zero User-Agent sniffing"
+  );
+  assert(
+    appTsSrc.includes("evaluateCenterStageSpaceBudget") &&
+      appTsSrc.includes("film-move-folder-select") &&
+      appTsSrc.includes("prompt-focus-seg") &&
+      appTsSrc.includes("▾ 收起看图") &&
+      appTsSrc.includes("bindHorizontalWheelScroll") &&
+      appTsSrc.includes("mobile-left-preset-bar") &&
+      appTsSrc.includes("preset-select-left-mirror"),
+    "app.ts must include evaluateCenterStageSpaceBudget, touch folder-move select, prompt-focus-seg, ▾ 收起看图, bindHorizontalWheelScroll, and synced mobile-left-preset-bar"
+  );
+  assert(
+    wbCssSrc.includes(".col-center.portrait-compact-stage .filmstrip-bar:not(.expanded) .filmstrip-toolbar") &&
+      wbCssSrc.includes(".col-center.portrait-compact-stage .filmstrip-bar.expanded") &&
+      wbCssSrc.includes(".col-center.portrait-compact-stage .prompt-drawer:not(.collapsed)") &&
+      wbCssSrc.includes('[data-prompt-focus="pos"]') &&
+      wbCssSrc.includes('[data-prompt-focus="neg"]') &&
+      wbCssSrc.includes(".mobile-left-preset-bar") &&
+      wbCssSrc.includes(".preset-select-left-mirror"),
+    "workbench.css must define portrait-compact-stage rules and mobile-left-preset-bar mirror rules"
+  );
+  // Anti-collision, up-front mobile preset bar (order: -1), & sleek mobile control size static guards
+  const mobileMediaSlice = wbCssSrc.slice(wbCssSrc.indexOf("@media (max-width: 768px)"));
+  assert(
+    mobileMediaSlice.includes("flex: 1 1 100%;") &&
+      /\.topbar-group-left\s*\{[\s\S]*?order:\s*-1;/m.test(mobileMediaSlice) &&
+      mobileMediaSlice.includes('#app[data-mobile-col="left"] .topbar-group-left') &&
+      /\.col-center\.portrait-compact-stage\s+\.prompt-drawer:not\(\.collapsed\)\s*\{[\s\S]*?top:\s*0;/m.test(
+        wbCssSrc
+      ) &&
+      /\.col-center\.portrait-compact-stage\s+\.filmstrip-bar\.expanded\s*\{[\s\S]*?top:\s*0;/m.test(
+        wbCssSrc
+      ) &&
+      !/font-size:\s*16px/i.test(mobileMediaSlice),
+    "workbench.css must keep .topbar-group-left at order: -1 on <=768px, flex: 1 1 100% on wrapped prompt rows, top: 0 full-stage portrait overlays, and sleek <16px mobile control typography"
+  );
+
   console.log(
-    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts + 120 SF01~SF30 Other-Action prompts: 83 Positions x2 + MA0~MA11 + 30 SF + Free Action, 2-to-3-Col Folder Organizer + Stage Progression + MCP File Manager + Pixiv Bar/Mosaic Censor Verified, POV Optical & Gaze Audit + Femboy/Futa/TN01~TN12/BG01~BG20/SF01~SF30 Conflict-Free Transform Passed, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
+    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts + 120 SF01~SF30 + ${kitchenVerifiedCount} Kitchen KTD01~KTD60/KT01~KT46 [maxPos=${maxKitchenPosTokens}<=500, MultiBox490=${maxMultiBox490PosTokens}<=490] + ${poolVerifiedCount} Pool PLD01~PLD22/PL01~PL11 [maxPos=${maxPoolPosTokens}<=500, PLD18=${maxPld18PosTokens}<=490] + ${specimenVerifiedCount} Specimen CV01~CV07 [maxPos=${maxSpecimenPosTokens}<=500, maxNeg=${maxSpecimenNegTokens}<=512] + ${bathroomVerifiedCount} Bathroom BT01~BT08 [maxPos=${maxBathroomPosTokens}<=500, maxNeg=${maxBathroomNegTokens}<=512] + ${houseworkVerifiedCount} Housework HWD01~HWD15 [maxPos=${maxHouseworkPosTokens}<=500, MultiBox490=${maxHouseworkMultiBoxPosTokens}<=490, maxNeg=${maxHouseworkNegTokens}<=512] + ${photoSubVerifiedCount} PhotoSubstitute PS01~PS04 [maxPos=${maxPhotoSubPosTokens}<=500, PS02=${maxPs02MultiBoxTokens}<=490, maxNeg=${maxPhotoSubNegTokens}<=512] = ${totalPrompts + 120 + kitchenVerifiedCount + poolVerifiedCount + specimenVerifiedCount + bathroomVerifiedCount + houseworkVerifiedCount + photoSubVerifiedCount} total prompts: 83 Positions x2 + MA0~MA11 + 203 Other Actions + Free Action, 6 Swimwear Outfits + 21 Dedicated Kitchen/Pool/Bathroom/Housework Lighting Presets + CV01~CV07 + BT01~BT08 + HWD01~HWD15 + PS01~PS04 Locks Verified, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
   );
 }
 

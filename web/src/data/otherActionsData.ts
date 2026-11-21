@@ -1,3 +1,109 @@
+import {
+  ALL_RAW_KITCHEN_ENTRIES,
+  APRON_ONLY_UC,
+  FEMALE_APRON_NO_LEGWEAR,
+  FEMALE_NAKED_APRON_CORE,
+  FEMALE_NAKED_APRON_REAR_ONLY_CORE,
+  FEMBOY_APRON_NO_LEGWEAR,
+  FEMBOY_NAKED_APRON_CORE,
+  FOOT_ANAT_UC,
+  FUTA_APRON_NO_LEGWEAR,
+  FUTA_NAKED_APRON_CORE,
+  KITCHEN_LANDSCAPE_ANTI_LETTERBOX_UC,
+  kitchenLegwearTagsFor,
+  type KitchenDuoMeta,
+  type KitchenFootwearMode,
+  type KitchenFutaYuriSpec,
+  type KitchenLightMode,
+} from "./kitchenActionsData";
+import {
+  ALL_RAW_POOL_ENTRIES,
+  POOL_LIGHT_DEFAULTS,
+  POOL_SWIM_UC,
+  POOL_SWIMWEAR_SPECS,
+  type PoolActionCategory,
+  type PoolDuoMeta,
+  type PoolLightMode,
+  type PoolSwimsuitStyle,
+  type PoolSwimwearPresetSpec,
+} from "./poolActionsData";
+import {
+  ALL_RAW_SPECIMEN_ENTRIES,
+  SPECIMEN_STOCKED_FRIDGE_GROCERY_UC,
+  SPECIMEN_YANDERE_GUARD_UC,
+  YANDERE_SPECIMEN_EXPR,
+  type SpecimenActionCategory,
+  type SpecimenDuoMeta,
+} from "./specimenActionsData";
+import {
+  ALL_RAW_BATHROOM_ENTRIES,
+  BATHROOM_LIGHT_DEFAULTS,
+  BATHROOM_TOWEL_UC,
+  type BathroomActionCategory,
+  type BathroomLightMode,
+} from "./bathroomActionsData";
+import {
+  ALL_RAW_HOUSEWORK_ENTRIES,
+  HOUSEWORK_LIGHT_DEFAULTS,
+  type HouseworkActionCategory,
+  type HouseworkDuoMeta,
+  type HouseworkLightMode,
+} from "./houseworkActionsData";
+import {
+  ALL_RAW_PHOTO_SUBSTITUTE_ENTRIES,
+  PHOTO_SUBSTITUTE_BELLY_PRESS_ARM_UC,
+  PHOTO_SUBSTITUTE_GUARD_UC,
+  resolveContrastingPhotoPortrait,
+  type PhotoSubstituteCategory,
+  type PhotoSubstitutePortraitSpec,
+  type PhotoSubstituteStageKind,
+} from "./photoSubstituteActionsData";
+
+export {
+  APRON_ONLY_UC,
+  BATHROOM_LIGHT_DEFAULTS,
+  BATHROOM_TOWEL_UC,
+  FEMALE_APRON_NO_LEGWEAR,
+  FEMALE_NAKED_APRON_CORE,
+  FEMALE_NAKED_APRON_REAR_ONLY_CORE,
+  FEMBOY_APRON_NO_LEGWEAR,
+  FEMBOY_NAKED_APRON_CORE,
+  FOOT_ANAT_UC,
+  FUTA_APRON_NO_LEGWEAR,
+  FUTA_NAKED_APRON_CORE,
+  HOUSEWORK_LIGHT_DEFAULTS,
+  KITCHEN_LANDSCAPE_ANTI_LETTERBOX_UC,
+  kitchenLegwearTagsFor,
+  PHOTO_SUBSTITUTE_BELLY_PRESS_ARM_UC,
+  PHOTO_SUBSTITUTE_GUARD_UC,
+  POOL_LIGHT_DEFAULTS,
+  POOL_SWIM_UC,
+  POOL_SWIMWEAR_SPECS,
+  resolveContrastingPhotoPortrait,
+  SPECIMEN_STOCKED_FRIDGE_GROCERY_UC,
+  SPECIMEN_YANDERE_GUARD_UC,
+  YANDERE_SPECIMEN_EXPR,
+  type BathroomActionCategory,
+  type BathroomLightMode,
+  type HouseworkActionCategory,
+  type HouseworkDuoMeta,
+  type HouseworkLightMode,
+  type KitchenDuoMeta,
+  type KitchenFootwearMode,
+  type KitchenFutaYuriSpec,
+  type KitchenLightMode,
+  type PhotoSubstituteCategory,
+  type PhotoSubstitutePortraitSpec,
+  type PhotoSubstituteStageKind,
+  type PoolActionCategory,
+  type PoolDuoMeta,
+  type PoolLightMode,
+  type PoolSwimsuitStyle,
+  type PoolSwimwearPresetSpec,
+  type SpecimenActionCategory,
+  type SpecimenDuoMeta,
+};
+
 export type SfCameraMode = "mirror" | "direct" | "ui_viewfinder" | "ui_livestream";
 export type SfLightingMode =
   | "indoor_natural"
@@ -16,6 +122,9 @@ export interface OtherActionTemplate {
   canvas: string;
   camera_mode: SfCameraMode;
   lighting_mode: SfLightingMode;
+  kitchen_light_mode?: KitchenLightMode;
+  footwear_mode?: KitchenFootwearMode;
+  is_foot_focus?: boolean;
   light_badge: string;
   light_tags: string;
   light_prose: string;
@@ -45,6 +154,43 @@ export interface OtherActionTemplate {
   allow_text_ui?: boolean;
   keep_wet_clothes?: boolean;
   allow_school_canon?: boolean;
+  is_kitchen_scene?: boolean;
+  is_kitchen_duo?: boolean;
+  kitchen_duo?: KitchenDuoMeta;
+  is_pool_scene?: boolean;
+  is_pool_duo?: boolean;
+  pool_light_mode?: PoolLightMode;
+  swimsuit_style?: PoolSwimsuitStyle;
+  swimsuit_state_override?: string;
+  pool_expr_tags?: string;
+  pool_duo?: PoolDuoMeta;
+  is_specimen_scene?: boolean;
+  is_specimen_duo?: boolean;
+  is_nocturnal_fridge?: boolean;
+  builtin_xray?: boolean;
+  allow_speculum?: boolean;
+  specimen_outfit_neg?: string;
+  femboy_core_prop_tags?: string;
+  specimen_expr_tags?: string;
+  specimen_duo?: SpecimenDuoMeta;
+  is_bathroom_scene?: boolean;
+  bathroom_light_mode?: BathroomLightMode;
+  allow_smartphone_prop?: boolean;
+  femboy_framing_tags?: string;
+  bathroom_expr_tags?: string;
+  is_housework_scene?: boolean;
+  is_housework_duo?: boolean;
+  housework_light_mode?: HouseworkLightMode;
+  barefoot?: boolean;
+  chest_covered?: boolean;
+  unblock_prop_shirt?: boolean;
+  unblock_prop_jacket?: boolean;
+  housework_duo?: HouseworkDuoMeta;
+  is_photo_substitute_scene?: boolean;
+  is_multibox_photo_anchor?: boolean;
+  is_aftersex_belly_press?: boolean;
+  photo_substitute_stage?: PhotoSubstituteStageKind;
+  photo_substitute_expr_tags?: string;
 }
 
 export interface OtherActionChapter {
@@ -61,6 +207,18 @@ export const OTHER_ACTION_CATEGORIES: string[] = [
   "2. 场所露出",
   "3. 奇特机位",
   "4. 束缚与UI",
+  "7. 裸围厨房",
+  "8. 厨房干扰",
+  "9. 厨房单人",
+  "10. 饭菜双人",
+  "11. 饭菜单人",
+  "12. 泳池双人",
+  "13. 泳池伪装",
+  "14. 泳池单人",
+  "15. 储精自注",
+  "16. 浴室玩具",
+  "17. 家务干扰",
+  "18. 替身盖照",
 ];
 
 export const SF_MIRROR_UC = "pov hands, extra hands, 3 hands, extra fingers, bad hands";
@@ -923,8 +1081,250 @@ const RAW_SF_ENTRIES: RawSfEntry[] = [
   },
 ];
 
+const MAPPED_POOL_ENTRIES: RawSfEntry[] = ALL_RAW_POOL_ENTRIES.map((p) => {
+  const femboyProse = p.prose
+    .replace(/\bShe\b/g, "He")
+    .replace(/\bshe\b/g, "he")
+    .replace(/\bHer\b/g, "His")
+    .replace(/\bher\b/g, "his")
+    .replace(/\bsecond female swimmer\b/gi, "second male swimmer");
+  const soloLead = p.pool_duo
+    ? p.prose
+    : `${p.prose.charAt(0).toLowerCase()}${p.prose.slice(1)}`;
+  const femboySoloLead = p.pool_duo
+    ? femboyProse
+    : `${femboyProse.charAt(0).toLowerCase()}${femboyProse.slice(1)}`;
+  return {
+    id: p.id,
+    title: p.title,
+    sub: p.sub,
+    category: p.category,
+    canvas: p.canvas,
+    camera_mode: p.camera_mode,
+    lighting_mode: p.lighting_mode,
+    pool_light_mode: p.pool_light_mode,
+    swimsuit_style: p.swimsuit_style,
+    swimsuit_state_override: p.swimsuit_state_override,
+    is_foot_focus: p.is_foot_focus,
+    light_badge: p.light_badge,
+    light_tags: p.light_tags,
+    light_prose: p.light_prose,
+    builtin_outfit: p.builtin_outfit,
+    femboy_outfit: p.femboy_outfit,
+    framing_tags: p.framing_tags,
+    env_tags: p.env_tags,
+    core_prop_tags: p.core_prop_tags,
+    pool_expr_tags: p.pool_expr_tags,
+    female_tags: p.female_tags,
+    femboy_tags: p.femboy_tags,
+    futa_tags: p.futa_tags,
+    female_prose: soloLead,
+    femboy_prose: femboySoloLead,
+    futa_prose: soloLead,
+    extra_neg: p.extra_neg,
+    keep_wet_clothes: true,
+    is_pool_scene: true,
+    is_pool_duo: Boolean(p.pool_duo),
+    pool_duo: p.pool_duo,
+  };
+});
+
+const MAPPED_SPECIMEN_ENTRIES: RawSfEntry[] = ALL_RAW_SPECIMEN_ENTRIES.map((c) => {
+  const femboyProse = c.prose
+    .replace(
+      /to clearly expose the pink cervix within as she tilts an uncorked clear glass bottle pouring white fluid onto the cervix/gi,
+      "holding the canal open as he tilts an uncorked clear glass bottle pouring white fluid inside"
+    )
+    .replace(/\bShe\b/g, "He")
+    .replace(/\bshe\b/g, "he")
+    .replace(/\bHer\b/g, "His")
+    .replace(/\bher\b/g, "his");
+  const soloLead = c.specimen_duo
+    ? c.prose
+    : `${c.prose.charAt(0).toLowerCase()}${c.prose.slice(1)}`;
+  const femboySoloLead = c.specimen_duo
+    ? femboyProse
+    : `${femboyProse.charAt(0).toLowerCase()}${femboyProse.slice(1)}`;
+  return {
+    id: c.id,
+    title: c.title,
+    sub: c.sub,
+    category: c.category,
+    canvas: c.canvas,
+    camera_mode: c.camera_mode,
+    lighting_mode: c.lighting_mode,
+    is_nocturnal_fridge: c.is_nocturnal_fridge,
+    is_foot_focus: c.is_foot_focus,
+    builtin_xray: c.builtin_xray,
+    allow_speculum: c.allow_speculum,
+    light_badge: c.light_badge,
+    light_tags: c.light_tags,
+    light_prose: c.light_prose,
+    builtin_outfit: c.builtin_outfit,
+    femboy_outfit: c.femboy_outfit,
+    specimen_outfit_neg: c.specimen_outfit_neg,
+    framing_tags: c.framing_tags,
+    env_tags: c.env_tags,
+    core_prop_tags: c.core_prop_tags,
+    femboy_core_prop_tags: c.femboy_core_prop_tags,
+    specimen_expr_tags: c.specimen_expr_tags,
+    female_tags: c.female_tags,
+    femboy_tags: c.femboy_tags,
+    futa_tags: c.futa_tags,
+    female_prose: soloLead,
+    femboy_prose: femboySoloLead,
+    futa_prose: soloLead,
+    extra_neg: c.extra_neg,
+    is_specimen_scene: true,
+    is_specimen_duo: Boolean(c.specimen_duo),
+    specimen_duo: c.specimen_duo,
+  };
+});
+
+const MAPPED_BATHROOM_ENTRIES: RawSfEntry[] = ALL_RAW_BATHROOM_ENTRIES.map((b) => {
+  const femboyProse = b.prose
+    .replace(/\bShe\b/g, "He")
+    .replace(/\bshe\b/g, "he")
+    .replace(/\bHer\b/g, "His")
+    .replace(/\bher\b/g, "his");
+  const isFullSentenceLead = /^High-angle view/i.test(b.prose);
+  const soloLead = isFullSentenceLead
+    ? b.prose
+    : `${b.prose.charAt(0).toLowerCase()}${b.prose.slice(1)}`;
+  const femboySoloLead = isFullSentenceLead
+    ? femboyProse
+    : `${femboyProse.charAt(0).toLowerCase()}${femboyProse.slice(1)}`;
+  return {
+    id: b.id,
+    title: b.title,
+    sub: b.sub,
+    category: b.category,
+    canvas: b.canvas,
+    camera_mode: b.camera_mode,
+    lighting_mode: b.lighting_mode,
+    bathroom_light_mode: b.bathroom_light_mode,
+    is_foot_focus: b.is_foot_focus,
+    allow_smartphone_prop: b.allow_smartphone_prop,
+    light_badge: b.light_badge,
+    light_tags: b.light_tags,
+    light_prose: b.light_prose,
+    builtin_outfit: b.builtin_outfit,
+    femboy_outfit: b.femboy_outfit,
+    framing_tags: b.framing_tags,
+    femboy_framing_tags: b.femboy_framing_tags,
+    env_tags: b.env_tags,
+    core_prop_tags: b.core_prop_tags,
+    femboy_core_prop_tags: b.femboy_core_prop_tags,
+    bathroom_expr_tags: b.bathroom_expr_tags,
+    female_tags: b.female_tags,
+    femboy_tags: b.femboy_tags,
+    futa_tags: b.futa_tags,
+    female_prose: soloLead,
+    femboy_prose: femboySoloLead,
+    futa_prose: soloLead,
+    extra_neg: b.extra_neg,
+    keep_wet_clothes: true,
+    is_bathroom_scene: true,
+  };
+});
+
+const MAPPED_HOUSEWORK_ENTRIES: RawSfEntry[] = ALL_RAW_HOUSEWORK_ENTRIES.map((h) => {
+  const isSunlitMode =
+    h.housework_light_mode === "sunlit_living_dust" ||
+    h.housework_light_mode === "sunny_balcony_breeze" ||
+    h.housework_light_mode === "warm_bedroom_lamp";
+  const femApronCore = h.barefoot
+    ? "1.6::naked apron::, white frilly apron, nothing underneath, bare back"
+    : "1.6::naked apron::, white frilly apron, nothing underneath, bare back, white thighhighs";
+  const femboyProse = h.prose
+    .replace(/\bTwo girls in contrasting white and pastel-blue frilly naked aprons with front bibs covering their chests and soft sideboob showing,\s*/i, "Crossdressing boy in a white frilly naked apron with front bib covering his flat chest, ")
+    .replace(/\bboth girls\b/gi, "both boys")
+    .replace(/\bher\b/gi, "his")
+    .replace(/\bshe\b/gi, "he");
+  const futaProse = h.prose.replace(
+    /\bTwo girls in contrasting white and pastel-blue frilly naked aprons with front bibs covering their chests and soft sideboob showing,\s*/i,
+    "Futanari girl in a white frilly naked apron with front bib covering her chest and soft sideboob showing, "
+  );
+  return {
+    id: h.id,
+    title: h.title,
+    sub: h.sub,
+    category: h.category,
+    canvas: h.canvas,
+    camera_mode: "direct",
+    lighting_mode: isSunlitMode ? "sunlit_indoor" : "enclosed_indoor",
+    housework_light_mode: h.housework_light_mode,
+    barefoot: h.barefoot,
+    is_foot_focus: h.is_foot_focus,
+    chest_covered: h.chest_covered,
+    unblock_prop_shirt: h.unblock_prop_shirt,
+    unblock_prop_jacket: h.unblock_prop_jacket,
+    light_badge: h.light_badge,
+    light_tags: h.light_tags,
+    light_prose: h.light_prose,
+    builtin_outfit: `${femApronCore}, ${h.duo.apron_detail}`,
+    femboy_outfit: femApronCore,
+    framing_tags: h.framing_tags,
+    env_tags: h.env_tags,
+    core_prop_tags: h.core_prop_tags,
+    female_tags: h.female_tags,
+    femboy_tags: h.femboy_tags,
+    futa_tags: h.futa_tags,
+    female_prose: h.prose,
+    femboy_prose: femboyProse,
+    futa_prose: futaProse,
+    prose_outfit_phrase:
+      "in only a white frilly naked apron|in a white frilly naked apron",
+    extra_neg: h.extra_neg,
+    is_housework_scene: true,
+    is_housework_duo: true,
+    housework_duo: h.duo,
+  };
+});
+
+const MAPPED_PHOTO_SUBSTITUTE_ENTRIES: RawSfEntry[] = ALL_RAW_PHOTO_SUBSTITUTE_ENTRIES.map((ps) => ({
+  id: ps.id,
+  title: ps.title,
+  sub: ps.sub,
+  category: ps.category,
+  canvas: ps.canvas,
+  camera_mode: "direct",
+  lighting_mode: "indoor_natural",
+  chest_covered: ps.chest_covered,
+  light_badge: ps.light_badge,
+  light_tags: ps.light_tags,
+  light_prose: ps.light_prose,
+  builtin_outfit: ps.builtin_outfit,
+  femboy_outfit: ps.femboy_outfit,
+  framing_tags: ps.framing_tags,
+  env_tags: ps.env_tags,
+  core_prop_tags: ps.core_prop_tags,
+  photo_substitute_expr_tags: ps.expr_tags,
+  female_tags: ps.female_tags,
+  femboy_tags: ps.femboy_tags,
+  futa_tags: ps.futa_tags,
+  female_prose: "",
+  femboy_prose: "",
+  futa_prose: "",
+  extra_neg: ps.extra_neg,
+  is_photo_substitute_scene: true,
+  is_multibox_photo_anchor: ps.is_multibox_photo_anchor,
+  is_aftersex_belly_press: ps.is_aftersex_belly_press,
+  photo_substitute_stage: ps.stage_kind,
+}));
+
+const ALL_RAW_OTHER_ENTRIES: RawSfEntry[] = [
+  ...RAW_SF_ENTRIES,
+  ...ALL_RAW_KITCHEN_ENTRIES,
+  ...MAPPED_POOL_ENTRIES,
+  ...MAPPED_SPECIMEN_ENTRIES,
+  ...MAPPED_BATHROOM_ENTRIES,
+  ...MAPPED_HOUSEWORK_ENTRIES,
+  ...MAPPED_PHOTO_SUBSTITUTE_ENTRIES,
+];
+
 export const OTHER_ACTION_TEMPLATES: Record<string, OtherActionTemplate> = Object.fromEntries(
-  RAW_SF_ENTRIES.map((item) => {
+  ALL_RAW_OTHER_ENTRIES.map((item) => {
     const combinedScene = [item.framing_tags, item.env_tags, item.light_tags, item.core_prop_tags || ""]
       .filter(Boolean)
       .join(", ");
@@ -938,7 +1338,7 @@ export const OTHER_ACTION_TEMPLATES: Record<string, OtherActionTemplate> = Objec
   })
 );
 
-export const OTHER_ACTION_CHAPTERS: OtherActionChapter[] = RAW_SF_ENTRIES.map((item) => ({
+export const OTHER_ACTION_CHAPTERS: OtherActionChapter[] = ALL_RAW_OTHER_ENTRIES.map((item) => ({
   id: item.id,
   title: item.title,
   sub: item.sub,

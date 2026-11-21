@@ -1,41 +1,39 @@
 ---
 name: nai-cg-variations
 description: >-
-  Guides creation of high-resolution character variations (CG expressions,
-  outfit states, and Before & After split-screen comparisons) in NovelAI V4/V5
-  without trait bleeding or resolution loss. Use this skill when generating
-  Before & After diffs, 2koma comic splits, or upscaling multi-panel outputs.
+  Practical reference for creating multi-panel Before & After split-screen
+  comparisons (2koma), expression/outfit CG variations, and high-resolution
+  panel redraws in NovelAI V4.5 / V5 without cross-panel trait bleeding.
 ---
 
-# NovelAI Character Variations & Split-Screen Diff Workflow
+# NovelAI Character Variations & Split-Screen (`2koma`) Guide
 
-Use this skill when building Before & After prompts (left clothed with underwear vs. right unclothed explicit state), expression/outfit variations (人物差分), or solving low-resolution crops.
+Use this reference when composing Before & After split-screen comparisons (e.g., clothed left panel vs. contrasting right panel), character expression/costume variations (人物差分), or crisp high-resolution panel refinements.
 
-## 1. Golden Architecture for `Before & After` Split Screens (NAI V5 / V4 Multi-Character)
+## 1. Anti-Bleed Multi-Character Layout for `Before & After` Split Screens
 
-Single-box `2koma` prompts inevitably suffer from **concept bleeding** when the left side requires `miniskirt, white panties` and the right side requires `nude, spread pussy` (either the right side grows phantom pink/yellow panties, or global anti-panty negatives strip the left side and blur the crotch).
+Single-box `2koma` prompts frequently suffer from **cross-panel concept bleeding** whenever one half is clothed (`miniskirt, white panties`) and the other half is unclothed or in a contrasting state (clothing colors bleed onto the unclothed side, or anti-clothing negatives strip the clothed side).
 
-**Always prefer Multi-Character Regional Partition (`+ Add Character`)**:
+Using **Multi-Character Regional Partitioning (`[Base Prompt]` + `[Character 1]` + `[Character 2]`)** cleanly isolates each half:
 
-1. **Canvas**: Landscape `1216x832` (or Square `1024x1024` so each half gets a taller, sleeker `512x1024` 1:2 vertical strip!).
-2. **Base Prompt (Layout, Style & Global Camera Only — ~65 Tokens)**:
-   - Use canonical comic border tags to force a clean physical split down the center (avoid `multiple views` in V5, as V5's default hidden UC suppresses it):
+1. **Canvas**: Landscape `1216x832` or Square `1024x1024` (gives each side a sleek `512x1024` 1:2 vertical strip).
+2. **Base Prompt (Shared Split Framing, Style, Lighting & Atmosphere)**:
+   - Anchor a clean physical comic divider in `[Base Prompt]` (omit `multiple views` in V5, as V5's built-in priors suppress turnaround-sheet layouts in split scenes):
      ```text
-     2::2koma::, 2::vertical split screen::, comic, vertical border, gutter, before and after, 2girls, same character, best quality, [style tags], from below, low angle, [scene tags], rating:explicit, nsfw, uncensored, [global style/proportion negative weights]
+     2::2koma::, 2::vertical split screen::, comic, vertical border, gutter, before and after, 2girls, same character, best quality, <style & lighting>, <camera & environment>
      ```
-3. **Character Positioning (`Custom` Grid)**:
-   - Switch Position from `AI's Choice` to **`Custom`**.
-   - Place **Character 1** at the far-left column (`A3`) and **Character 2** at the far-right column (`E3`) to maximize separation and prevent elbow/border merging.
-4. **Character 1 Box (Left — Clothed + Underwear Kept)**:
-   - Identical character hair/eye/accessory/proportion prefix + detailed canonical outfit + `white panties, underwear, upskirt` + pure expression (`cute face, slight smile, blush`).
-5. **Character 2 Box (Right — Unclothed + Clean `1.0x` Explicit State)**:
-   - Identical character hair/eye/accessory/proportion prefix (optionally keeping signature small accessories like `thigh strap` or hairpins) + `spread legs, completely nude, uncensored, nipples, pussy, spread pussy, after vaginal, cum in pussy, cumdrip, pussy juice` + `torogao, bedroom eyes, half-closed eyes, blush, slight smile, heavy breathing` + `-2.5::clothes, bustier, skirt, sleeves, panties::`.
+3. **Left / Right Grid Placement**:
+   - Anchor **`[Character 1 (A3)]`** on the far-left column and **`[Character 2 (E3)]`** on the far-right column to maximize spatial separation across the center border.
+4. **Character 1 Box (`A3` — Left Panel State)**:
+   - Shared character identity/hair/eye/ornament tags + "Before" outfit, posture, gaze, and mood (e.g., composed expression, intact attire).
+5. **Character 2 Box (`E3` — Right Panel State)**:
+   - Matching character identity/hair/eye tags (optionally keeping signature small accessories like hairpins or thigh straps for continuity) + "After" posture, emotional expression, and state details, paired with a compact local negative (`-2.5::clothes, skirt, sleeves, panties::`) if the left panel's outfit tries to bleed across.
 
-## 2. High-Resolution Post-Processing Workflows
+## 2. Optional Post-Processing Techniques for Crisp Variations
 
-1. **Crop First -> Low-Denoise Img2Img Hires Redraw**:
-   - Never run simple Upscale before cropping if fine details are soft. Crop the `2koma` into left and right panels first, send each to `832x1216` **Img2Img** (`Strength: 0.32 ~ 0.40`, `Noise: 0.0 ~ 0.05`) to rebuild crisp lines, then Enhance/Upscale.
-2. **True Pixel-Art Downsample Trick**:
-   - For authentic indie-game pixel grids, resize finished art down to `25%` and back up to `400%` using **Nearest Neighbor** interpolation.
-3. **Inpaint Micro-Fix for Logos/Icons**:
-   - For exact geometric emblems (e.g., a 4-pointed Gemini sparkle hairpin `✦`), sketch a rough colored cross on NAI's built-in Draw canvas and run regional **Inpaint** at `Strength: 0.45 ~ 0.55` so it inherits matching 16-bit pixel dithering naturally without flat Photoshop paste artifacts.
+1. **Panel Crop -> Low-Denoise Img2Img Redraw**:
+   - If fine facial or line details feel soft inside a `2koma` split, crop the left and right panels into standalone portraits (`832x1216`) first, run a gentle **Img2Img** pass (`Strength: 0.32 ~ 0.40`, `Noise: 0.0 ~ 0.05`) to sharpen linework at full single-character resolution, and upscale afterward if desired.
+2. **Nearest-Neighbor Snap for Authentic Pixel Art**:
+   - For crisp retro pixel-art sprites, downsampling finished art to `25%` and scaling back to `400%` with **Nearest Neighbor** interpolation locks clean pixel edges.
+3. **Regional Draw + Inpaint for Exact Emblems**:
+   - For specific geometric ornaments (such as a 4-pointed star hairpin `✦`), sketching a simple color hint on NAI's Draw canvas and running regional **Inpaint** (`Strength: 0.45 ~ 0.55`) lets the emblem inherit surrounding lighting and brushwork naturally.

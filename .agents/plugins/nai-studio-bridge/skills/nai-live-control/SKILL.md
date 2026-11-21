@@ -1,9 +1,9 @@
 ---
 name: nai-live-control
 description: >-
-  Real-time two-way control workflow for the open NovelAI_Workbench.html webpage via the nai-studio-bridge MCP server.
-  Activate whenever the user asks to inspect, tweak, switch presets/styles/outfits/poses, edit prompts, load Vibes,
-  or trigger image generation directly on their open NovelAI Studio webpage without rebuilding HTML.
+  Real-time two-way control and creative co-pilot workflow for the open NovelAI_Workbench.html webpage via the nai-studio-bridge MCP server.
+  Activate whenever the user asks to craft expressive live prompts, inspect state, switch presets/styles/outfits/poses, load Vibes,
+  organize gallery folders, or trigger image generation directly on their open NovelAI Studio webpage without rebuilding HTML.
 ---
 
 # NAI Studio 2.0 Live Webpage Control Skill
@@ -15,16 +15,19 @@ description: >-
 
 ## Workflow Guidelines
 
-1. **Inspect First (`nai_get_state` / `nai_list_options`)**:
-   - Call `nai_get_state` to see the user's current character, `gender_mode` (`normal` | `femboy` | `futa_no_balls` | `futa_with_balls`), outfit, style, active scene (`P01..P51`, `MP01..MP15`, `MA0..MA10`, `MA7A..MA7D`, `FREE`), compiled Positive/Negative prompts, T5 token counts, and Vibe slots.
-   - **Cross-Check Model vs. CFG Drift**: Verify `api_settings.scale` and `cfg_rescale` match the active `model` — if `nai-diffusion-5-full` (`V5 High`) still carries leftover V4.5 Vibe settings (`scale: 5.0, cfg_rescale: 0.28`), recalibrate via `nai_update_config` to `scale: 6.5 ~ 7.0, cfg_rescale: 0.0` (and conversely restore `scale: 5.0, cfg_rescale: 0.28` when switching back to multi-slot V4.5 Vibe).
-   - Before setting enum fields (`style_preset`, `outfit_preset`, `body_preset`, `lighting_preset`, etc.), call `nai_list_options` for that category so you pass the exact preset key string rather than guessing (e.g. `⚡🌷 安定萌化futa专用...` for Futa scenes).
+1. **Inspect First (`nai_get_state` / conditional `nai_list_options`)**:
+   - Call `nai_get_state` to inspect the user's active character, `gender_mode` (`normal` | `femboy` | `futa_no_balls` | `futa_with_balls`), outfit, style, active scene, compiled Positive/Negative prompts, T5 token counts (`safe_pos_limit`), and Vibe slots.
+   - **Cross-Model CFG Drift Only**: Only recalibrate `api_settings.scale` / `cfg_rescale` when **cross-model leftover drift** is present (e.g., switching to `nai-diffusion-5-full` while still carrying leftover V4.5 multi-Vibe `scale: 5.0, cfg_rescale: 0.28` -> `6.5 ~ 7.0 / 0.0`, or restoring `5.0 / 0.28` when switching back to multi-slot V4.5 Vibe). Leave deliberate same-model user CFG/rescale tuning untouched.
+   - Call `nai_list_options` **only** when setting structured enum fields (`style_preset`, `outfit_preset`, `body_preset`, `lighting_preset`, catalog poses) so you pass exact preset keys; skip enum lookups during freeform creative prompting.
 
-2. **Push Changes Live (`nai_update_config` / `nai_set_manual_prompt`)**:
-   - For structured config changes (switching `char_tag`, `extra_char_tags`, `gender_mode`, outfit, style, scale/rescale, pose stage, `MA7A..MA7D` belly/x-ray variants, condom, x-ray, or free action tags), call `nai_update_config`. Note that changing `style_preset` automatically syncs the recommended `lighting_preset` and any bundled Vibe pack unless `lighting_preset` is explicitly passed.
-   - **Automatic Character Prompt Distribution**: The workbench engine now uniformly compiles single-character and 2-person scenes into `[Base Prompt]` + `[Character 1]` (plus `[Character 2]\nboy, faceless male` on 3rd-person 2-person scenes, omitting `[Character 2]` on solo & POV scenes) with `use_coords: false` (AI's Choice).
-   - For surgical tag tweaks or **explicit coordinate-pinned multi-character scenes** (`[Base Prompt]` + `[Character 1 (B3)]` + `[Character 2 (D3)]` with `source#` / `target#` / `mutual#`), call `nai_set_manual_prompt`. Note that `nai_set_manual_prompt` sets `is_manual_prompt_locked: true`; call `nai_set_manual_prompt({ unlock: true })` whenever returning the webpage to automatic engine prompt compilation.
-   - **Manual Lock Ordering Rule**: Calling `nai_update_config` (including changing `canvas_preset`, `action_mode`, or UI toggles by the user) re-runs the engine prompt compiler and **unlocks/overwrites manual `[Base Prompt]` + `[Character N]` edits**. Always execute in strict order: (1) `nai_update_config` to set canvas/model/steps first → (2) `nai_set_manual_prompt` passing BOTH `positive` and `negative` together (staying `<= safe_pos_limit`, e.g., `<= 502` tokens) → (3) `nai_generate`.
+2. **Choose Track by Intent (`nai_set_manual_prompt` vs. `nai_update_config`)**:
+   - **Expressive / Sensibility Track (`nai_set_manual_prompt` or `FREE` prose) — Default for Mood, Story & Bespoke Scenes**:
+     - When the user describes an atmosphere, story beat, lighting mood, subtle expression, or original composition (or wants coordinate-pinned multi-character `[Base Prompt]` + `[Character 1 (B3)]` + `[Character 2 (D3)]` with `source#` / `target#` / `mutual#`), **skip `nai_list_options` hunting** and compose expressive tags + natural English T5 prose directly (inheriting active character/style anchors from `nai_get_state` when desired).
+     - Use `nai_set_manual_prompt` for full creative control, or `nai_update_config` with `action_mode: "free"` (`free_action_tags`, `free_action_prose`) when keeping the webpage's active character/style modules unlocked.
+     - **Manual Lock Ordering & Scope**: Calling `nai_update_config` re-runs the engine compiler and **unlocks/overwrites** manual prompt edits. Always execute in strict order: (1) `nai_update_config` first if canvas/model/steps need changing → (2) `nai_set_manual_prompt` passing **BOTH** `positive` and `negative` together (`<= safe_pos_limit`, e.g., `<= 502` tokens) → (3) `nai_generate` (only when asked). Manual lock applies to the active/single scene (`scene_ids` omitted or single-item); call `nai_set_manual_prompt({ unlock: true })` to return to automatic engine compilation.
+   - **Preset / UI Track (`nai_list_options` + `nai_update_config`) — For Named Studio Presets & Catalog Poses**:
+     - Use `nai_update_config` when switching named presets (`char_tag`, `extra_char_tags`, `gender_mode`, outfit, style, pose stage, condom, x-ray) or catalog scenes (`P01..P51`, `MP01..MP15`, `TN01..TN12`, `BG01..BG20`, `MA0..MA11`, `MA7A..MA7E`, `SF01..SF30`). Changing `style_preset` auto-syncs its paired `lighting_preset` and bundled Vibe pack unless `lighting_preset` is explicitly passed.
+     - Engine-compiled 2-person scenes automatically distribute into `[Base Prompt]` + `[Character 1]` (plus `[Character 2]\nboy, faceless male...` on 3rd-person 2-person scenes, omitted on solo/POV) with `use_coords: false`.
 
 3. **Manage Presets & Vibes (`nai_manage_presets` / `nai_manage_vibes`)**:
    - Use `nai_manage_presets` (`select` | `save` | `delete` | `restore_defaults`) to persist or switch presets in the user's browser `localStorage`.

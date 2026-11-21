@@ -1,6 +1,8 @@
 import {
   ALL_POSITIONS_CHAPTERS,
   ALL_POSITIONS_TEMPLATES,
+  APRON_ONLY_UC,
+  BATHROOM_TOWEL_UC,
   BODY_PRESETS,
   BUILTIN_CHARACTERS,
   BUST_PRESETS,
@@ -15,6 +17,16 @@ import {
   EXPRESSION_EYE_PRESETS,
   EXPRESSION_MOUTH_PRESETS,
   EXPRESSION_PRESETS,
+  FEMALE_APRON_NO_LEGWEAR,
+  FEMALE_NAKED_APRON_CORE,
+  FEMALE_NAKED_APRON_REAR_ONLY_CORE,
+  FEMBOY_APRON_NO_LEGWEAR,
+  FEMBOY_NAKED_APRON_CORE,
+  FOOT_ANAT_UC,
+  FUTA_APRON_NO_LEGWEAR,
+  FUTA_NAKED_APRON_CORE,
+  KITCHEN_LANDSCAPE_ANTI_LETTERBOX_UC,
+  kitchenLegwearTagsFor,
   LEGWEAR_PRESETS,
   type LightAxisMode,
   MORPH_PRESETS,
@@ -23,12 +35,17 @@ import {
   OTHER_ACTION_TEMPLATES,
   OUTFIT_PRESETS,
   OUTFIT_STATE_PRESETS,
+  PHOTO_SUBSTITUTE_GUARD_UC,
   PIGMENT_PRESETS,
+  POOL_LIGHT_DEFAULTS,
+  POOL_SWIM_UC,
+  POOL_SWIMWEAR_SPECS,
   POS_MALE_MODE_PRESETS,
   POS_SCENE_PRESETS,
   POS_STAGE_PRESETS,
   PUBIC_PRESETS,
   QUALITY_TAGS,
+  resolveContrastingPhotoPortrait,
   resolveLightingPresetEntry,
   SF_BASE_CEL_LIGHT_BACKLIT,
   SF_BASE_CEL_LIGHT_NO_BACKLIGHT,
@@ -40,6 +57,8 @@ import {
 import {
   applySmartQualitySuffix,
   countPromptT5Tokens,
+  deduplicateCommaTags,
+  encodeT5Len,
   splitPromptPosAndNeg,
 } from "./t5Tokenizer";
 import type {
@@ -182,6 +201,31 @@ export function isMilkyPeachCelStyleActive(cfg: CharacterConfig): boolean {
 
 function is25dCelLightingCode(code: string | undefined): boolean {
   return code === "cool_warm_25d_cel" || code === "milky_peach_3tier_cel";
+}
+
+function isExplicitKitchenLightingCode(code: string | undefined): boolean {
+  return Boolean(code && code.startsWith("kitchen_"));
+}
+
+function isExplicitPoolLightingCode(code: string | undefined): boolean {
+  return Boolean(code && code.startsWith("pool_"));
+}
+
+function isExplicitBathroomLightingCode(code: string | undefined): boolean {
+  return Boolean(code && code.startsWith("bathroom_"));
+}
+
+function isExplicitHouseworkLightingCode(code: string | undefined): boolean {
+  return Boolean(code && code.startsWith("housework_"));
+}
+
+function isExplicitDedicatedSceneLightingCode(code: string | undefined): boolean {
+  return (
+    isExplicitKitchenLightingCode(code) ||
+    isExplicitPoolLightingCode(code) ||
+    isExplicitBathroomLightingCode(code) ||
+    isExplicitHouseworkLightingCode(code)
+  );
 }
 
 /**
@@ -1126,7 +1170,11 @@ export function buildCommonModules(
       outfitProseClause = ` below ${outfitInfo.prose}`;
       frontShirtProse = " completely nude";
     } else {
-      designIntact = joinTags(outfitInfo.design_tags, customOutfit);
+      const basePresetDesign =
+        cfg.gender_mode === "femboy" && outfitInfo.femboy_design_tags
+          ? outfitInfo.femboy_design_tags
+          : outfitInfo.design_tags;
+      designIntact = joinTags(basePresetDesign, customOutfit);
       if (m6Mode && !wantsSweatM6) {
         designIntact = designIntact
           .replace(/(?:,\s*)?wet clothes(?=\s*,|$)/g, "")
@@ -1209,7 +1257,15 @@ export function buildCommonModules(
     if (bottomType === "leotard") {
       statePos = "clothes lift, leotard aside";
     } else if (bottomType === "swimsuit") {
-      statePos = "bikini aside, swimsuit aside";
+      const rawSwimState = outfitInfo.state_tags || "bikini aside, swimsuit aside";
+      statePos =
+        cfg.gender_mode === "femboy"
+          ? rawSwimState
+              .split(",")
+              .map((s) => s.trim())
+              .filter((s) => s && !/\bbreasts out\b|\bnipples visible/i.test(s))
+              .join(", ") || "1.45::swimsuit aside::"
+          : rawSwimState;
     } else if (bottomType === "shorts") {
       statePos = "unbuttoned, open shorts, panties aside";
     } else if (bottomType === "panties") {
@@ -1939,6 +1995,11 @@ export function generateScenePrompts(
         "warm lighting",
         "warm indoor lighting",
         "sunlight",
+        "bright summer sunlight",
+        "bright breezy summer balcony sunlight",
+        "dappled sunlight",
+        "morning sunlight",
+        "afternoon sunlight",
         "sun glare",
         "daylight",
         "overexposure",
@@ -3520,19 +3581,82 @@ export function generateScenePrompts(
       !cfg.style_preset.includes("细棕彩线") &&
       !cfg.style_preset.includes("黑白网点漫画") &&
       !cfg.style_preset.includes("Monochrome Manga");
-    const m = buildCommonModules(cfg, !tpl.no_face_pov);
+    const m = buildCommonModules(cfg, !tpl.no_face_pov && !tpl.is_photo_substitute_scene);
 
+    const isExplicitDedicatedLight = isExplicitDedicatedSceneLightingCode(sfLightEntry.code);
+    const isKitchenOverrideLight =
+      !isExplicitDedicatedLight &&
+      Boolean(tpl.kitchen_light_mode) &&
+      tpl.kitchen_light_mode !== "sunlit_or_pendant";
+    const poolLightSpec = tpl.pool_light_mode ? POOL_LIGHT_DEFAULTS[tpl.pool_light_mode] : undefined;
+    const isPoolNonSunlit =
+      !isExplicitDedicatedLight &&
+      Boolean(tpl.pool_light_mode) &&
+      tpl.pool_light_mode !== "sunlit_caustics" &&
+      tpl.pool_light_mode !== "split_waterline";
+    const isPoolNight = !isExplicitDedicatedLight && tpl.pool_light_mode === "night_pool_glow";
+    const isSpecimenNocturnalFridge = !isExplicitDedicatedLight && Boolean(tpl.is_nocturnal_fridge);
+    const isBathroomHumidLight = !isExplicitDedicatedLight && Boolean(tpl.bathroom_light_mode);
+    const isHouseworkNonSunlit =
+      !isExplicitDedicatedLight &&
+      Boolean(tpl.housework_light_mode) &&
+      (tpl.housework_light_mode === "hallway_wood_sheen" ||
+        tpl.housework_light_mode === "closet_dim_warm");
+    const isExplicitNonSunlit =
+      isExplicitDedicatedLight &&
+      sfLightEntry.code !== "kitchen_sunlit_pendant" &&
+      sfLightEntry.code !== "pool_sunlit_caustics" &&
+      sfLightEntry.code !== "pool_split_waterline" &&
+      sfLightEntry.code !== "housework_sunlit_living" &&
+      sfLightEntry.code !== "housework_sunny_balcony" &&
+      sfLightEntry.code !== "housework_warm_bedroom";
+
+    const isSfNonSunlit =
+      !tpl.is_kitchen_scene &&
+      !tpl.is_pool_scene &&
+      !tpl.is_bathroom_scene &&
+      !tpl.is_housework_scene &&
+      !tpl.is_photo_substitute_scene &&
+      tpl.lighting_mode !== "sunlit_indoor";
     let headUsed = transBg ? sanitizeStyleForTransparentBg(m.head_pos) : m.head_pos;
     const headStripSet = new Set<string>();
-    if (!transBg && tpl.lighting_mode !== "sunlit_indoor") {
+    if (
+      !transBg &&
+      (isSfNonSunlit ||
+        (tpl.lighting_mode !== "sunlit_indoor" && !isExplicitDedicatedLight) ||
+        isKitchenOverrideLight ||
+        isPoolNonSunlit ||
+        isSpecimenNocturnalFridge ||
+        isBathroomHumidLight ||
+        isHouseworkNonSunlit ||
+        isExplicitNonSunlit)
+    ) {
       headStripSet.add("sunlight");
+      headStripSet.add("bright summer sunlight");
+      headStripSet.add("bright breezy summer balcony sunlight");
+      headStripSet.add("dappled sunlight");
+      headStripSet.add("morning sunlight");
+      headStripSet.add("afternoon sunlight");
       headStripSet.add("sun glare");
       headStripSet.add("light rays");
       headStripSet.add("daylight");
       headStripSet.add("clear blue sky");
       headStripSet.add("bright sky");
     }
-    if (!transBg && tpl.lighting_mode === "flash") {
+    if (!transBg && (isPoolNight || isSpecimenNocturnalFridge)) {
+      for (const pn of [
+        "backlighting",
+        "rim lighting",
+        "warm lighting",
+        "warm indoor lighting",
+        "overexposure",
+        "pastel colors",
+        "light colors",
+      ]) {
+        headStripSet.add(pn);
+      }
+    }
+    if (!transBg && !isExplicitDedicatedLight && tpl.lighting_mode === "flash") {
       // Direct front camera flash must NEVER fight rear backlighting or muted pastel low-contrast tags
       for (const fl of [
         "backlighting",
@@ -3550,7 +3674,7 @@ export function generateScenePrompts(
       ]) {
         headStripSet.add(fl);
       }
-    } else if (!transBg && tpl.lighting_mode === "night_neon") {
+    } else if (!transBg && !isExplicitDedicatedLight && tpl.lighting_mode === "night_neon") {
       for (const nn of ["warm lighting", "warm indoor lighting", "overexposure", "pastel colors", "light colors"]) {
         headStripSet.add(nn);
       }
@@ -3590,6 +3714,19 @@ export function generateScenePrompts(
       if (m.tune2_inline_neg) {
         m.tune2_inline_neg = "";
       }
+    } else if (tpl.is_photo_substitute_scene) {
+      // Eyes & upper face are occluded beneath the opaque printed portrait photo on PS01..PS04
+      for (const et of [
+        "gradient eyes",
+        "thick eyelashes",
+        "eyelashes",
+        "eyelid crease",
+        "small white eye highlights",
+        "colored eyelashes",
+        "eyeshadow",
+      ]) {
+        headStripSet.add(et);
+      }
     }
     if (headStripSet.size > 0 && headUsed) {
       headUsed = splitTopLevelCommaSegments(headUsed)
@@ -3599,11 +3736,39 @@ export function generateScenePrompts(
         })
         .join(", ");
     }
-    // When global lighting_preset is 'auto', automatically inject the skill-calibrated SF base cel-lock & wet specular block!
+    // When global lighting_preset is 'auto', automatically inject the skill-calibrated SF/Kitchen/Pool/Specimen base cel-lock & wet specular block!
     if (!transBg && isAutoLight && isSfCompatibleCelStyle) {
       const sfBaseLight =
-        tpl.lighting_mode === "flash" ? SF_BASE_CEL_LIGHT_NO_BACKLIGHT : SF_BASE_CEL_LIGHT_BACKLIT;
+        tpl.lighting_mode === "flash" || isPoolNight || isSpecimenNocturnalFridge
+          ? SF_BASE_CEL_LIGHT_NO_BACKLIGHT
+          : SF_BASE_CEL_LIGHT_BACKLIT;
       headUsed = joinTags(headUsed, sfBaseLight);
+    }
+    if (
+      (tpl.is_kitchen_scene ||
+        tpl.is_pool_scene ||
+        tpl.is_specimen_scene ||
+        tpl.is_bathroom_scene ||
+        tpl.is_housework_scene ||
+        tpl.is_photo_substitute_scene) &&
+      (genderMode === "futa_no_balls" || genderMode === "futa_with_balls") &&
+      headUsed.includes("0.50::artist:doshimash0::") &&
+      !headUsed.includes("artist:pija")
+    ) {
+      headUsed = headUsed.replace(
+        "0.50::artist:doshimash0::",
+        "0.48::artist:doshimash0::, 0.25::artist:pija (pianiishimo)::"
+      );
+    }
+    if (!transBg && tpl.is_pool_scene && !/\bwater droplets\b/i.test(headUsed)) {
+      headUsed = joinTags(headUsed, "water droplets");
+    }
+    if (!transBg && tpl.is_bathroom_scene) {
+      const bathWetAdd: string[] = [];
+      if (!/\bwet skin\b/i.test(headUsed)) bathWetAdd.push("wet skin");
+      if (!/\bwater droplets\b/i.test(headUsed)) bathWetAdd.push("water droplets");
+      if (!/\bsteam\b/i.test(headUsed)) bathWetAdd.push("steam");
+      if (bathWetAdd.length > 0) headUsed = joinTags(headUsed, bathWetAdd.join(", "));
     }
 
     let charCoreUsed = m.char_core;
@@ -3622,15 +3787,20 @@ export function generateScenePrompts(
         })
         .join(", ");
     }
-    if (tpl.no_face_pov) {
+    if (tpl.no_face_pov || tpl.is_photo_substitute_scene) {
       const stripCharFaceSet = new Set([
-        "short face",
-        "round face",
+        ...(tpl.no_face_pov ? ["short face", "round face"] : []),
         "tareme",
         "tsurime",
         "heterochromia",
         "glasses",
         "semi-rimless glasses",
+        "heart-shaped pupils",
+        "empty eyes",
+        "jitome",
+        "half-closed eyes",
+        "closed eyes",
+        "rolling eyes",
       ]);
       charCoreUsed = splitTopLevelCommaSegments(charCoreUsed)
         .filter((tok) => {
@@ -3775,28 +3945,72 @@ export function generateScenePrompts(
 
     const useSfDedicatedLight =
       !transBg &&
+      !isExplicitDedicatedLight &&
       (isAutoLight || is25dCelLightingCode(sfLightEntry.code) || sfLightEntry.code === "m2_razor_fine_cel");
-    const sfSceneLightTags = transBg
-      ? ""
-      : useSfDedicatedLight
-        ? tpl.light_tags
-        : tpl.lighting_mode === "flash" || tpl.lighting_mode === "night_neon" || tpl.lighting_mode === "warm_spot" || tpl.lighting_mode === "steamy_glass"
-          ? tpl.light_tags
-          : "";
+    const rawSceneLightTags =
+      transBg || isExplicitDedicatedLight
+        ? ""
+        : tpl.is_pool_scene && poolLightSpec
+          ? joinTags(poolLightSpec.pos, tpl.light_tags)
+          : tpl.is_specimen_scene ||
+              tpl.is_bathroom_scene ||
+              tpl.is_housework_scene ||
+              useSfDedicatedLight ||
+              isKitchenOverrideLight
+            ? tpl.light_tags
+            : tpl.lighting_mode === "flash" ||
+                tpl.lighting_mode === "night_neon" ||
+                tpl.lighting_mode === "warm_spot" ||
+                tpl.lighting_mode === "steamy_glass"
+              ? tpl.light_tags
+              : "";
+    const sfSceneLightTags =
+      (tpl.is_specimen_scene || tpl.is_bathroom_scene) && genderMode === "femboy"
+        ? rawSceneLightTags.replace(/\bher\b/gi, "his")
+        : rawSceneLightTags;
+
+    const rawEffectiveEnvTags = isExplicitNonSunlit
+      ? tpl.env_tags
+          .replace(/\bsunlit\b/gi, "indoor")
+          .replace(/\bsunny\b/gi, "")
+          .replace(/\s{2,}/g, " ")
+          .trim()
+      : tpl.env_tags;
+    const effectiveEnvTags =
+      (tpl.is_specimen_scene || tpl.is_bathroom_scene) && genderMode === "femboy"
+        ? rawEffectiveEnvTags.replace(/\bher\b/gi, "his")
+        : rawEffectiveEnvTags;
+    const effectiveCorePropTags =
+      (tpl.is_specimen_scene || tpl.is_bathroom_scene) &&
+      genderMode === "femboy" &&
+      tpl.femboy_core_prop_tags
+        ? tpl.femboy_core_prop_tags
+        : tpl.core_prop_tags || "";
+    const effectiveFramingTags =
+      (tpl.is_specimen_scene || tpl.is_bathroom_scene) && genderMode === "femboy"
+        ? tpl.femboy_framing_tags || tpl.framing_tags.replace(/\bher\b/gi, "his")
+        : tpl.framing_tags;
 
     const envAndPropsUsed = transBg
-      ? joinTags("2.0::transparent background::, has alpha, alpha transparency, no background", tpl.core_prop_tags || "")
-      : joinTags(tpl.env_tags, sfSceneLightTags, tpl.core_prop_tags || "");
+      ? joinTags("2.0::transparent background::, has alpha, alpha transparency, no background", effectiveCorePropTags)
+      : joinTags(effectiveEnvTags, sfSceneLightTags, effectiveCorePropTags);
     const transNeg = transBg
       ? "background, simple background, white background, black background, gradient background, indoors, outdoors, scenery, furniture, bed, couch, sofa, pillow, window, curtains, wall, floor, drop shadow"
       : "";
-    const camUc =
-      tpl.camera_mode === "mirror"
+    const camUc = tpl.allow_smartphone_prop
+      ? "mirror, mirror selfie, camera lens, taking picture, phone covering face"
+      : tpl.camera_mode === "mirror"
         ? SF_MIRROR_UC
         : tpl.camera_mode === "direct" || tpl.camera_mode === "ui_livestream"
           ? SF_DIRECT_POV_UC
           : "";
-    const xrayNeg = cfg.enable_uterus_xray ? "" : "x-ray, cross-section, cutaway, uterus";
+    const xrayNeg = tpl.builtin_xray
+      ? genderMode === "femboy"
+        ? "fetus, baby, embryo, skeleton, bones, skull, ribcage, medical diagram, gore, uterus, cervix, womb"
+        : "fetus, baby, embryo, skeleton, bones, skull, ribcage, medical diagram, gore"
+      : cfg.enable_uterus_xray
+        ? ""
+        : "x-ray, cross-section, cutaway, uterus";
 
     // Build isolated SF tail negative WITHOUT left-column intactNeg / envExtraNeg / anatNeg / conflicting outfitExtraNeg!
     const sfStyleUnblock = new Set<string>([
@@ -3821,8 +4035,10 @@ export function generateScenePrompts(
         sfStyleUnblock.add(cu);
       }
     }
-    if (tpl.keep_wet_clothes) {
+    if (tpl.keep_wet_clothes || tpl.is_pool_scene) {
       sfStyleUnblock.add("wet clothes");
+      sfStyleUnblock.add("shiny ass");
+      sfStyleUnblock.add("light spots");
     }
     if (tpl.unblock_multiple_views) {
       sfStyleUnblock.add("multiple views");
@@ -3831,7 +4047,26 @@ export function generateScenePrompts(
     if (tpl.allow_text_ui) {
       sfStyleUnblock.add("text");
     }
-    if (!transBg && tpl.lighting_mode !== "sunlit_indoor") {
+    if (!isExplicitDedicatedLight && tpl.kitchen_light_mode === "doorway_blind_slit") {
+      sfStyleUnblock.add("depth of field");
+      sfStyleUnblock.add("blurry");
+      sfStyleUnblock.add("harsh shadow");
+      sfStyleUnblock.add("harsh shadows");
+    }
+    if (
+      !isExplicitDedicatedLight &&
+      (tpl.pool_light_mode === "shower_frosted_glass" || tpl.is_bathroom_scene)
+    ) {
+      sfStyleUnblock.add("depth of field");
+      sfStyleUnblock.add("blurry");
+      sfStyleUnblock.add("soft focus");
+      sfStyleUnblock.add("hazy");
+    }
+    if (
+      !transBg &&
+      !isExplicitDedicatedLight &&
+      (tpl.lighting_mode !== "sunlit_indoor" || isKitchenOverrideLight || isPoolNonSunlit)
+    ) {
       for (const dk of [
         "dark",
         "dim lighting",
@@ -3842,6 +4077,8 @@ export function generateScenePrompts(
         "bloom",
         "neon colors",
         "vibrant colors",
+        "cold lighting",
+        "blue tint",
       ]) {
         sfStyleUnblock.add(dk);
       }
@@ -3866,9 +4103,38 @@ export function generateScenePrompts(
       sfCanonStrip.add("plaid");
       sfCanonStrip.add("skirt");
     }
-    if (useSceneOutfit && sceneId === "SF21") {
+    if (
+      useSceneOutfit &&
+      (sceneId === "SF21" || tpl.is_kitchen_scene || tpl.is_housework_scene)
+    ) {
       sfCanonStrip.add("apron");
+      sfCanonStrip.add("maid apron");
       sfCanonStrip.add("maid");
+    }
+    if (useSceneOutfit && tpl.unblock_prop_shirt) {
+      sfCanonStrip.add("shirt");
+      sfCanonStrip.add("collared shirt");
+    }
+    if (useSceneOutfit && tpl.unblock_prop_jacket) {
+      sfCanonStrip.add("jacket");
+      sfCanonStrip.add("red jacket");
+    }
+    if (useSceneOutfit && tpl.is_pool_scene) {
+      sfCanonStrip.add("swimsuit");
+      sfCanonStrip.add("bikini");
+      sfCanonStrip.add("one-piece swimsuit");
+      sfCanonStrip.add("competition swimsuit");
+    }
+    if (useSceneOutfit && tpl.is_photo_substitute_scene) {
+      sfCanonStrip.add("maid");
+      sfCanonStrip.add("maid headdress");
+      sfCanonStrip.add("maid apron");
+      sfCanonStrip.add("apron");
+      sfCanonStrip.add("skirt");
+      sfCanonStrip.add("cuffs");
+      sfCanonStrip.add("detached cuffs");
+      sfCanonStrip.add("bowtie");
+      sfCanonStrip.add("neckerchief");
     }
     const sfCanonNeg = (m.canon_neg || "")
       .split(",")
@@ -3876,6 +4142,25 @@ export function generateScenePrompts(
       .filter((t) => Boolean(t) && !sfCanonStrip.has(t.toLowerCase()))
       .join(", ");
 
+    const kitchenDuoBodyStrip = new Set([
+      "tall female",
+      "mature female",
+      "muscular",
+      "broad shoulders",
+      "wide shoulders",
+      "doll",
+      "plushie",
+      "oversized head",
+      "stubby legs",
+      "short legs",
+      "giantess",
+      "towering",
+      "miniature furniture",
+      "low doorframe",
+      "pointy chin",
+      "sharp chin",
+      "long face",
+    ]);
     const sfBodyNeg = (m.body_neg || "")
       .split(",")
       .map((t) => t.trim())
@@ -3888,58 +4173,384 @@ export function generateScenePrompts(
         if (genderMode === "femboy" && /breasts/i.test(low)) {
           return false;
         }
+        if (
+          (tpl.is_kitchen_duo ||
+            tpl.is_pool_duo ||
+            tpl.is_specimen_duo ||
+            tpl.is_housework_duo) &&
+          kitchenDuoBodyStrip.has(low)
+        ) {
+          return false;
+        }
         return true;
       })
       .join(", ");
 
+    // Place canon_neg & customOutfitSafeNeg ahead of verbose style/body negatives so priority guards never clip
+    const comicLineUsed =
+      tpl.is_bathroom_scene || /\bmotion lines\b/i.test(effectiveCorePropTags)
+        ? (m.comic_line_guard || "").replace(/\bmotion lines,\s*/gi, "")
+        : m.comic_line_guard || "";
     const baseTailNeg = joinTags(
-      sfStyleNeg,
       sfCanonNeg,
-      m.comic_line_guard || "",
-      sfBodyNeg,
-      customOutfitSafeNeg
+      customOutfitSafeNeg,
+      sfStyleNeg,
+      comicLineUsed,
+      sfBodyNeg
     );
 
-    const fullNeg = joinTags(
-      camUc,
-      tpl.extra_neg || "",
-      genderNeg,
-      transNeg,
-      "gaping, censor, mosaic censoring, bar censor",
-      xrayNeg,
-      baseTailNeg
-    );
-
-    const sfLightProseTail = !transBg && useSfDedicatedLight && tpl.light_prose ? ` ${tpl.light_prose}` : "";
-    const proseBody = cfg.enable_t5_prose
-      ? `${m.name} ${genderProse}${sfLightProseTail}${transBg ? " Isolated on a transparent background." : ""}`
+    const apronOnlyGuard = tpl.is_kitchen_scene && useSceneOutfit ? APRON_ONLY_UC : "";
+    let houseworkApronGuard = "";
+    if (tpl.is_housework_scene && useSceneOutfit) {
+      const unblockSet = new Set<string>();
+      if (tpl.unblock_prop_shirt) {
+        unblockSet.add("shirt");
+        unblockSet.add("collared shirt");
+      }
+      if (tpl.unblock_prop_jacket) {
+        unblockSet.add("jacket");
+      }
+      const filteredApronUc = APRON_ONLY_UC.split(",")
+        .map((s) => s.trim())
+        .filter((s) => Boolean(s) && !unblockSet.has(s.toLowerCase()))
+        .join(", ");
+      const dressedGuard =
+        tpl.unblock_prop_shirt || tpl.unblock_prop_jacket
+          ? "dressed male, man wearing suit"
+          : "";
+      const barefootBan = tpl.barefoot
+        ? "thighhighs, stockings, socks, legwear, pantyhose"
+        : "";
+      houseworkApronGuard = joinTags(filteredApronUc, dressedGuard, barefootBan);
+    }
+    const poolSwimGuard = tpl.is_pool_scene && useSceneOutfit ? POOL_SWIM_UC : "";
+    const bathroomTowelGuard = tpl.is_bathroom_scene && useSceneOutfit ? BATHROOM_TOWEL_UC : "";
+    const bathroomToyPartnerBan = tpl.is_bathroom_scene
+      ? genderMode === "femboy"
+        ? "2boys, hetero"
+        : genderMode === "normal"
+          ? "2boys, hetero, man, real penis"
+          : "2boys, hetero, man"
       : "";
-    const camBadge =
-      tpl.camera_mode === "mirror"
-        ? "🪞对镜"
-        : tpl.camera_mode === "direct"
-          ? "📷直拍"
-          : "📱界面";
-    const sfLightBadge = !transBg ? ` · [${tpl.light_badge}]` : " · [🏁透明底]";
+    const poolSwimExtraNeg =
+      tpl.is_pool_scene && useSceneOutfit && tpl.swimsuit_style
+        ? POOL_SWIMWEAR_SPECS[tpl.swimsuit_style].extra_neg
+        : "";
+    const specimenOutfitGuard =
+      tpl.is_specimen_scene && useSceneOutfit ? tpl.specimen_outfit_neg || "" : "";
+    const poolLightNeg =
+      tpl.is_pool_scene && !transBg && !isExplicitDedicatedLight && poolLightSpec
+        ? poolLightSpec.neg
+        : "";
+    const sceneFootGuard =
+      (tpl.is_kitchen_scene ||
+        tpl.is_pool_scene ||
+        tpl.is_specimen_scene ||
+        tpl.is_bathroom_scene ||
+        tpl.is_housework_scene) &&
+      tpl.is_foot_focus
+        ? FOOT_ANAT_UC
+        : "";
+    const kitchenBareFootSockBan =
+      tpl.is_kitchen_scene && useSceneOutfit && tpl.footwear_mode === "bare_feet"
+        ? "thighhighs, stockings, socks, legwear, pantyhose"
+        : "";
+    const sceneLandscapeGuard =
+      (tpl.is_kitchen_scene ||
+        tpl.is_pool_scene ||
+        tpl.is_specimen_scene ||
+        tpl.is_housework_scene) &&
+      tpl.canvas.includes("1216x832")
+        ? KITCHEN_LANDSCAPE_ANTI_LETTERBOX_UC
+        : "";
 
-    // V5 Golden Positional Order: First-slot camera/mirror/UI framing right after actorTags!
-    const pOther = joinTags(
-      headUsed,
-      actorTags,
-      tpl.framing_tags,
-      charCoreUsed,
-      envAndPropsUsed,
-      outfitTags,
-      "rating:explicit, nsfw, uncensored",
-      genderActionTags,
-      proseBody,
-      wrapTailNeg(m, fullNeg, negOn)
-    );
-    results.push({
-      subTitle: `【${tpl.id} · ${tpl.title} · ${camBadge}${sfLightBadge}${genderBadge}】`,
-      canvas: tpl.canvas,
-      prompt: pOther,
-    });
+    if (tpl.is_kitchen_duo && tpl.kitchen_duo) {
+      results.push(
+        compileKitchenDuoScenePrompt({
+          tpl: { ...tpl, env_tags: effectiveEnvTags },
+          duo: tpl.kitchen_duo,
+          cfg,
+          m,
+          headUsed,
+          charCoreUsed,
+          charHasFlatChest,
+          genderMode,
+          genderBadge,
+          useSceneOutfit,
+          outfitTagsFromLeft: useSceneOutfit ? "" : outfitTags,
+          transBg,
+          transNeg,
+          sfSceneLightTags,
+          isExplicitDedicatedLight,
+          apronOnlyGuard,
+          kitchenFootGuard: sceneFootGuard,
+          kitchenBareFootSockBan,
+          kitchenLandscapeGuard: sceneLandscapeGuard,
+          baseTailNeg,
+          negOn,
+        })
+      );
+    } else if (tpl.is_pool_duo && tpl.pool_duo) {
+      results.push(
+        compilePoolDuoScenePrompt({
+          tpl: { ...tpl, env_tags: effectiveEnvTags },
+          duo: tpl.pool_duo,
+          cfg,
+          m,
+          headUsed,
+          charCoreUsed,
+          charHasFlatChest,
+          genderMode,
+          genderBadge,
+          useSceneOutfit,
+          outfitTagsFromLeft: useSceneOutfit ? "" : outfitTags,
+          transBg,
+          transNeg,
+          sfSceneLightTags,
+          isExplicitDedicatedLight,
+          poolSwimGuard,
+          poolSwimExtraNeg,
+          poolLightNeg,
+          footGuard: sceneFootGuard,
+          landscapeGuard: sceneLandscapeGuard,
+          baseTailNeg,
+          negOn,
+        })
+      );
+    } else if (tpl.is_specimen_duo && tpl.specimen_duo) {
+      results.push(
+        compileSpecimenDuoScenePrompt({
+          tpl: {
+            ...tpl,
+            env_tags: effectiveEnvTags,
+            core_prop_tags: effectiveCorePropTags,
+            framing_tags: effectiveFramingTags,
+          },
+          duo: tpl.specimen_duo,
+          cfg,
+          m,
+          headUsed,
+          charCoreUsed,
+          charHasFlatChest,
+          genderMode,
+          genderBadge,
+          useSceneOutfit,
+          outfitTagsFromLeft: useSceneOutfit ? "" : outfitTags,
+          transBg,
+          transNeg,
+          sfSceneLightTags,
+          isExplicitDedicatedLight,
+          specimenOutfitGuard,
+          footGuard: sceneFootGuard,
+          landscapeGuard: sceneLandscapeGuard,
+          baseTailNeg,
+          negOn,
+        })
+      );
+    } else if (tpl.is_housework_duo && tpl.housework_duo) {
+      results.push(
+        compileHouseworkDuoScenePrompt({
+          tpl: {
+            ...tpl,
+            env_tags: effectiveEnvTags,
+            core_prop_tags: effectiveCorePropTags,
+            framing_tags: effectiveFramingTags,
+          },
+          duo: tpl.housework_duo,
+          cfg,
+          m,
+          headUsed,
+          charCoreUsed,
+          charHasFlatChest,
+          genderMode,
+          genderBadge,
+          useSceneOutfit,
+          outfitTagsFromLeft: useSceneOutfit ? "" : outfitTags,
+          transBg,
+          transNeg,
+          sfSceneLightTags,
+          isExplicitDedicatedLight,
+          houseworkApronGuard,
+          footGuard: sceneFootGuard,
+          landscapeGuard: sceneLandscapeGuard,
+          baseTailNeg,
+          negOn,
+        })
+      );
+    } else if (tpl.is_photo_substitute_scene) {
+      results.push(
+        compilePhotoSubstituteScenePrompt({
+          tpl: {
+            ...tpl,
+            env_tags: effectiveEnvTags,
+            core_prop_tags: effectiveCorePropTags,
+            framing_tags: effectiveFramingTags,
+          },
+          cfg,
+          m,
+          headUsed,
+          charCoreUsed,
+          charHasFlatChest,
+          genderMode,
+          genderBadge,
+          useSceneOutfit,
+          outfitTagsFromLeft: useSceneOutfit ? "" : outfitTags,
+          transBg,
+          transNeg,
+          sfSceneLightTags,
+          isExplicitDedicatedLight,
+          baseTailNeg,
+          negOn,
+        })
+      );
+    } else {
+      let soloCondomTags = "";
+      let soloCondomBadge = "";
+      let soloXrayTags = "";
+      let soloXrayProse = "";
+      let soloXrayBadge = tpl.builtin_xray ? " · [🔬内置透视]" : "";
+      let effectiveXrayNeg = xrayNeg;
+      if (
+        tpl.is_kitchen_scene ||
+        tpl.is_pool_scene ||
+        tpl.is_specimen_scene ||
+        tpl.is_bathroom_scene
+      ) {
+        if (cfg.enable_condom) {
+          soloCondomTags = "1.55::used condom::, 1.45::cum in condom::";
+          soloCondomBadge = " · [🛡️安全套]";
+        }
+        if (cfg.enable_uterus_xray && !tpl.builtin_xray) {
+          soloXrayBadge = " · [🔬内部透视]";
+          if (genderMode === "femboy") {
+            soloXrayTags =
+              "1.45::x-ray::, 1.4::cross-section::, 1.5::intestines::, 1.5::cum in ass::, internal cumshot";
+            soloXrayProse =
+              " accompanied by an anatomical x-ray cross-section of his cum-filled intestines.";
+            effectiveXrayNeg =
+              "fetus, baby, embryo, skeleton, bones, skull, ribcage, medical diagram, gore, uterus, cervix, womb";
+          } else {
+            soloXrayTags =
+              "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.45::cum in uterus::";
+            soloXrayProse = " accompanied by a centered x-ray cross-section revealing her uterus.";
+            effectiveXrayNeg =
+              "fetus, baby, embryo, skeleton, bones, skull, ribcage, medical diagram, gore";
+          }
+        }
+      }
+
+      if (tpl.is_pool_scene && useSceneOutfit && !/\bbare feet\b/i.test(actorTags)) {
+        actorTags = `${actorTags}, bare feet`;
+      }
+      const soloSceneExprTags =
+        tpl.is_pool_scene && tpl.pool_expr_tags
+          ? exprIf(cfg, tpl.pool_expr_tags, "", tpl.id)
+          : tpl.is_specimen_scene && tpl.specimen_expr_tags
+            ? exprIf(cfg, tpl.specimen_expr_tags, "", tpl.id)
+            : tpl.is_bathroom_scene && tpl.bathroom_expr_tags
+              ? exprIf(cfg, tpl.bathroom_expr_tags, "", tpl.id)
+              : "";
+
+      let fullNeg = joinTags(
+        camUc,
+        poolLightNeg,
+        poolSwimExtraNeg,
+        specimenOutfitGuard,
+        sceneFootGuard,
+        kitchenBareFootSockBan,
+        tpl.extra_neg || "",
+        genderNeg,
+        bathroomToyPartnerBan,
+        apronOnlyGuard,
+        poolSwimGuard,
+        bathroomTowelGuard,
+        sceneLandscapeGuard,
+        transNeg,
+        tpl.allow_speculum
+          ? "censor, mosaic censoring, bar censor"
+          : "gaping, censor, mosaic censoring, bar censor",
+        effectiveXrayNeg,
+        baseTailNeg
+      );
+      if (tpl.allow_speculum) {
+        fullNeg = fullNeg
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => Boolean(s) && s.toLowerCase() !== "gaping")
+          .join(", ");
+      }
+      if (
+        tpl.is_kitchen_scene ||
+        tpl.is_pool_scene ||
+        tpl.is_specimen_scene ||
+        tpl.is_bathroom_scene
+      ) {
+        const dedupSoloNeg = deduplicateCommaTags(fullNeg);
+        if (encodeT5Len(dedupSoloNeg) > 435) {
+          const parts = dedupSoloNeg.split(",").map((s) => s.trim()).filter(Boolean);
+          while (parts.length > 20 && encodeT5Len(parts.join(", ")) > 435) {
+            parts.pop();
+          }
+          fullNeg = parts.join(", ");
+        } else {
+          fullNeg = dedupSoloNeg;
+        }
+      }
+
+      const sfLightProseTail = !transBg && useSfDedicatedLight && tpl.light_prose ? ` ${tpl.light_prose}` : "";
+      const baseSoloProse = soloXrayProse
+        ? `${genderProse.replace(/\.+\s*$/, "")},${soloXrayProse}`
+        : genderProse;
+      const proseBody = cfg.enable_t5_prose
+        ? /^High-angle view/i.test(baseSoloProse)
+          ? `${baseSoloProse.replace(/\bas (?:she|he)\b/i, `as ${m.name}`)}${sfLightProseTail}${transBg ? " Isolated on a transparent background." : ""}`
+          : `${m.name} ${baseSoloProse}${sfLightProseTail}${transBg ? " Isolated on a transparent background." : ""}`
+        : "";
+      const camBadge = tpl.is_bathroom_scene
+        ? "🛁浴室玩具"
+        : tpl.is_specimen_scene
+          ? "🧪储精自注"
+          : tpl.is_pool_scene
+            ? "🏊泳池单人"
+            : tpl.is_kitchen_scene
+              ? tpl.camera_mode === "mirror"
+                ? "🪞厨房对镜"
+                : tpl.category.startsWith("11.")
+                  ? "🍱饭菜单人"
+                  : "🍳裸围单人"
+              : tpl.camera_mode === "mirror"
+                ? "🪞对镜"
+                : tpl.camera_mode === "direct"
+                  ? "📷直拍"
+                  : "📱界面";
+      const sfLightBadge = transBg
+        ? " · [🏁透明底]"
+        : isExplicitDedicatedLight
+          ? ""
+          : ` · [${tpl.light_badge}]`;
+
+      // V5 Golden Positional Order: First-slot camera/mirror/UI framing right after actorTags!
+      const pOther = joinTags(
+        headUsed,
+        actorTags,
+        effectiveFramingTags,
+        charCoreUsed,
+        envAndPropsUsed,
+        outfitTags,
+        soloSceneExprTags,
+        "rating:explicit, nsfw, uncensored",
+        genderActionTags,
+        soloCondomTags,
+        soloXrayTags,
+        proseBody,
+        wrapTailNeg(m, fullNeg, negOn)
+      );
+      results.push({
+        subTitle: `【${tpl.id} · ${tpl.title} · ${camBadge}${sfLightBadge}${genderBadge}${soloCondomBadge}${soloXrayBadge}】`,
+        canvas: tpl.canvas,
+        prompt: pOther,
+      });
+    }
   } else if (sceneId === "FREE") {
     const m = buildCommonModules(cfg, defEyesOpen);
     const transBg = Boolean(cfg.pos_transparent_bg);
@@ -4088,12 +4699,36 @@ export function generateScenePrompts(
 
   const isPosPovLocked = isPov && sceneId in ALL_POSITIONS_TEMPLATES;
   const isOtherActionScene = sceneId in OTHER_ACTION_TEMPLATES;
+  const isKitchenActionScene =
+    isOtherActionScene && Boolean(OTHER_ACTION_TEMPLATES[sceneId].is_kitchen_scene);
+  const isKitchenDuoScene =
+    isOtherActionScene && Boolean(OTHER_ACTION_TEMPLATES[sceneId].is_kitchen_duo);
+  const isPoolActionScene =
+    isOtherActionScene && Boolean(OTHER_ACTION_TEMPLATES[sceneId].is_pool_scene);
+  const isPoolDuoScene =
+    isOtherActionScene && Boolean(OTHER_ACTION_TEMPLATES[sceneId].is_pool_duo);
+  const isSpecimenActionScene =
+    isOtherActionScene && Boolean(OTHER_ACTION_TEMPLATES[sceneId].is_specimen_scene);
+  const isSpecimenDuoScene =
+    isOtherActionScene && Boolean(OTHER_ACTION_TEMPLATES[sceneId].is_specimen_duo);
+  const isBathroomActionScene =
+    isOtherActionScene && Boolean(OTHER_ACTION_TEMPLATES[sceneId].is_bathroom_scene);
+  const isHouseworkActionScene =
+    isOtherActionScene && Boolean(OTHER_ACTION_TEMPLATES[sceneId].is_housework_scene);
+  const isHouseworkDuoScene =
+    isOtherActionScene && Boolean(OTHER_ACTION_TEMPLATES[sceneId].is_housework_duo);
+  const isPhotoSubstituteScene =
+    isOtherActionScene && Boolean(OTHER_ACTION_TEMPLATES[sceneId].is_photo_substitute_scene);
   const suppressPovFacePost =
     (isPosPovLocked &&
       (ALL_POSITIONS_TEMPLATES[sceneId].pov_visibility === "rear_no_face" ||
         ALL_POSITIONS_TEMPLATES[sceneId].pov_visibility === "top_down_over_shoulder" ||
         ALL_POSITIONS_TEMPLATES[sceneId].pov_visibility === "ventral_no_eyes")) ||
-    (isOtherActionScene && Boolean(OTHER_ACTION_TEMPLATES[sceneId].no_face_pov));
+    (isOtherActionScene &&
+      Boolean(
+        OTHER_ACTION_TEMPLATES[sceneId].no_face_pov ||
+          OTHER_ACTION_TEMPLATES[sceneId].is_photo_substitute_scene
+      ));
 
   // Post-pass 0: Global Character Expression Override (skipped on no-face rear/top-down POV to prevent 180° owl head-turn)
   if (exprCtrl.active && !suppressPovFacePost) {
@@ -4130,10 +4765,19 @@ export function generateScenePrompts(
     }));
   }
 
-  // Post-pass 4: Optional Uterus Cross-Section / X-Ray Pass (auto-disabled on Femboy mode to avoid female womb contradiction)
+  // Post-pass 4: Optional Uterus Cross-Section / X-Ray Pass (Kitchen & Pool scenes compile calibrated gender-aware X-Ray directly)
   const activeGenderMode: CharacterGenderMode = cfg.gender_mode ?? "normal";
   const isCreatureSceneId = sceneId.startsWith("TN") || sceneId.startsWith("BG");
-  if (cfg.enable_uterus_xray && (activeGenderMode !== "femboy" || isCreatureSceneId)) {
+  if (
+    cfg.enable_uterus_xray &&
+    !isKitchenActionScene &&
+    !isPoolActionScene &&
+    !isSpecimenActionScene &&
+    !isBathroomActionScene &&
+    !isHouseworkActionScene &&
+    !isPhotoSubstituteScene &&
+    (activeGenderMode !== "femboy" || isCreatureSceneId)
+  ) {
     const xraySpec = resolveUterusXraySpec(sceneId, cfg, isPov);
     if (xraySpec) {
       const xrayNegGuard = isCreatureSceneId
@@ -4245,9 +4889,38 @@ export function generateScenePrompts(
       let hasActualClothesForLight = false;
       let hasTankTopForLight = false;
       const isLockedDarkEnv = Boolean(ALL_POSITIONS_TEMPLATES[sceneId]?.lock_scene_env);
+      const isExplicitNonSunlitPreset =
+        isExplicitDedicatedSceneLightingCode(activeLight.code) &&
+        activeLight.code !== "kitchen_sunlit_pendant" &&
+        activeLight.code !== "pool_sunlit_caustics" &&
+        activeLight.code !== "pool_split_waterline" &&
+        activeLight.code !== "housework_sunlit_living" &&
+        activeLight.code !== "housework_sunny_balcony" &&
+        activeLight.code !== "housework_warm_bedroom";
       const isNonDaylightScene =
         isLockedDarkEnv ||
-        (isOtherActionScene && OTHER_ACTION_TEMPLATES[sceneId].lighting_mode !== "sunlit_indoor") ||
+        isExplicitNonSunlitPreset ||
+        (isOtherActionScene &&
+          !isKitchenActionScene &&
+          !isPoolActionScene &&
+          !isSpecimenActionScene &&
+          !isBathroomActionScene &&
+          !isHouseworkActionScene &&
+          !isPhotoSubstituteScene &&
+          OTHER_ACTION_TEMPLATES[sceneId].lighting_mode !== "sunlit_indoor") ||
+        (isOtherActionScene &&
+          !isExplicitDedicatedSceneLightingCode(activeLight.code) &&
+          (OTHER_ACTION_TEMPLATES[sceneId].lighting_mode !== "sunlit_indoor" ||
+            Boolean(OTHER_ACTION_TEMPLATES[sceneId].is_nocturnal_fridge) ||
+            Boolean(OTHER_ACTION_TEMPLATES[sceneId].is_bathroom_scene) ||
+            (Boolean(OTHER_ACTION_TEMPLATES[sceneId].housework_light_mode) &&
+              (OTHER_ACTION_TEMPLATES[sceneId].housework_light_mode === "hallway_wood_sheen" ||
+                OTHER_ACTION_TEMPLATES[sceneId].housework_light_mode === "closet_dim_warm")) ||
+            (Boolean(OTHER_ACTION_TEMPLATES[sceneId].kitchen_light_mode) &&
+              OTHER_ACTION_TEMPLATES[sceneId].kitchen_light_mode !== "sunlit_or_pendant") ||
+            (Boolean(OTHER_ACTION_TEMPLATES[sceneId].pool_light_mode) &&
+              OTHER_ACTION_TEMPLATES[sceneId].pool_light_mode !== "sunlit_caustics" &&
+              OTHER_ACTION_TEMPLATES[sceneId].pool_light_mode !== "split_waterline"))) ||
         (cfg.enable_background && Boolean(activeEnv?.unblock_dark)) ||
         ((sceneId in ALL_POSITIONS_TEMPLATES || sceneId === "FREE") &&
           cfg.enable_background &&
@@ -4262,7 +4935,11 @@ export function generateScenePrompts(
           })
           .replace(/^[ ,]+|[ ,]+$/g, "");
         const negSuffix = negBlocks0.length > 0 ? `, ${negBlocks0.join(", ")}` : "";
-        const sceneHasSteamyWet = /\b(steamy|shower|onsen|steam|wet skin)\b/i.test(posPart);
+        const sceneHasSteamyWet =
+          isKitchenActionScene ||
+          isPoolActionScene ||
+          isBathroomActionScene ||
+          /\b(steamy|shower|onsen|steam|wet skin|water droplets)\b/i.test(posPart);
         posPart = posPart
           .split(", ")
           .filter((tok) => {
@@ -4278,6 +4955,11 @@ export function generateScenePrompts(
           })
           .join(", ");
         hasActualClothesForLight =
+          !isKitchenActionScene &&
+          !isPoolActionScene &&
+          !isSpecimenActionScene &&
+          !isBathroomActionScene &&
+          !isHouseworkActionScene &&
           (cfg.enable_outfit || (isOtherActionScene && cfg.other_use_scene_outfit !== false)) &&
           !/\bcompletely nude\b/i.test(posPart) &&
           /\b(shirt|t-shirt|tank top|skirt|dress|leotard|bikini|swimsuit|serafuku|camisole|nightgown|cardigan|shorts|briefs|bra|clothed|coat|jacket|hoodie|blouse|sweater|apron|bunnysuit|pantyhose)\b/i.test(
@@ -4297,34 +4979,83 @@ export function generateScenePrompts(
           }
         }
         nextPrompt = `${posPart}${negSuffix}`;
-      } else if (isNonDaylightScene && !nextPrompt.startsWith("[Base Prompt]")) {
+      } else if (isNonDaylightScene) {
         // Strip outdoor sun/daylight tags injected by non-2.5D lighting presets (Contre-Jour / Front-Lit / Window Sidelight) on enclosed/night/flash scenes
-        const negBlocksSun: string[] = [];
-        let posSun = nextPrompt
-          .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
-            negBlocksSun.push(block.trim());
-            return "";
-          })
-          .replace(/^[ ,]+|[ ,]+$/g, "");
-        const negSunSuffix = negBlocksSun.length > 0 ? `, ${negBlocksSun.join(", ")}` : "";
-        const stripSunSet = new Set(["sunlight", "sun glare", "light rays", "daylight", "clear blue sky", "bright sky"]);
-        posSun = splitTopLevelCommaSegments(posSun)
-          .filter((tok) => {
-            const bare = tok.replace(/^-?\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
-            return Boolean(bare) && !stripSunSet.has(bare);
-          })
-          .join(", ");
-        nextPrompt = `${posSun}${negSunSuffix}`;
+        const stripSunSet = new Set([
+          "sunlight",
+          "bright summer sunlight",
+          "dappled sunlight",
+          "morning sunlight",
+          "afternoon sunlight",
+          "sun glare",
+          "light rays",
+          "daylight",
+          "clear blue sky",
+          "bright sky",
+        ]);
+        if (nextPrompt.startsWith("[Base Prompt]")) {
+          const sections = nextPrompt.split(/\n\n+/);
+          nextPrompt = sections
+            .map((sec, idx) => {
+              if (idx !== 0 || !sec.startsWith("[Base Prompt]\n")) return sec;
+              const body = sec.slice("[Base Prompt]\n".length);
+              const negBlocksSun: string[] = [];
+              let posSun = body
+                .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
+                  negBlocksSun.push(block.trim());
+                  return "";
+                })
+                .replace(/^[ ,]+|[ ,]+$/g, "");
+              const negSunSuffix = negBlocksSun.length > 0 ? `, ${negBlocksSun.join(", ")}` : "";
+              posSun = splitTopLevelCommaSegments(posSun)
+                .filter((tok) => {
+                  const bare = tok.replace(/^-?\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+                  return Boolean(bare) && !stripSunSet.has(bare);
+                })
+                .join(", ");
+              return `[Base Prompt]\n${posSun}${negSunSuffix}`;
+            })
+            .join("\n\n");
+        } else {
+          const negBlocksSun: string[] = [];
+          let posSun = nextPrompt
+            .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
+              negBlocksSun.push(block.trim());
+              return "";
+            })
+            .replace(/^[ ,]+|[ ,]+$/g, "");
+          const negSunSuffix = negBlocksSun.length > 0 ? `, ${negBlocksSun.join(", ")}` : "";
+          posSun = splitTopLevelCommaSegments(posSun)
+            .filter((tok) => {
+              const bare = tok.replace(/^-?\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
+              return Boolean(bare) && !stripSunSet.has(bare);
+            })
+            .join(", ");
+          nextPrompt = `${posSun}${negSunSuffix}`;
+        }
       }
       const skipDaylightProse =
-        isLockedDarkEnv &&
-        (activeLight.code === "window_golden_rim" || activeLight.code === "front_luminous_wet");
+        ((isKitchenDuoScene ||
+          isPoolDuoScene ||
+          isSpecimenDuoScene ||
+          isHouseworkDuoScene) &&
+          !isExplicitDedicatedSceneLightingCode(activeLight.code)) ||
+        (isLockedDarkEnv &&
+          (activeLight.code === "window_golden_rim" || activeLight.code === "front_luminous_wet"));
+      const isNocturnalNoBacklight =
+        isOtherActionScene &&
+        !isExplicitDedicatedSceneLightingCode(activeLight.code) &&
+        (Boolean(OTHER_ACTION_TEMPLATES[sceneId].is_nocturnal_fridge) ||
+          OTHER_ACTION_TEMPLATES[sceneId].pool_light_mode === "night_pool_glow");
       let resolvedCw = activeLight.inline_counterweight || "";
       if (isNonDaylightScene && resolvedCw) {
         resolvedCw = resolvedCw
           .replace(/\bsun glare,\s*/gi, "")
           .replace(/\bshade,\s*dark,\s*dim lighting,\s*/gi, "")
           .replace(/,\s*harsh shadows/gi, "");
+      }
+      if (isNocturnalNoBacklight && resolvedCw) {
+        resolvedCw = resolvedCw.replace(/\bbacklighting,\s*/gi, "");
       }
       const cwSuffix =
         resolvedCw && !skipDaylightProse && sceneId !== "MA7E"
@@ -4346,9 +5077,16 @@ export function generateScenePrompts(
             : "Rendered in crisp 2.5D anime cel coloring with soft satin glow cushions, diagonal cheek blush lines, and pinprick white skin speculars.";
         } else if (isNonDaylightScene) {
           resolvedLightProse = resolvedLightProse
-            .replace(/blinding sun glare behind her/gi, "intense rim backlighting behind her")
+            .replace(
+              /blinding sun glare behind her/gi,
+              isNocturnalNoBacklight ? "dramatic chiaroscuro contrast" : "intense rim backlighting behind her"
+            )
             .replace(/Bright direct front sunlight/g, "Bright direct front lighting")
-            .replace(/Intense overexposed white daylight/g, "Crisp directional rim lighting");
+            .replace(/Intense overexposed white daylight/g, "Crisp directional rim lighting")
+            .replace(/Bright morning kitchen sunlight/g, "Warm overhead kitchen lighting")
+            .replace(/Blazing summer poolside sunlight/g, "Luminous turquoise water lighting")
+            .replace(/\bsunlight\b/gi, "warm light")
+            .replace(/\bdaylight\b/gi, "ambient light");
         }
         if (suppressPovFacePost) {
           resolvedLightProse = resolvedLightProse
@@ -4406,7 +5144,15 @@ export function generateScenePrompts(
           return `${withCw}${sep}${resolvedLightProse}${placedFront ? "" : cwSuffix}${negTail}`;
         };
         const charDistReserve =
-          !isPov && /\b(hetero|faceless male|2boys)\b/i.test(rawPrefix) ? 24 : 0;
+          !isPov &&
+          !isKitchenActionScene &&
+          !isPoolActionScene &&
+          !isSpecimenActionScene &&
+          !isHouseworkActionScene &&
+          !isPhotoSubstituteScene &&
+          /\b(hetero|faceless male|2boys)\b/i.test(rawPrefix)
+            ? 24
+            : 0;
         const effectiveLightBudget = Math.max(260, maxPosBudget - charDistReserve);
         let candidate = buildWithLightProse(rawPrefix);
         if (countPromptT5Tokens(candidate).api_pos_tokens <= effectiveLightBudget) {
@@ -4477,20 +5223,2398 @@ export function generateScenePrompts(
   }
 
   // Post-pass 5: Unified Character Prompt Distribution ([Base Prompt] + [Character 1] [+ [Character 2]])
-  // Moves character identity/body/outfit/expression/gender traits into [Character 1] without altering tags,
-  // isolating them from global style/camera/action and (in 3rd-person 2-person scenes) from [Character 2].
+  // Kitchen, Pool, Specimen, Bathroom, Housework & Photo-Substitute scenes preserve their exemplar-calibrated single-box or Multi-Box layouts.
+  const multiBox490CapSet = new Set([
+    "KTD12",
+    "KTD30",
+    "KTD34",
+    "KTD42",
+    "KTD50",
+    "KTD52",
+    "PLD18",
+    "PS02",
+  ]);
   results = results.map((item) => {
-    const distributed = distributePromptToCharacterCaptions(item.prompt, cfg);
-    if (measureEffectivePosTokens(distributed) <= maxPosBudget) {
-      return { ...item, prompt: distributed };
+    const isExemptLayout =
+      isKitchenActionScene ||
+      isPoolActionScene ||
+      isSpecimenActionScene ||
+      isBathroomActionScene ||
+      isHouseworkActionScene ||
+      isPhotoSubstituteScene;
+    const candidate = isExemptLayout
+      ? item.prompt
+      : distributePromptToCharacterCaptions(item.prompt, cfg);
+    const effectiveItemCap =
+      multiBox490CapSet.has(sceneId) ||
+      ((isHouseworkActionScene || isPhotoSubstituteScene) && candidate.startsWith("[Base Prompt]"))
+        ? Math.min(maxPosBudget, 490)
+        : isExemptLayout
+          ? Math.min(maxPosBudget, 500)
+          : maxPosBudget;
+    if (measureEffectivePosTokens(candidate) <= effectiveItemCap) {
+      return { ...item, prompt: candidate };
     }
     return {
       ...item,
-      prompt: enforcePositiveTokenBudget(distributed, maxPosBudget),
+      prompt: enforcePositiveTokenBudget(candidate, effectiveItemCap),
     };
   });
 
   return results;
+}
+
+function compileHouseworkDuoScenePrompt(opts: {
+  tpl: (typeof OTHER_ACTION_TEMPLATES)[string];
+  duo: NonNullable<(typeof OTHER_ACTION_TEMPLATES)[string]["housework_duo"]>;
+  cfg: CharacterConfig;
+  m: Record<string, string>;
+  headUsed: string;
+  charCoreUsed: string;
+  charHasFlatChest: boolean;
+  genderMode: CharacterGenderMode;
+  genderBadge: string;
+  useSceneOutfit: boolean;
+  outfitTagsFromLeft: string;
+  transBg: boolean;
+  transNeg: string;
+  sfSceneLightTags: string;
+  isExplicitDedicatedLight?: boolean;
+  houseworkApronGuard: string;
+  footGuard: string;
+  landscapeGuard: string;
+  baseTailNeg: string;
+  negOn: boolean;
+}): ScenePromptItem {
+  const {
+    tpl,
+    duo,
+    cfg,
+    m,
+    headUsed,
+    charCoreUsed,
+    charHasFlatChest,
+    genderMode,
+    genderBadge,
+    useSceneOutfit,
+    outfitTagsFromLeft,
+    transBg,
+    transNeg,
+    sfSceneLightTags,
+    isExplicitDedicatedLight,
+    houseworkApronGuard,
+    footGuard,
+    landscapeGuard,
+    baseTailNeg,
+    negOn,
+  } = opts;
+
+  const isYuriShowcase = Boolean(duo.is_yuri_showcase);
+  const wantAuxXray = Boolean(cfg.enable_uterus_xray);
+  const condomOn = Boolean(cfg.enable_condom);
+  const chestCoveredActive = Boolean(tpl.chest_covered && useSceneOutfit);
+  const chestNeg = chestCoveredActive ? "nipples, areolae" : "";
+
+  const femApronBase = tpl.barefoot
+    ? "1.6::naked apron::, white frilly apron, nothing underneath, bare back"
+    : "1.6::naked apron::, white frilly apron, nothing underneath, bare back, white thighhighs";
+
+  const replaceProseOutfit = (rawProse: string): string => {
+    if (useSceneOutfit || !tpl.prose_outfit_phrase) return rawProse;
+    let out = rawProse;
+    const wearProse = cfg.enable_outfit && m.front_shirt_prose ? m.front_shirt_prose.trim() : "completely nude";
+    for (const cl of tpl.prose_outfit_phrase.split("|").filter(Boolean)) {
+      if (out.includes(cl)) {
+        out = wearProse ? out.replace(cl, wearProse) : out.replace(cl, "");
+      }
+    }
+    return out.replace(/\s{2,}/g, " ").trim();
+  };
+
+  const envAndProps = transBg
+    ? joinTags(
+        "2.0::transparent background::, has alpha, alpha transparency, no background",
+        tpl.core_prop_tags || ""
+      )
+    : joinTags(tpl.env_tags, sfSceneLightTags, tpl.core_prop_tags || "");
+
+  const lightBadge = transBg
+    ? " · [🏁透明底]"
+    : isExplicitDedicatedLight
+      ? ""
+      : ` · [${tpl.light_badge}]`;
+  const condomBadge = condomOn ? " · [🛡️安全套]" : "";
+  const xrayBadge = wantAuxXray ? " · [🔬内部透视]" : "";
+  const catBadge = "🏠家务干扰";
+
+  const duoAnatomyNeg =
+    "extra hands, 3 hands, extra fingers, bad hands, mutated hands, extra arms, extra legs, fused bodies, gaping, censor, mosaic censoring, bar censor";
+
+  const fitHouseworkNeg = (rawNeg: string): string => {
+    const dedup = deduplicateCommaTags(rawNeg);
+    if (encodeT5Len(dedup) <= 435) return dedup;
+    const parts = dedup.split(",").map((s) => s.trim()).filter(Boolean);
+    while (parts.length > 20 && encodeT5Len(parts.join(", ")) > 435) {
+      parts.pop();
+    }
+    return parts.join(", ");
+  };
+
+  // --------------------------------------------------------------------------
+  // MODE 1: 2Girls Contrast Naked-Aprons Yuri Showcase (HWD15 normal)
+  // --------------------------------------------------------------------------
+  if (genderMode === "normal" && isYuriShowcase) {
+    const heroLower = `${m.char_id} ${cfg.extra_char_tags || ""}`.toLowerCase();
+    const heroIsWhiteOrAyanami =
+      /\bayanami\b|\blaffey\b|\bwhite hair\b|\bsilver hair\b/i.test(heroLower);
+    const partnerIdentity = heroIsWhiteOrAyanami
+      ? "javelin (azur lane), short periwinkle hair, aqua eyes, slender, slim waist, small breasts"
+      : "ayanami (azur lane), long white hair, red eyes, slender, slim waist, small breasts";
+    const c1ContrastGuard = heroIsWhiteOrAyanami
+      ? "-2::periwinkle hair, aqua eyes, blue apron::"
+      : "-2::white hair, red eyes, blue apron::";
+
+    const c1Wardrobe = useSceneOutfit
+      ? joinTags(femApronBase, duo.apron_detail)
+      : outfitTagsFromLeft;
+    const c2Wardrobe = useSceneOutfit
+      ? chestCoveredActive
+        ? "1.6::naked apron::, pastel-blue frilly apron, intact apron bib covering front chest, nothing underneath, bare back, 1.45::sideboob::, white thighhighs, blushing"
+        : "1.6::naked apron::, pastel-blue frilly apron, nothing underneath, bare breasts, white thighhighs, blushing"
+      : joinTags(outfitTagsFromLeft, "blushing");
+
+    const xrayTags = wantAuxXray
+      ? "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix"
+      : "";
+    const xrayNeg = wantAuxXray
+      ? "fetus, baby, embryo, skeleton, bones, medical diagram, gore"
+      : "x-ray, cross-section, cutaway, uterus";
+    const condomTags = condomOn ? "1.5::used condom::, 1.4::cum in condom::" : "";
+
+    const yuriGlobalNeg = fitHouseworkNeg(
+      joinTags(
+        "1boy, 2boys, male, penis, hetero, futanari, twins, identical hair, 3girls",
+        chestNeg,
+        duoAnatomyNeg,
+        footGuard,
+        tpl.extra_neg || "",
+        xrayNeg,
+        houseworkApronGuard,
+        landscapeGuard,
+        transNeg,
+        baseTailNeg
+      )
+    );
+
+    const exprUsed = exprIf(cfg, duo.expr_tags, "", tpl.id);
+    const yuriProseClean = cfg.enable_t5_prose
+      ? `${replaceProseOutfit(tpl.female_prose)}${transBg ? " Isolated on a transparent background." : ""}`
+      : "";
+
+    const baseLine = joinTags(
+      headUsed,
+      "2girls, 1.55::yuri::",
+      "rating:explicit, nsfw, uncensored",
+      condomTags,
+      xrayTags,
+      envAndProps,
+      tpl.framing_tags,
+      tpl.female_tags,
+      yuriProseClean,
+      wrapTailNeg(m, yuriGlobalNeg, negOn)
+    );
+
+    const char1Line = joinTags(
+      "1girl",
+      charCoreUsed,
+      c1Wardrobe,
+      exprUsed,
+      negOn ? c1ContrastGuard : ""
+    );
+
+    const char2Line = joinTags("1girl", partnerIdentity, c2Wardrobe);
+
+    const yuriPrompt = `[Base Prompt]\n${baseLine}\n\n[Character 1 (B3)]\n${char1Line}\n\n[Character 2 (D3)]\n${char2Line}`;
+    return {
+      subTitle: `【${tpl.id} · ${tpl.title} · 👯家务双裸围百合${lightBadge}${condomBadge}${xrayBadge}】`,
+      canvas: tpl.canvas,
+      prompt: yuriPrompt,
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // MODE 2: Crossdressing Femboy x Male Partner (Multi-Box 2boys across HWD01..15)
+  // --------------------------------------------------------------------------
+  if (genderMode === "femboy") {
+    const femboyCharCore = splitTopLevelCommaSegments(m.char_core)
+      .map((tok) => {
+        const bare = stripWeightPrefix(tok);
+        if (bare === "short female") return "1.25::short male::";
+        if (
+          bare === "small breasts" ||
+          bare === "medium breasts" ||
+          bare === "large breasts" ||
+          bare === "huge breasts" ||
+          bare === "flat chest" ||
+          bare === "breasts" ||
+          bare === "female" ||
+          bare === "1girl"
+        ) {
+          return "";
+        }
+        return tok;
+      })
+      .filter(Boolean)
+      .join(", ");
+
+    const femboyOutfitLeft = splitTopLevelCommaSegments(outfitTagsFromLeft)
+      .filter((tok) => {
+        const bare = stripWeightPrefix(tok);
+        return (
+          Boolean(bare) &&
+          bare !== "bare breasts" &&
+          bare !== "breasts" &&
+          bare !== "cleavage" &&
+          bare !== "bra" &&
+          bare !== "pasties" &&
+          bare !== "heart pasties" &&
+          bare !== "rabbit tail"
+        );
+      })
+      .join(", ");
+
+    const femboyApronDetail = splitTopLevelCommaSegments(duo.apron_detail)
+      .filter((tok) => {
+        const bare = stripWeightPrefix(tok);
+        return (
+          Boolean(bare) &&
+          bare !== "bare breasts" &&
+          bare !== "nipples" &&
+          bare !== "sideboob" &&
+          !/\bbreasts\b/i.test(bare)
+        );
+      })
+      .join(", ");
+
+    const femboyWardrobe = useSceneOutfit
+      ? joinTags(femApronBase, femboyApronDetail)
+      : femboyOutfitLeft;
+    // Omit 'tiny pink nipples' on chest_covered scenes so UC 'nipples, areolae' never self-contradicts
+    const femboyChestTags = chestCoveredActive
+      ? "1.55::flat chest::, 1.4::flat male chest::, hairless torso"
+      : "1.55::flat chest::, 1.4::flat male chest::, tiny pink nipples, hairless torso";
+
+    const femboyFraming = tpl.framing_tags
+      .replace(/1\.55::girl on top::/g, "1.55::straddling::")
+      .replace(/1\.5::scissoring::/g, "1.5::sitting sex::")
+      .replace(/\bbare breasts\b/gi, "flat chest");
+    const femboyProps = envAndProps
+      .replace(/\bboth girls\b/gi, "both boys")
+      .replace(/\bbare breasts\b/gi, "flat chest")
+      .replace(/\bher\b/gi, "his");
+    const femboyPartner = isYuriShowcase
+      ? "shirtless faceless male embracing him on the mattress"
+      : duo.partner_tags
+          .replace(/\bbreast\b/gi, "chest")
+          .replace(/\bher\b/gi, "his");
+
+    const condomBase = condomOn ? "1.4::condom::, 1.35::cum in condom::" : "";
+    const condomPartner = condomOn ? "1.35::condom on penis::" : "";
+    const xrayTags = wantAuxXray
+      ? "1.45::x-ray::, 1.4::cross-section::, 1.5::intestines::, 1.5::cum in ass::, internal cumshot"
+      : "";
+    const xrayNeg = wantAuxXray
+      ? "fetus, baby, embryo, skeleton, bones, skull, ribcage, medical diagram, gore, uterus, cervix, womb"
+      : "x-ray, cross-section, cutaway, uterus";
+
+    const femboyGlobalNeg = fitHouseworkNeg(
+      joinTags(
+        "1girl, 2girls, female, girl, hetero, breasts, small breasts, medium breasts, large breasts, cleavage, pussy, vulva, labia, vaginal, uterus, cervix, futanari, twins, identical hair, 3boys, multiple boys, muscular male, bara, facial hair, huge penis, large penis",
+        chestNeg,
+        duoAnatomyNeg,
+        footGuard,
+        tpl.extra_neg || "",
+        xrayNeg,
+        houseworkApronGuard,
+        landscapeGuard,
+        transNeg,
+        baseTailNeg
+      )
+    );
+
+    const exprUsed = exprIf(cfg, duo.expr_tags, "", tpl.id);
+    const femboyProseClean = cfg.enable_t5_prose
+      ? `${replaceProseOutfit(tpl.femboy_prose)}${transBg ? " Isolated on a transparent background." : ""}`
+      : "";
+
+    const baseLine = joinTags(
+      headUsed,
+      "2boys, 1.55::yaoi::",
+      "rating:explicit, nsfw, uncensored",
+      condomBase,
+      xrayTags,
+      femboyProps,
+      femboyFraming,
+      tpl.femboy_tags,
+      femboyProseClean,
+      wrapTailNeg(m, femboyGlobalNeg, negOn)
+    );
+
+    const char1Line = joinTags(
+      "1.45::1boy::, 1.55::otoko no ko::, 1.45::crossdressing::, 1.35::genderbend::",
+      femboyCharCore,
+      femboyChestTags,
+      femboyWardrobe,
+      exprUsed,
+      "target#anal",
+      negOn ? "-2.5::breasts, pussy, female::" : ""
+    );
+
+    const char2Line = joinTags(
+      "1boy, tall shirtless faceless male",
+      femboyPartner,
+      "penis",
+      condomPartner,
+      "source#anal",
+      negOn ? "-2.5::otoko no ko, crossdressing, feminine, apron::" : ""
+    );
+
+    const femboyPrompt = `[Base Prompt]\n${baseLine}\n\n[Character 1 (B3)]\n${char1Line}\n\n[Character 2 (D3)]\n${char2Line}`;
+    return {
+      subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${genderBadge}${condomBadge}${xrayBadge}】`,
+      canvas: tpl.canvas,
+      prompt: femboyPrompt,
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // MODE 3: Male-on-Futa Multi-Box (futa_no_balls / futa_with_balls across HWD01..15)
+  // --------------------------------------------------------------------------
+  if (genderMode === "futa_no_balls" || genderMode === "futa_with_balls") {
+    const withBalls = genderMode === "futa_with_balls";
+    const futaMorph = withBalls
+      ? "1.6::futanari::, 1.45::futa with balls::, 1.45::small penis::, 1.4::erect penis::, 1.3::small testicles::, testicles"
+      : "1.6::futanari::, 1.5::futa without balls::, 1.45::small penis::, 1.4::erect penis::";
+
+    const futaAction = splitTopLevelCommaSegments(tpl.futa_tags)
+      .filter((tok) => {
+        const bare = stripWeightPrefix(tok);
+        return (
+          Boolean(bare) &&
+          bare !== "small penis" &&
+          bare !== "small testicles" &&
+          bare !== "testicles" &&
+          bare !== "balls" &&
+          bare !== "labia" &&
+          bare !== "spread pussy"
+        );
+      })
+      .join(", ");
+
+    const futaFraming = tpl.framing_tags.replace(/1\.5::scissoring::/g, "1.5::sitting sex::");
+    const futaProps = envAndProps.replace(/\bboth girls\b/gi, "both partners");
+    const futaPartner = isYuriShowcase
+      ? "shirtless faceless male embracing her on the mattress"
+      : duo.partner_tags;
+
+    const futaWardrobe = useSceneOutfit
+      ? joinTags(femApronBase, duo.apron_detail)
+      : outfitTagsFromLeft;
+
+    const condomBase = condomOn ? "1.4::condom::, 1.35::cum in condom::" : "";
+    const condomPartner = condomOn ? "1.35::condom on penis::" : "";
+    const xrayTags = wantAuxXray
+      ? "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.45::cum in uterus::"
+      : "";
+    const xrayNeg = wantAuxXray
+      ? "fetus, baby, embryo, skeleton, bones, medical diagram, gore"
+      : "x-ray, cross-section, cutaway, uterus";
+
+    const futaGlobalNeg = fitHouseworkNeg(
+      joinTags(
+        "2boys, yaoi, otoko no ko, crossdressing, male chest, huge penis, large penis, oversized penis, hyper penis, monster penis, giant penis, 2girls",
+        charHasFlatChest ? "" : "flat chest",
+        withBalls ? "huge testicles, large testicles" : "testicles, balls, scrotum",
+        chestNeg,
+        duoAnatomyNeg,
+        footGuard,
+        tpl.extra_neg || "",
+        xrayNeg,
+        houseworkApronGuard,
+        landscapeGuard,
+        transNeg,
+        baseTailNeg
+      )
+    );
+
+    const exprUsed = exprIf(cfg, duo.expr_tags, "", tpl.id);
+    const futaProseClean = cfg.enable_t5_prose
+      ? `${replaceProseOutfit(tpl.futa_prose)}${transBg ? " Isolated on a transparent background." : ""}`
+      : "";
+
+    const baseLine = joinTags(
+      headUsed,
+      "1girl, 1boy, hetero, 1.55::futanari::",
+      "rating:explicit, nsfw, uncensored",
+      condomBase,
+      xrayTags,
+      futaProps,
+      futaFraming,
+      futaAction,
+      futaProseClean,
+      wrapTailNeg(m, futaGlobalNeg, negOn)
+    );
+
+    const char1Line = joinTags(
+      "1girl",
+      charCoreUsed,
+      futaMorph,
+      futaWardrobe,
+      exprUsed,
+      "target#vaginal"
+    );
+
+    const char2Line = joinTags(
+      "1boy, tall shirtless faceless male",
+      futaPartner,
+      "penis",
+      condomPartner,
+      "source#vaginal",
+      negOn ? "-2.5::futanari, breasts, feminine, apron::" : ""
+    );
+
+    const futaPrompt = `[Base Prompt]\n${baseLine}\n\n[Character 1 (B3)]\n${char1Line}\n\n[Character 2 (D3)]\n${char2Line}`;
+    return {
+      subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${genderBadge}${condomBadge}${xrayBadge}】`,
+      canvas: tpl.canvas,
+      prompt: futaPrompt,
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // MODE 4: Normal Female x Male Partner (Single-Box on HWD01..HWD14)
+  // --------------------------------------------------------------------------
+  const femaleWardrobe = useSceneOutfit
+    ? joinTags(femApronBase, duo.apron_detail)
+    : outfitTagsFromLeft;
+  const condomTags = condomOn
+    ? "1.4::condom::, 1.35::condom on penis::, 1.35::cum in condom::"
+    : "";
+  const xrayTags = wantAuxXray
+    ? "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.45::cum in uterus::"
+    : "";
+  const xrayNeg = wantAuxXray
+    ? "fetus, baby, embryo, skeleton, bones, medical diagram, gore"
+    : "x-ray, cross-section, cutaway, uterus";
+
+  const normalNeg = fitHouseworkNeg(
+    joinTags(
+      "2boys, yaoi, futanari, otoko no ko, multiple boys, 2girls",
+      charHasFlatChest ? "" : "flat chest",
+      chestNeg,
+      duoAnatomyNeg,
+      footGuard,
+      tpl.extra_neg || "",
+      xrayNeg,
+      houseworkApronGuard,
+      landscapeGuard,
+      transNeg,
+      baseTailNeg
+    )
+  );
+
+  const exprUsed = exprIf(cfg, duo.expr_tags, "", tpl.id);
+  const femaleProseClean = cfg.enable_t5_prose
+    ? `${replaceProseOutfit(tpl.female_prose)}${transBg ? " Isolated on a transparent background." : ""}`
+    : "";
+
+  const pNormal = joinTags(
+    headUsed,
+    "1girl, 1boy, hetero, faceless male",
+    charCoreUsed,
+    femaleWardrobe,
+    envAndProps,
+    tpl.framing_tags,
+    duo.partner_tags,
+    exprUsed,
+    "rating:explicit, nsfw, uncensored",
+    tpl.female_tags,
+    condomTags,
+    xrayTags,
+    femaleProseClean,
+    wrapTailNeg(m, normalNeg, negOn)
+  );
+  return {
+    subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${condomBadge}${xrayBadge}】`,
+    canvas: tpl.canvas,
+    prompt: pNormal,
+  };
+}
+
+function compilePhotoSubstituteScenePrompt(opts: {
+  tpl: (typeof OTHER_ACTION_TEMPLATES)[string];
+  cfg: CharacterConfig;
+  m: Record<string, string>;
+  headUsed: string;
+  charCoreUsed: string;
+  charHasFlatChest: boolean;
+  genderMode: CharacterGenderMode;
+  genderBadge: string;
+  useSceneOutfit: boolean;
+  outfitTagsFromLeft: string;
+  transBg: boolean;
+  transNeg: string;
+  sfSceneLightTags: string;
+  isExplicitDedicatedLight?: boolean;
+  baseTailNeg: string;
+  negOn: boolean;
+}): ScenePromptItem {
+  const {
+    tpl,
+    cfg,
+    m,
+    headUsed,
+    charCoreUsed,
+    charHasFlatChest,
+    genderMode,
+    genderBadge,
+    useSceneOutfit,
+    outfitTagsFromLeft,
+    transBg,
+    transNeg,
+    sfSceneLightTags,
+    isExplicitDedicatedLight,
+    baseTailNeg,
+    negOn,
+  } = opts;
+
+  const isMultiBoxAnchor = Boolean(tpl.is_multibox_photo_anchor);
+  const isAfterSexBellyPress = Boolean(tpl.is_aftersex_belly_press);
+  const stageKind = tpl.photo_substitute_stage ?? "missionary_intact";
+  const wantAuxXray = Boolean(cfg.enable_uterus_xray);
+  const condomOn = Boolean(cfg.enable_condom);
+  const chestCoveredActive = Boolean(tpl.chest_covered && useSceneOutfit);
+  const chestNeg = chestCoveredActive ? "nipples, areolae" : "";
+
+  const photoSpec = resolveContrastingPhotoPortrait(
+    m.char_id || cfg.char_tag || "",
+    cfg.extra_char_tags || ""
+  );
+  const supineProbe = `${m.char_id || cfg.char_tag || ""} ${cfg.extra_char_tags || ""}`.toLowerCase();
+
+  // Build C1 anti-bleed negative counterweight for PS02 Multi-Box without contradicting supine traits
+  const rawC1BleedItems = photoSpec.c1_anti_bleed_neg
+    .replace(/^-2\.5::([\s\S]+?)::$/, "$1")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s && !supineProbe.includes(s.toLowerCase()));
+  const safeC1AntiBleedNeg =
+    rawC1BleedItems.length > 0 ? `-2.5::${rawC1BleedItems.join(", ")}::` : "";
+
+  const envAndProps = transBg
+    ? joinTags(
+        "2.0::transparent background::, has alpha, alpha transparency, no background",
+        tpl.core_prop_tags || ""
+      )
+    : joinTags(tpl.env_tags, sfSceneLightTags, tpl.core_prop_tags || "");
+
+  // Preserve stage lower-face/tears anchor below the photo border while appending non-eye expression overrides
+  const basePhotoExpr = tpl.photo_substitute_expr_tags || "";
+  const overrideExpr = isExpressionOverrideActive(cfg) ? exprIf(cfg, "", "", tpl.id) : "";
+  const exprUsed = splitTopLevelCommaSegments(joinTags(basePhotoExpr, overrideExpr))
+    .filter((seg) => {
+      const bare = stripWeightPrefix(seg);
+      return Boolean(bare) && !/\beyes\b|\bpupils\b|\beyelashes\b|\bjitome\b/i.test(bare);
+    })
+    .join(", ");
+
+  const lightBadge = transBg
+    ? " · [🏁透明底]"
+    : isExplicitDedicatedLight
+      ? ""
+      : ` · [${tpl.light_badge}]`;
+  const condomBadge = condomOn
+    ? isAfterSexBellyPress
+      ? " · [🛡️事后脱套]"
+      : " · [🛡️安全套]"
+    : "";
+  const xrayBadge = wantAuxXray ? " · [🔬内部透视]" : "";
+  const catBadge = `📸替身盖照·${photoSpec.short_zh}`;
+
+  const handAndLegNeg = isAfterSexBellyPress
+    ? "extra hands, 4 hands, extra fingers, bad hands, mutated hands, extra legs, 3 legs, gaping, censor, mosaic censoring, bar censor, mirror, mirror selfie, smartphone, cellphone"
+    : "extra hands, 3 hands, extra fingers, bad hands, mutated hands, extra legs, 3 legs, gaping, censor, mosaic censoring, bar censor, mirror, mirror selfie, smartphone, cellphone";
+
+  // Hard invariant: NEVER allow bare `2girls` on PS01..PS04, and NEVER allow `male torso` on PS04
+  const fitPhotoSubNeg = (rawNeg: string): string => {
+    const dedup = deduplicateCommaTags(rawNeg)
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => {
+        if (!s) return false;
+        const low = s.toLowerCase();
+        if (low === "2girls") return false;
+        if (isAfterSexBellyPress && low === "male torso") return false;
+        return true;
+      })
+      .join(", ");
+    if (encodeT5Len(dedup) <= 435) return dedup;
+    const parts = dedup.split(",").map((s) => s.trim()).filter(Boolean);
+    while (parts.length > 20 && encodeT5Len(parts.join(", ")) > 435) {
+      parts.pop();
+    }
+    return parts.join(", ");
+  };
+
+  const condomTags = condomOn
+    ? isAfterSexBellyPress
+      ? "1.65::used condom::, cum-filled condom on bedsheet, 1.45::cum in condom::"
+      : "1.4::condom::, 1.35::condom on penis::, 1.35::cum in condom::"
+    : "";
+  const condomNeg = condomOn && isAfterSexBellyPress ? "condom on penis" : "";
+
+  const xrayTags = wantAuxXray
+    ? genderMode === "femboy"
+      ? "1.45::x-ray::, 1.4::cross-section::, 1.5::intestines::, 1.5::cum in ass::, internal cumshot"
+      : "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.45::cum in uterus::"
+    : "";
+  const xrayNeg = wantAuxXray
+    ? genderMode === "femboy"
+      ? "fetus, baby, embryo, skeleton, bones, skull, ribcage, medical diagram, gore, uterus, cervix, womb"
+      : "fetus, baby, embryo, skeleton, bones, medical diagram, gore"
+    : "x-ray, cross-section, cutaway, uterus";
+
+  const possPronoun = genderMode === "femboy" ? "his" : "her";
+  const outfitProsePhrase = useSceneOutfit
+    ? stageKind === "missionary_climax_unbuttoned"
+      ? `in a disheveled unbuttoned navy-and-white frilly maid dress`
+      : stageKind === "aftersex_belly_press"
+        ? `with ${possPronoun} navy-and-white frilly maid dress pushed high up to ${possPronoun} chest exposing ${possPronoun} bare belly`
+        : `in a navy-and-white cold-shoulder frilly maid dress with ${possPronoun} skirt pushed up around ${possPronoun} waist`
+    : cfg.enable_outfit && m.front_shirt_prose
+      ? m.front_shirt_prose.trim()
+      : "completely nude";
+
+  const buildStageProse = (): string => {
+    if (!cfg.enable_t5_prose) return "";
+    const transTail = transBg ? " Isolated on a transparent background." : "";
+    if (stageKind === "missionary_multibox") {
+      return `Top-down first-person missionary POV of ${m.name} lying on a white pillow ${outfitProsePhrase}, while a square white-bordered printed portrait photograph of ${photoSpec.prose_desc} rests flat over ${m.name}'s face covering ${possPronoun} eyes so only ${possPronoun} open moaning mouth peeks out below the photo edge.${transTail}`;
+    }
+    if (stageKind === "missionary_climax_unbuttoned") {
+      return `Top-down first-person missionary POV of ${m.name} climaxing on a white pillow ${outfitProsePhrase}, while an askew square white-bordered printed photograph covering ${possPronoun} eyes shows a smiling close-up portrait of ${photoSpec.prose_desc} as hot tears stream from beneath ${photoSpec.eng_name}'s cheerful photo past ${m.name}'s gasping mouth.${transTail}`;
+    }
+    if (stageKind === "aftersex_belly_press") {
+      return `Top-down post-coital POV of exhausted ${m.name} lying limp on a white pillow ${outfitProsePhrase} with a square white-bordered smiling portrait photo of ${photoSpec.prose_desc} covering ${possPronoun} eyes, as a continuous tanned male arm extends from the bottom edge of the frame to press firmly flat onto ${possPronoun} bare lower abdomen below ${possPronoun} navel, squeezing a thick gushing stream of white cum out onto the bedsheet.${transTail}`;
+    }
+    return `Top-down first-person missionary POV looking down at ${m.name} lying on a white pillow ${outfitProsePhrase}, while a tilted square white-bordered printed portrait photograph resting flat over ${possPronoun} face covering ${possPronoun} eyes shows a close-up portrait of ${photoSpec.prose_desc}, leaving only ${m.name}'s flushed chin and small open gasping mouth visible beneath the photo's bottom border.${transTail}`;
+  };
+
+  // ==========================================================================
+  // BRANCH A: PS02 Multi-Box [Character 1 (C3) Body + Character 2 (C2) Photo]
+  // ==========================================================================
+  if (isMultiBoxAnchor) {
+    const char2PhotoLine = joinTags(
+      "printed portrait inside white-bordered 1.75::photograph::",
+      "resting flat on top of face",
+      `1.45::${photoSpec.char_tag}::`,
+      photoSpec.trait_tags,
+      "head and neck portrait photo only, flat paper photo print",
+      negOn ? photoSpec.c2_anti_bleed_neg : ""
+    );
+
+    if (genderMode === "femboy") {
+      const femboyCharCore = splitTopLevelCommaSegments(charCoreUsed)
+        .map((tok) => {
+          const bare = stripWeightPrefix(tok);
+          if (bare === "short female") return "1.25::short male::";
+          if (
+            bare === "small breasts" ||
+            bare === "medium breasts" ||
+            bare === "large breasts" ||
+            bare === "huge breasts" ||
+            bare === "flat chest" ||
+            bare === "breasts" ||
+            bare === "female" ||
+            bare === "1girl"
+          ) {
+            return "";
+          }
+          return tok;
+        })
+        .filter(Boolean)
+        .join(", ");
+      const femboyWardrobe = useSceneOutfit
+        ? tpl.femboy_outfit || tpl.builtin_outfit
+        : outfitTagsFromLeft;
+      const femboyChest = chestCoveredActive
+        ? "1.55::flat chest::, 1.4::flat male chest::, hairless torso"
+        : "1.55::flat chest::, 1.4::flat male chest::, tiny pink nipples, hairless torso";
+      const femboyNeg = fitPhotoSubNeg(
+        joinTags(
+          "2boys lying together, female body, breasts, small breasts, medium breasts, large breasts, cleavage, pussy, vulva, labia, vaginal, uterus, cervix, futanari, muscular male, bara, facial hair, huge penis, large penis",
+          PHOTO_SUBSTITUTE_GUARD_UC,
+          chestNeg,
+          handAndLegNeg,
+          tpl.extra_neg || "",
+          condomNeg,
+          xrayNeg,
+          transNeg,
+          baseTailNeg
+        )
+      );
+      const baseLine = joinTags(
+        headUsed,
+        "1.45::1boy::, pov crotch, penis",
+        "rating:explicit, nsfw, uncensored",
+        envAndProps,
+        tpl.framing_tags,
+        "1.55::anal::, anal insertion, 1.5::cum in ass::",
+        condomTags,
+        xrayTags,
+        buildStageProse(),
+        wrapTailNeg(m, femboyNeg, negOn)
+      );
+      const char1Line = joinTags(
+        "1.45::1boy::, 1.55::otoko no ko::, 1.45::crossdressing::, 1.35::genderbend::",
+        femboyCharCore,
+        femboyChest,
+        "1.7::covered face::, 1.65::covered eyes::, upper face hidden under photograph",
+        exprUsed,
+        femboyWardrobe,
+        "1.4::small penis::, hands gripping bedsheet, legs spread, target#anal",
+        negOn ? "-2.5::breasts, pussy, female::" : ""
+      );
+      return {
+        subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${genderBadge}${condomBadge}${xrayBadge}】`,
+        canvas: tpl.canvas,
+        prompt: `[Base Prompt]\n${baseLine}\n\n[Character 1 (C3)]\n${char1Line}\n\n[Character 2 (C2)]\n${char2PhotoLine}`,
+      };
+    }
+
+    if (genderMode === "futa_no_balls" || genderMode === "futa_with_balls") {
+      const withBalls = genderMode === "futa_with_balls";
+      const futaMorph = withBalls
+        ? "1.6::futanari::, 1.45::futa with balls::, 1.45::small penis::, 1.3::small testicles::, testicles"
+        : "1.6::futanari::, 1.5::futa without balls::, 1.45::small penis::";
+      const futaWardrobe = useSceneOutfit ? tpl.builtin_outfit : outfitTagsFromLeft;
+      const futaNeg = fitPhotoSubNeg(
+        joinTags(
+          "2boys, yaoi, otoko no ko, crossdressing, male chest, huge penis, large penis, oversized penis, hyper penis, monster penis, giant penis",
+          charHasFlatChest ? "" : "flat chest",
+          withBalls ? "huge testicles, large testicles" : "testicles, balls, scrotum",
+          PHOTO_SUBSTITUTE_GUARD_UC,
+          chestNeg,
+          handAndLegNeg,
+          tpl.extra_neg || "",
+          condomNeg,
+          xrayNeg,
+          transNeg,
+          baseTailNeg
+        )
+      );
+      const baseLine = joinTags(
+        headUsed,
+        "1girl, 1boy, hetero, 1.55::futanari::",
+        "rating:explicit, nsfw, uncensored",
+        envAndProps,
+        tpl.framing_tags,
+        "pov crotch, penis, 1.5::vaginal::, insertion, 1.5::cum overflow::",
+        condomTags,
+        xrayTags,
+        buildStageProse(),
+        wrapTailNeg(m, futaNeg, negOn)
+      );
+      const char1Line = joinTags(
+        "1girl",
+        charCoreUsed,
+        futaMorph,
+        "1.7::covered face::, 1.65::covered eyes::, upper face hidden under photograph",
+        exprUsed,
+        futaWardrobe,
+        "hands gripping bedsheet, legs spread, target#vaginal",
+        negOn ? safeC1AntiBleedNeg : ""
+      );
+      return {
+        subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${genderBadge}${condomBadge}${xrayBadge}】`,
+        canvas: tpl.canvas,
+        prompt: `[Base Prompt]\n${baseLine}\n\n[Character 1 (C3)]\n${char1Line}\n\n[Character 2 (C2)]\n${char2PhotoLine}`,
+      };
+    }
+
+    // PS02 Normal Female
+    const normalWardrobe = useSceneOutfit ? tpl.builtin_outfit : outfitTagsFromLeft;
+    const normalMultiNeg = fitPhotoSubNeg(
+      joinTags(
+        "2boys, yaoi, futanari, otoko no ko, multiple boys",
+        charHasFlatChest ? "" : "flat chest",
+        PHOTO_SUBSTITUTE_GUARD_UC,
+        chestNeg,
+        handAndLegNeg,
+        tpl.extra_neg || "",
+        condomNeg,
+        xrayNeg,
+        transNeg,
+        baseTailNeg
+      )
+    );
+    const baseLine = joinTags(
+      headUsed,
+      "1girl, 1boy, hetero",
+      "rating:explicit, nsfw, uncensored",
+      envAndProps,
+      tpl.framing_tags,
+      "pov crotch, penis, 1.55::vaginal::, insertion, 1.5::cum overflow::",
+      condomTags,
+      xrayTags,
+      buildStageProse(),
+      wrapTailNeg(m, normalMultiNeg, negOn)
+    );
+    const char1Line = joinTags(
+      "1girl",
+      charCoreUsed,
+      "1.7::covered face::, 1.65::covered eyes::, upper face hidden under photograph",
+      exprUsed,
+      normalWardrobe,
+      "hands gripping bedsheet, legs spread, target#vaginal",
+      negOn ? safeC1AntiBleedNeg : ""
+    );
+    return {
+      subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${condomBadge}${xrayBadge}】`,
+      canvas: tpl.canvas,
+      prompt: `[Base Prompt]\n${baseLine}\n\n[Character 1 (C3)]\n${char1Line}\n\n[Character 2 (C2)]\n${char2PhotoLine}`,
+    };
+  }
+
+  // ==========================================================================
+  // BRANCH B: PS01, PS03, PS04 Single-Box + T5 Spatial Containment Prose
+  // ==========================================================================
+  const photoInlineTags = `smiling portrait of 1.35::${photoSpec.char_tag}::, ${photoSpec.trait_tags}`;
+
+  if (genderMode === "femboy") {
+    const femboyCharCore = splitTopLevelCommaSegments(charCoreUsed)
+      .map((tok) => {
+        const bare = stripWeightPrefix(tok);
+        if (bare === "short female") return "1.25::short male::";
+        if (
+          bare === "small breasts" ||
+          bare === "medium breasts" ||
+          bare === "large breasts" ||
+          bare === "huge breasts" ||
+          bare === "flat chest" ||
+          bare === "breasts" ||
+          bare === "female" ||
+          bare === "1girl"
+        ) {
+          return "";
+        }
+        return tok;
+      })
+      .filter(Boolean)
+      .join(", ");
+    const femboyActor = isAfterSexBellyPress
+      ? "1.45::1boy::, 1.55::otoko no ko::, 1.45::crossdressing::, 1.35::genderbend::, 1.25::short male::, 1.55::flat chest::, 1.4::flat male chest::, hairless torso"
+      : chestCoveredActive
+        ? "1.45::1boy::, 2boys, 1.55::yaoi::, faceless male, 1.55::otoko no ko::, 1.45::crossdressing::, 1.35::genderbend::, 1.25::short male::, 1.55::flat chest::, 1.4::flat male chest::, hairless torso"
+        : "1.45::1boy::, 2boys, 1.55::yaoi::, faceless male, 1.55::otoko no ko::, 1.45::crossdressing::, 1.35::genderbend::, 1.25::short male::, 1.55::flat chest::, 1.4::flat male chest::, tiny pink nipples, hairless torso";
+    const femboyWardrobe = useSceneOutfit
+      ? tpl.femboy_outfit || tpl.builtin_outfit
+      : outfitTagsFromLeft;
+    const femboyNeg = fitPhotoSubNeg(
+      joinTags(
+        "female body, breasts, small breasts, medium breasts, large breasts, cleavage, pussy, vulva, labia, vaginal, uterus, cervix, futanari, muscular male, bara, facial hair, huge penis, large penis",
+        PHOTO_SUBSTITUTE_GUARD_UC,
+        chestNeg,
+        handAndLegNeg,
+        tpl.extra_neg || "",
+        condomNeg,
+        xrayNeg,
+        transNeg,
+        baseTailNeg
+      )
+    );
+    const pFemboy = joinTags(
+      headUsed,
+      femboyActor,
+      "rating:explicit, nsfw, uncensored",
+      condomTags,
+      xrayTags,
+      tpl.framing_tags,
+      femboyCharCore,
+      envAndProps,
+      photoInlineTags,
+      exprUsed,
+      femboyWardrobe,
+      tpl.femboy_tags,
+      buildStageProse(),
+      wrapTailNeg(m, femboyNeg, negOn)
+    );
+    return {
+      subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${genderBadge}${condomBadge}${xrayBadge}】`,
+      canvas: tpl.canvas,
+      prompt: pFemboy,
+    };
+  }
+
+  if (genderMode === "futa_no_balls" || genderMode === "futa_with_balls") {
+    const withBalls = genderMode === "futa_with_balls";
+    const futaActor = isAfterSexBellyPress
+      ? withBalls
+        ? "1girl, 1.55::futanari::, 1.45::futa with balls::, 1.45::small penis::, 1.3::small testicles::, testicles"
+        : "1girl, 1.55::futanari::, 1.45::futa without balls::, 1.45::small penis::"
+      : withBalls
+        ? "1girl, 1boy, hetero, faceless male, 1.55::futanari::, 1.45::futa with balls::, 1.45::small penis::, 1.3::small testicles::, testicles"
+        : "1girl, 1boy, hetero, faceless male, 1.55::futanari::, 1.45::futa without balls::, 1.45::small penis::";
+    const futaAction = splitTopLevelCommaSegments(tpl.futa_tags)
+      .filter((tok) => {
+        const bare = stripWeightPrefix(tok);
+        return (
+          Boolean(bare) &&
+          bare !== "small penis" &&
+          bare !== "small testicles" &&
+          bare !== "testicles" &&
+          bare !== "balls"
+        );
+      })
+      .join(", ");
+    const futaWardrobe = useSceneOutfit ? tpl.builtin_outfit : outfitTagsFromLeft;
+    const futaNeg = fitPhotoSubNeg(
+      joinTags(
+        "2boys, yaoi, otoko no ko, crossdressing, male chest, huge penis, large penis, oversized penis, hyper penis, monster penis, giant penis",
+        charHasFlatChest ? "" : "flat chest",
+        withBalls ? "huge testicles, large testicles" : "testicles, balls, scrotum",
+        PHOTO_SUBSTITUTE_GUARD_UC,
+        chestNeg,
+        handAndLegNeg,
+        tpl.extra_neg || "",
+        condomNeg,
+        xrayNeg,
+        transNeg,
+        baseTailNeg
+      )
+    );
+    const pFuta = joinTags(
+      headUsed,
+      futaActor,
+      "rating:explicit, nsfw, uncensored",
+      condomTags,
+      xrayTags,
+      tpl.framing_tags,
+      charCoreUsed,
+      envAndProps,
+      photoInlineTags,
+      exprUsed,
+      futaWardrobe,
+      futaAction,
+      buildStageProse(),
+      wrapTailNeg(m, futaNeg, negOn)
+    );
+    return {
+      subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${genderBadge}${condomBadge}${xrayBadge}】`,
+      canvas: tpl.canvas,
+      prompt: pFuta,
+    };
+  }
+
+  // Normal Female (PS01, PS03, PS04)
+  const normalActor = isAfterSexBellyPress
+    ? "1girl, hetero"
+    : "1girl, 1boy, hetero, faceless male";
+  const normalPostSexPenisBan = isAfterSexBellyPress ? "penis, testicles" : "";
+  const normalWardrobe = useSceneOutfit ? tpl.builtin_outfit : outfitTagsFromLeft;
+  const normalNeg = fitPhotoSubNeg(
+    joinTags(
+      "2boys, yaoi, futanari, otoko no ko, multiple boys",
+      charHasFlatChest ? "" : "flat chest",
+      normalPostSexPenisBan,
+      PHOTO_SUBSTITUTE_GUARD_UC,
+      chestNeg,
+      handAndLegNeg,
+      tpl.extra_neg || "",
+      condomNeg,
+      xrayNeg,
+      transNeg,
+      baseTailNeg
+    )
+  );
+  const pNormal = joinTags(
+    headUsed,
+    normalActor,
+    "rating:explicit, nsfw, uncensored",
+    condomTags,
+    xrayTags,
+    tpl.framing_tags,
+    charCoreUsed,
+    envAndProps,
+    photoInlineTags,
+    exprUsed,
+    normalWardrobe,
+    tpl.female_tags,
+    buildStageProse(),
+    wrapTailNeg(m, normalNeg, negOn)
+  );
+  return {
+    subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${condomBadge}${xrayBadge}】`,
+    canvas: tpl.canvas,
+    prompt: pNormal,
+  };
+}
+
+function compileKitchenDuoScenePrompt(opts: {
+  tpl: (typeof OTHER_ACTION_TEMPLATES)[string];
+  duo: NonNullable<(typeof OTHER_ACTION_TEMPLATES)[string]["kitchen_duo"]>;
+  cfg: CharacterConfig;
+  m: Record<string, string>;
+  headUsed: string;
+  charCoreUsed: string;
+  charHasFlatChest: boolean;
+  genderMode: CharacterGenderMode;
+  genderBadge: string;
+  useSceneOutfit: boolean;
+  outfitTagsFromLeft: string;
+  transBg: boolean;
+  transNeg: string;
+  sfSceneLightTags: string;
+  isExplicitDedicatedLight?: boolean;
+  apronOnlyGuard: string;
+  kitchenFootGuard: string;
+  kitchenBareFootSockBan: string;
+  kitchenLandscapeGuard: string;
+  baseTailNeg: string;
+  negOn: boolean;
+}): ScenePromptItem {
+  const {
+    tpl,
+    duo,
+    cfg,
+    m,
+    headUsed,
+    charCoreUsed,
+    charHasFlatChest,
+    genderMode,
+    genderBadge,
+    useSceneOutfit,
+    outfitTagsFromLeft,
+    transBg,
+    transNeg,
+    sfSceneLightTags,
+    isExplicitDedicatedLight,
+    apronOnlyGuard,
+    kitchenFootGuard,
+    kitchenBareFootSockBan,
+    kitchenLandscapeGuard,
+    baseTailNeg,
+    negOn,
+  } = opts;
+
+  const isBuiltinXray = duo.channel === "builtin_xray";
+  const isOral = duo.channel === "oral";
+  const isPullOut = duo.channel === "pull_out";
+  const wantAuxXray = Boolean(cfg.enable_uterus_xray) && !isBuiltinXray;
+  const condomOn = Boolean(cfg.enable_condom);
+
+  const envAndProps = transBg
+    ? joinTags(
+        "2.0::transparent background::, has alpha, alpha transparency, no background",
+        tpl.core_prop_tags || ""
+      )
+    : joinTags(tpl.env_tags, sfSceneLightTags, tpl.core_prop_tags || "");
+
+  const replaceProseOutfit = (rawProse: string): string => {
+    if (useSceneOutfit || !tpl.prose_outfit_phrase) return rawProse;
+    let updated = rawProse;
+    const altClauses = tpl.prose_outfit_phrase.split("|").filter(Boolean);
+    const charWear = cfg.enable_outfit && m.front_shirt_prose ? m.front_shirt_prose.trim() : "";
+    for (const cl of altClauses) {
+      if (updated.includes(cl)) {
+        if (/^Wearing|^Both wearing/i.test(cl)) {
+          const capWear = charWear
+            ? `${charWear.charAt(0).toUpperCase()}${charWear.slice(1)}, `
+            : "";
+          updated = updated.replace(cl, capWear);
+        } else {
+          updated = charWear ? updated.replace(cl, charWear) : updated.replace(cl, "").trim();
+        }
+      }
+    }
+    updated = updated.replace(/\s{2,}/g, " ").trim();
+    return updated ? `${updated.charAt(0).toUpperCase()}${updated.slice(1)}` : updated;
+  };
+
+  const lightBadge = transBg
+    ? " · [🏁透明底]"
+    : isExplicitDedicatedLight
+      ? ""
+      : ` · [${tpl.light_badge}]`;
+  const condomBadge = condomOn ? " · [🛡️安全套]" : "";
+  const xrayBadge = isBuiltinXray || wantAuxXray ? " · [🔬内部透视]" : "";
+  const catBadge = tpl.category.startsWith("10.")
+    ? "🍱饭菜双人"
+    : tpl.category.startsWith("8.")
+      ? "⚡厨房干扰"
+      : "🍳裸围双人";
+
+  const duoAnatomyNeg =
+    "extra hands, 3 hands, extra fingers, bad hands, mutated hands, extra arms, extra legs, fused bodies, gaping, censor, mosaic censoring, bar censor";
+
+  const fitKitchenNeg = (rawNeg: string): string => {
+    const dedup = deduplicateCommaTags(rawNeg);
+    if (encodeT5Len(dedup) <= 435) return dedup;
+    const parts = dedup.split(",").map((s) => s.trim()).filter(Boolean);
+    while (parts.length > 20 && encodeT5Len(parts.join(", ")) > 435) {
+      parts.pop();
+    }
+    return parts.join(", ");
+  };
+
+  // --------------------------------------------------------------------------
+  // MODE 2: Crossdressing Femboy x Shirtless Faceless Male (Multi-Box 2boys)
+  // --------------------------------------------------------------------------
+  if (genderMode === "femboy") {
+    const femboyCharCore = splitTopLevelCommaSegments(m.char_core)
+      .map((tok) => {
+        const bare = stripWeightPrefix(tok);
+        if (bare === "short female") return "1.25::short male::";
+        if (
+          bare === "small breasts" ||
+          bare === "medium breasts" ||
+          bare === "large breasts" ||
+          bare === "huge breasts" ||
+          bare === "flat chest" ||
+          bare === "breasts" ||
+          bare === "female" ||
+          bare === "1girl"
+        ) {
+          return "";
+        }
+        return tok;
+      })
+      .filter(Boolean)
+      .join(", ");
+
+    const femboyBaseApron = tpl.footwear_mode
+      ? joinTags(FEMBOY_APRON_NO_LEGWEAR, kitchenLegwearTagsFor(tpl.footwear_mode))
+      : FEMBOY_NAKED_APRON_CORE;
+    const femboyWardrobe = useSceneOutfit
+      ? joinTags(femboyBaseApron, duo.apron_detail_femboy)
+      : outfitTagsFromLeft;
+
+    const roleTarget = isOral ? "target#oral" : "target#anal";
+    const roleSource = isOral ? "source#oral" : "source#anal";
+
+    const condomBaseTags = condomOn
+      ? isPullOut
+        ? "1.65::used condom::, 1.45::cum in condom::"
+        : "1.4::condom::, 1.35::condom on penis::, 1.35::cum in condom::"
+      : "";
+    const condomPartnerTags = condomOn && !isPullOut ? "condom on penis" : "";
+    const condomNeg = condomOn && isPullOut ? "condom on penis" : "";
+
+    const defaultNoXrayNeg =
+      tpl.id === "KTD23" ? "x-ray, cross-section, uterus" : "x-ray, cross-section, cutaway, uterus";
+    let xrayTags = "";
+    let xrayNeg = isBuiltinXray
+      ? "fetus, baby, embryo, skeleton, bones, medical diagram, uterus, cervix, womb"
+      : defaultNoXrayNeg;
+    if (wantAuxXray) {
+      xrayTags = isOral
+        ? "1.5::x-ray::, 1.45::cross-section::, 1.45::throat bulge::, internal cumshot"
+        : "1.5::x-ray::, 1.45::cross-section::, 1.5::intestines::, 1.5::cum in ass::, internal cumshot";
+      xrayNeg =
+        "fetus, baby, embryo, skeleton, bones, skull, ribcage, medical diagram, gore, uterus, cervix, womb";
+    }
+
+    const femboyGlobalNeg = fitKitchenNeg(
+      joinTags(
+        "1girl, 2girls, female, girl, hetero, breasts, small breasts, medium breasts, large breasts, huge breasts, cleavage, pussy, vulva, labia, vaginal, futanari, uterus, cervix, twins, identical hair, 3boys",
+        duoAnatomyNeg,
+        kitchenFootGuard,
+        kitchenBareFootSockBan,
+        tpl.extra_neg || "",
+        condomNeg,
+        xrayNeg,
+        apronOnlyGuard,
+        kitchenLandscapeGuard,
+        transNeg,
+        baseTailNeg
+      )
+    );
+
+    const femboyProseClean = cfg.enable_t5_prose
+      ? `${replaceProseOutfit(tpl.femboy_prose)}${transBg ? " Isolated on a transparent background." : ""}`
+      : "";
+
+    const baseLine = joinTags(
+      headUsed,
+      "2boys, 1.55::yaoi::",
+      "rating:explicit, nsfw, uncensored",
+      condomBaseTags,
+      xrayTags,
+      envAndProps,
+      duo.femboy_base_action,
+      tpl.femboy_tags,
+      femboyProseClean,
+      wrapTailNeg(m, femboyGlobalNeg, negOn)
+    );
+
+    const char1Line = joinTags(
+      "1.45::1boy::, 1.55::otoko no ko::, 1.45::crossdressing::, 1.35::genderbend::",
+      femboyCharCore,
+      "1.55::flat chest::, 1.4::flat male chest::, tiny pink nipples, hairless torso",
+      femboyWardrobe,
+      duo.femboy_char1_pose,
+      roleTarget,
+      negOn ? "-2.5::breasts, pussy, female::" : ""
+    );
+
+    const char2Line = joinTags(
+      tpl.id === "KTD23" ? "1boy, shirtless faceless male" : "1boy, tall shirtless faceless male",
+      duo.femboy_char2_pose,
+      "penis",
+      condomPartnerTags,
+      roleSource,
+      negOn ? "-2.5::otoko no ko, crossdressing, petite, feminine::" : ""
+    );
+
+    const [c1Coord, c2Coord] = duo.femboy_coords;
+    const multiPrompt = `[Base Prompt]\n${baseLine}\n\n[Character 1 (${c1Coord})]\n${char1Line}\n\n[Character 2 (${c2Coord})]\n${char2Line}`;
+
+    return {
+      subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${genderBadge}${condomBadge}${xrayBadge}】`,
+      canvas: tpl.canvas,
+      prompt: multiPrompt,
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // MODE 4: Futa-on-Female Dual Naked-Apron Yuri (Multi-Box 2girls on KTD12/18/34/42/50/52)
+  // --------------------------------------------------------------------------
+  if (
+    (genderMode === "futa_no_balls" || genderMode === "futa_with_balls") &&
+    duo.futa_2girls_yuri &&
+    duo.futa_yuri_spec
+  ) {
+    const withBalls = genderMode === "futa_with_balls";
+    const spec = duo.futa_yuri_spec;
+    const heroLower = `${cfg.char_tag} ${cfg.extra_char_tags}`.toLowerCase();
+    const topIdentity =
+      heroLower.includes("hood") || heroLower.includes("blonde")
+        ? "belfast (azur lane), long silver hair"
+        : "hood (azur lane), long blonde hair";
+
+    const topWardrobe = useSceneOutfit ? spec.top_apron_tags : outfitTagsFromLeft;
+    const bottomBaseApron = tpl.footwear_mode
+      ? joinTags(FEMALE_APRON_NO_LEGWEAR, kitchenLegwearTagsFor(tpl.footwear_mode))
+      : FEMALE_NAKED_APRON_CORE;
+    const bottomWardrobe = useSceneOutfit
+      ? joinTags(bottomBaseApron, "white frilly naked apron", spec.bottom_apron_detail)
+      : outfitTagsFromLeft;
+
+    const condomBase = condomOn ? "1.4::condom::, 1.35::condom on penis::, 1.35::cum in condom::" : "";
+    const condomTop = condomOn ? "condom on penis" : "";
+    const xrayTags = wantAuxXray
+      ? "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.45::cum in uterus::"
+      : "";
+    const xrayNeg = wantAuxXray
+      ? "fetus, baby, embryo, skeleton, bones, medical diagram, gore"
+      : tpl.id === "KTD23"
+        ? "x-ray, cross-section, uterus"
+        : "x-ray, cross-section, cutaway, uterus";
+
+    const yuriGlobalNeg = fitKitchenNeg(
+      joinTags(
+        "1boy, male, 2boys, yaoi, otoko no ko, flat chest, male chest, 1girl, 3girls, twins, identical hair, double penis, two penises, huge penis, large penis, hyper penis",
+        withBalls ? "huge testicles, large testicles" : "testicles, balls, scrotum",
+        duoAnatomyNeg,
+        kitchenFootGuard,
+        kitchenBareFootSockBan,
+        tpl.extra_neg || "",
+        xrayNeg,
+        apronOnlyGuard,
+        kitchenLandscapeGuard,
+        transNeg,
+        baseTailNeg
+      )
+    );
+
+    const rawYuriProse = useSceneOutfit ? spec.prose : spec.prose_no_apron;
+    const yuriProseClean = cfg.enable_t5_prose
+      ? `${rawYuriProse}${transBg ? " Isolated on a transparent background." : ""}`
+      : "";
+
+    const baseLine = joinTags(
+      headUsed,
+      "2girls, 1.5::futanari::, 1.45::futa on female::, yuri",
+      "rating:explicit, nsfw, uncensored",
+      condomBase,
+      xrayTags,
+      envAndProps,
+      spec.base_action,
+      tpl.futa_tags,
+      yuriProseClean,
+      wrapTailNeg(m, yuriGlobalNeg, negOn)
+    );
+
+    const char1Line = joinTags(
+      "1girl",
+      topIdentity,
+      topWardrobe,
+      "1.55::futanari::",
+      withBalls
+        ? "1.45::futa with balls::, 1.3::small testicles::, testicles"
+        : "1.45::futa without balls::",
+      spec.top_pose_tags,
+      "1.45::small penis::, erection",
+      condomTop,
+      "source#vaginal",
+      negOn ? "-2.5::pussy::" : ""
+    );
+
+    const char2Line = joinTags(
+      "1girl",
+      charCoreUsed,
+      bottomWardrobe,
+      spec.bottom_pose_tags,
+      "1.35::pussy::, target#vaginal",
+      negOn ? "-2.5::futanari, penis, testicles::" : ""
+    );
+
+    const [c1Coord, c2Coord] = spec.coords;
+    const yuriPrompt = `[Base Prompt]\n${baseLine}\n\n[Character 1 (${c1Coord})]\n${char1Line}\n\n[Character 2 (${c2Coord})]\n${char2Line}`;
+
+    return {
+      subTitle: `【${tpl.id} · ${tpl.title} · 👯双裸围百合${lightBadge}${genderBadge}${condomBadge}${xrayBadge}】`,
+      canvas: tpl.canvas,
+      prompt: yuriPrompt,
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // MODE 3: Male-on-Futa Dual-Line (Single-Box on remaining KTD scenes)
+  // --------------------------------------------------------------------------
+  if (genderMode === "futa_no_balls" || genderMode === "futa_with_balls") {
+    const withBalls = genderMode === "futa_with_balls";
+    const rawFutaSegs = splitTopLevelCommaSegments(duo.futa_male_tags);
+    const smallPenisSeg =
+      rawFutaSegs.find((tok) => stripWeightPrefix(tok) === "small penis") || "1.4::small penis::";
+    const futaActor = withBalls
+      ? `1girl, 1boy, hetero, faceless male, 1.55::futanari::, 1.45::futa with balls::, ${smallPenisSeg}, 1.3::small testicles::, testicles`
+      : `1girl, 1boy, hetero, faceless male, 1.55::futanari::, 1.45::futa without balls::, ${smallPenisSeg}`;
+
+    const futaCoreApron = duo.hide_upper_chest
+      ? FEMALE_NAKED_APRON_REAR_ONLY_CORE
+      : tpl.footwear_mode
+        ? joinTags(FUTA_APRON_NO_LEGWEAR, kitchenLegwearTagsFor(tpl.footwear_mode))
+        : FUTA_NAKED_APRON_CORE;
+    const futaWardrobe = useSceneOutfit
+      ? joinTags(futaCoreApron, duo.apron_detail_female)
+      : outfitTagsFromLeft;
+
+    const futaAction = rawFutaSegs
+      .filter((tok) => {
+        const bare = stripWeightPrefix(tok);
+        return (
+          Boolean(bare) &&
+          bare !== "labia" &&
+          bare !== "spread pussy" &&
+          bare !== "small penis" &&
+          bare !== "small testicles" &&
+          bare !== "testicles" &&
+          bare !== "balls"
+        );
+      })
+      .join(", ");
+
+    const condomTags = condomOn
+      ? isPullOut
+        ? "1.75::used condom in pussy::, 1.45::cum in condom::"
+        : "1.4::condom::, 1.35::condom on penis::, 1.35::cum in condom::"
+      : "";
+    const condomNeg = condomOn && isPullOut ? "condom on penis" : "";
+
+    const xrayTags = wantAuxXray
+      ? isOral
+        ? "1.5::x-ray::, 1.45::cross-section::, 1.45::throat bulge::, internal cumshot"
+        : "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.45::cum in uterus::"
+      : "";
+    const xrayNeg =
+      isBuiltinXray || wantAuxXray
+        ? "fetus, baby, embryo, skeleton, bones, medical diagram, gore"
+        : tpl.id === "KTD23"
+          ? "x-ray, cross-section, uterus"
+          : "x-ray, cross-section, cutaway, uterus";
+
+    const futaNeg = fitKitchenNeg(
+      joinTags(
+        "2boys, yaoi, otoko no ko, crossdressing, male chest, huge penis, large penis, oversized penis, hyper penis, monster penis, giant penis, 2girls",
+        charHasFlatChest ? "" : "flat chest",
+        withBalls ? "huge testicles, large testicles" : "testicles, balls, scrotum",
+        duoAnatomyNeg,
+        kitchenFootGuard,
+        kitchenBareFootSockBan,
+        tpl.extra_neg || "",
+        condomNeg,
+        xrayNeg,
+        apronOnlyGuard,
+        kitchenLandscapeGuard,
+        transNeg,
+        baseTailNeg
+      )
+    );
+
+    const exprUsed = duo.hide_upper_chest ? duo.single_expr_tags : exprIf(cfg, duo.single_expr_tags, "", tpl.id);
+    const futaProseClean = cfg.enable_t5_prose
+      ? `${replaceProseOutfit(tpl.futa_prose)}${transBg ? " Isolated on a transparent background." : ""}`
+      : "";
+
+    const pFuta = joinTags(
+      headUsed,
+      futaActor,
+      charCoreUsed,
+      futaWardrobe,
+      envAndProps,
+      tpl.framing_tags,
+      duo.single_partner_tags,
+      exprUsed,
+      "rating:explicit, nsfw, uncensored",
+      futaAction,
+      condomTags,
+      xrayTags,
+      futaProseClean,
+      wrapTailNeg(m, futaNeg, negOn)
+    );
+
+    return {
+      subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${genderBadge}${condomBadge}${xrayBadge}】`,
+      canvas: tpl.canvas,
+      prompt: pFuta,
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // MODE 1: Normal Female Heroine x Shirtless Faceless Male (Single-Box)
+  // --------------------------------------------------------------------------
+  const femaleCoreApron = duo.hide_upper_chest
+    ? FEMALE_NAKED_APRON_REAR_ONLY_CORE
+    : tpl.footwear_mode
+      ? joinTags(FEMALE_APRON_NO_LEGWEAR, kitchenLegwearTagsFor(tpl.footwear_mode))
+      : FEMALE_NAKED_APRON_CORE;
+  const femaleWardrobe = useSceneOutfit
+    ? joinTags(femaleCoreApron, duo.apron_detail_female)
+    : outfitTagsFromLeft;
+
+  const condomTags = condomOn
+    ? isPullOut
+      ? "1.75::used condom in pussy::, 1.45::cum in condom::"
+      : "1.4::condom::, 1.35::condom on penis::, 1.35::cum in condom::"
+    : "";
+  const condomNeg = condomOn && isPullOut ? "condom on penis" : "";
+
+  const xrayTags = wantAuxXray
+    ? isOral
+      ? "1.5::x-ray::, 1.45::cross-section::, 1.45::throat bulge::, internal cumshot"
+      : "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.45::cum in uterus::"
+    : "";
+  const xrayNeg =
+    isBuiltinXray || wantAuxXray
+      ? "fetus, baby, embryo, skeleton, bones, medical diagram, gore"
+      : "x-ray, cross-section, cutaway, uterus";
+
+  const normalNeg = fitKitchenNeg(
+    joinTags(
+      "2boys, yaoi, futanari, otoko no ko, multiple boys, 2girls",
+      charHasFlatChest ? "" : "flat chest",
+      duoAnatomyNeg,
+      kitchenFootGuard,
+      kitchenBareFootSockBan,
+      tpl.extra_neg || "",
+      condomNeg,
+      xrayNeg,
+      apronOnlyGuard,
+      kitchenLandscapeGuard,
+      transNeg,
+      baseTailNeg
+    )
+  );
+
+  const exprUsed = duo.hide_upper_chest ? duo.single_expr_tags : exprIf(cfg, duo.single_expr_tags, "", tpl.id);
+  const femaleProseClean = cfg.enable_t5_prose
+    ? `${replaceProseOutfit(tpl.female_prose)}${transBg ? " Isolated on a transparent background." : ""}`
+    : "";
+
+  const pNormal = joinTags(
+    headUsed,
+    "1girl, 1boy, hetero, faceless male",
+    charCoreUsed,
+    femaleWardrobe,
+    envAndProps,
+    tpl.framing_tags,
+    duo.single_partner_tags,
+    exprUsed,
+    "rating:explicit, nsfw, uncensored",
+    tpl.female_tags,
+    condomTags,
+    xrayTags,
+    femaleProseClean,
+    wrapTailNeg(m, normalNeg, negOn)
+  );
+
+  return {
+    subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${condomBadge}${xrayBadge}】`,
+    canvas: tpl.canvas,
+    prompt: pNormal,
+  };
+}
+
+function compileSpecimenDuoScenePrompt(opts: {
+  tpl: (typeof OTHER_ACTION_TEMPLATES)[string];
+  duo: NonNullable<(typeof OTHER_ACTION_TEMPLATES)[string]["specimen_duo"]>;
+  cfg: CharacterConfig;
+  m: Record<string, string>;
+  headUsed: string;
+  charCoreUsed: string;
+  charHasFlatChest: boolean;
+  genderMode: CharacterGenderMode;
+  genderBadge: string;
+  useSceneOutfit: boolean;
+  outfitTagsFromLeft: string;
+  transBg: boolean;
+  transNeg: string;
+  sfSceneLightTags: string;
+  isExplicitDedicatedLight?: boolean;
+  specimenOutfitGuard: string;
+  footGuard: string;
+  landscapeGuard: string;
+  baseTailNeg: string;
+  negOn: boolean;
+}): ScenePromptItem {
+  const {
+    tpl,
+    duo,
+    cfg,
+    m,
+    headUsed,
+    charCoreUsed,
+    charHasFlatChest,
+    genderMode,
+    genderBadge,
+    useSceneOutfit,
+    outfitTagsFromLeft,
+    transBg,
+    transNeg,
+    sfSceneLightTags,
+    isExplicitDedicatedLight,
+    specimenOutfitGuard,
+    footGuard,
+    landscapeGuard,
+    baseTailNeg,
+    negOn,
+  } = opts;
+
+  const wantAuxXray = Boolean(cfg.enable_uterus_xray) && !tpl.builtin_xray;
+  const condomOn = Boolean(cfg.enable_condom);
+
+  const envAndProps = transBg
+    ? joinTags(
+        "2.0::transparent background::, has alpha, alpha transparency, no background",
+        tpl.core_prop_tags || ""
+      )
+    : joinTags(tpl.env_tags, sfSceneLightTags, tpl.core_prop_tags || "");
+
+  const lightBadge = transBg
+    ? " · [🏁透明底]"
+    : isExplicitDedicatedLight
+      ? ""
+      : ` · [${tpl.light_badge}]`;
+  const condomBadge = condomOn ? " · [🛡️安全套]" : "";
+  const xrayBadge = tpl.builtin_xray
+    ? " · [🔬内置透视]"
+    : wantAuxXray
+      ? " · [🔬内部透视]"
+      : "";
+  const catBadge = "🧪双人采精";
+
+  const duoAnatomyNeg =
+    "extra hands, 3 hands, extra fingers, bad hands, mutated hands, extra arms, extra legs, fused bodies, gaping, censor, mosaic censoring, bar censor";
+
+  const fitSpecimenNeg = (rawNeg: string): string => {
+    const dedup = deduplicateCommaTags(rawNeg);
+    if (encodeT5Len(dedup) <= 435) return dedup;
+    const parts = dedup.split(",").map((s) => s.trim()).filter(Boolean);
+    while (parts.length > 20 && encodeT5Len(parts.join(", ")) > 435) {
+      parts.pop();
+    }
+    return parts.join(", ");
+  };
+
+  // --------------------------------------------------------------------------
+  // MODE 2: Crossdressing Femboy x Standing Male Partner (Multi-Box 2boys)
+  // --------------------------------------------------------------------------
+  if (genderMode === "femboy") {
+    const femboyCharCore = splitTopLevelCommaSegments(m.char_core)
+      .map((tok) => {
+        const bare = stripWeightPrefix(tok);
+        if (bare === "short female") return "1.25::short male::";
+        if (
+          bare === "small breasts" ||
+          bare === "medium breasts" ||
+          bare === "large breasts" ||
+          bare === "huge breasts" ||
+          bare === "flat chest" ||
+          bare === "breasts" ||
+          bare === "female" ||
+          bare === "1girl"
+        ) {
+          return "";
+        }
+        return tok;
+      })
+      .filter(Boolean)
+      .join(", ");
+
+    const femboyOutfitLeft = splitTopLevelCommaSegments(outfitTagsFromLeft)
+      .filter((tok) => {
+        const bare = stripWeightPrefix(tok);
+        return (
+          Boolean(bare) &&
+          bare !== "bare breasts" &&
+          bare !== "breasts" &&
+          bare !== "cleavage" &&
+          bare !== "bra" &&
+          bare !== "pasties" &&
+          bare !== "heart pasties" &&
+          bare !== "rabbit tail"
+        );
+      })
+      .join(", ");
+
+    const femboyWardrobe = useSceneOutfit
+      ? tpl.femboy_outfit || tpl.builtin_outfit
+      : femboyOutfitLeft;
+    const exprUsed = exprIf(cfg, duo.expr_tags, "", tpl.id);
+
+    const condomBase = condomOn ? "1.4::condom::, 1.35::cum in condom::" : "";
+    const condomPartner = condomOn ? "1.35::condom on penis::" : "";
+    const xrayTags = wantAuxXray
+      ? "1.45::x-ray::, 1.4::cross-section::, 1.5::intestines::, 1.5::cum in ass::, internal cumshot"
+      : "";
+    const xrayNeg =
+      tpl.builtin_xray || wantAuxXray
+        ? "fetus, baby, embryo, skeleton, bones, skull, ribcage, medical diagram, gore, uterus, cervix, womb"
+        : "x-ray, cross-section, cutaway, uterus";
+
+    const femboyGlobalNeg = fitSpecimenNeg(
+      joinTags(
+        "1girl, 2girls, female, girl, hetero, breasts, small breasts, medium breasts, large breasts, cleavage, pussy, vulva, vaginal, uterus, cervix, futanari, twins, identical hair, 3boys, multiple boys",
+        duoAnatomyNeg,
+        specimenOutfitGuard,
+        footGuard,
+        tpl.extra_neg || "",
+        xrayNeg,
+        landscapeGuard,
+        transNeg,
+        baseTailNeg
+      )
+    );
+
+    const femboyProseClean = cfg.enable_t5_prose
+      ? `${tpl.femboy_prose}${transBg ? " Isolated on a transparent background." : ""}`
+      : "";
+
+    const baseLine = joinTags(
+      headUsed,
+      "2boys, 1.55::yaoi::",
+      "rating:explicit, nsfw, uncensored",
+      condomBase,
+      xrayTags,
+      envAndProps,
+      tpl.framing_tags,
+      tpl.femboy_tags,
+      femboyProseClean,
+      wrapTailNeg(m, femboyGlobalNeg, negOn)
+    );
+    const char1Line = joinTags(
+      "1.45::1boy::, 1.55::otoko no ko::, 1.45::crossdressing::",
+      femboyCharCore,
+      "1.55::flat chest::, 1.4::flat male chest::",
+      femboyWardrobe,
+      exprUsed,
+      negOn ? "-2.5::breasts, pussy, female::" : ""
+    );
+    const char2Line = joinTags(
+      "1boy, tall shirtless faceless male",
+      duo.partner_tags,
+      condomPartner,
+      negOn ? "-2.5::otoko no ko, crossdressing, petite, feminine::" : ""
+    );
+
+    return {
+      subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${genderBadge}${condomBadge}${xrayBadge}】`,
+      canvas: tpl.canvas,
+      prompt: `[Base Prompt]\n${baseLine}\n\n[Character 1 (B3)]\n${char1Line}\n\n[Character 2 (D3)]\n${char2Line}`,
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // MODE 3: Male + Futa Heroine (Single-Box)
+  // --------------------------------------------------------------------------
+  if (genderMode === "futa_no_balls" || genderMode === "futa_with_balls") {
+    const withBalls = genderMode === "futa_with_balls";
+    const rawFutaSegs = splitTopLevelCommaSegments(tpl.futa_tags);
+    const smallPenisSeg =
+      rawFutaSegs.find((tok) => stripWeightPrefix(tok) === "small penis") || "1.4::small penis::";
+    const futaActor = withBalls
+      ? `1girl, 1boy, hetero, faceless male, 1.55::futanari::, 1.45::futa with balls::, ${smallPenisSeg}, 1.3::small testicles::, testicles`
+      : `1girl, 1boy, hetero, faceless male, 1.55::futanari::, 1.45::futa without balls::, ${smallPenisSeg}`;
+
+    const futaWardrobe = useSceneOutfit ? tpl.builtin_outfit : outfitTagsFromLeft;
+    const futaAction = rawFutaSegs
+      .filter((tok) => {
+        const bare = stripWeightPrefix(tok);
+        return (
+          Boolean(bare) &&
+          bare !== "labia" &&
+          bare !== "spread pussy" &&
+          bare !== "small penis" &&
+          bare !== "small testicles" &&
+          bare !== "testicles" &&
+          bare !== "balls"
+        );
+      })
+      .join(", ");
+
+    const condomTags = condomOn ? "1.4::condom::, 1.35::condom on penis::, 1.35::cum in condom::" : "";
+    const xrayTags = wantAuxXray
+      ? "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.45::cum in uterus::"
+      : "";
+    const xrayNeg =
+      tpl.builtin_xray || wantAuxXray
+        ? "fetus, baby, embryo, skeleton, bones, medical diagram, gore"
+        : "x-ray, cross-section, cutaway, uterus";
+
+    const futaNeg = fitSpecimenNeg(
+      joinTags(
+        "2boys, yaoi, otoko no ko, crossdressing, male chest, huge penis, large penis, oversized penis, hyper penis, monster penis, giant penis, 2girls",
+        charHasFlatChest ? "" : "flat chest",
+        withBalls ? "huge testicles, large testicles" : "testicles, balls, scrotum",
+        duoAnatomyNeg,
+        specimenOutfitGuard,
+        footGuard,
+        tpl.extra_neg || "",
+        xrayNeg,
+        landscapeGuard,
+        transNeg,
+        baseTailNeg
+      )
+    );
+
+    const exprUsed = exprIf(cfg, duo.expr_tags, "", tpl.id);
+    const futaProseClean = cfg.enable_t5_prose
+      ? `${tpl.futa_prose}${transBg ? " Isolated on a transparent background." : ""}`
+      : "";
+
+    const pFuta = joinTags(
+      headUsed,
+      futaActor,
+      charCoreUsed,
+      futaWardrobe,
+      envAndProps,
+      tpl.framing_tags,
+      duo.partner_tags,
+      exprUsed,
+      "rating:explicit, nsfw, uncensored",
+      futaAction,
+      condomTags,
+      xrayTags,
+      futaProseClean,
+      wrapTailNeg(m, futaNeg, negOn)
+    );
+    return {
+      subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${genderBadge}${condomBadge}${xrayBadge}】`,
+      canvas: tpl.canvas,
+      prompt: pFuta,
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // MODE 1: Normal Female Heroine x Standing Male Partner (Single-Box)
+  // --------------------------------------------------------------------------
+  const femaleWardrobe = useSceneOutfit ? tpl.builtin_outfit : outfitTagsFromLeft;
+  const condomTags = condomOn ? "1.4::condom::, 1.35::condom on penis::, 1.35::cum in condom::" : "";
+  const xrayTags = wantAuxXray
+    ? "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.45::cum in uterus::"
+    : "";
+  const xrayNeg =
+    tpl.builtin_xray || wantAuxXray
+      ? "fetus, baby, embryo, skeleton, bones, medical diagram, gore"
+      : "x-ray, cross-section, cutaway, uterus";
+
+  const normalNeg = fitSpecimenNeg(
+    joinTags(
+      "2boys, yaoi, futanari, otoko no ko, multiple boys, 2girls",
+      charHasFlatChest ? "" : "flat chest",
+      duoAnatomyNeg,
+      specimenOutfitGuard,
+      footGuard,
+      tpl.extra_neg || "",
+      xrayNeg,
+      landscapeGuard,
+      transNeg,
+      baseTailNeg
+    )
+  );
+
+  const exprUsed = exprIf(cfg, duo.expr_tags, "", tpl.id);
+  const femaleProseClean = cfg.enable_t5_prose
+    ? `${tpl.female_prose}${transBg ? " Isolated on a transparent background." : ""}`
+    : "";
+
+  const pNormal = joinTags(
+    headUsed,
+    "1girl, 1boy, hetero, faceless male",
+    charCoreUsed,
+    femaleWardrobe,
+    envAndProps,
+    tpl.framing_tags,
+    duo.partner_tags,
+    exprUsed,
+    "rating:explicit, nsfw, uncensored",
+    tpl.female_tags,
+    condomTags,
+    xrayTags,
+    femaleProseClean,
+    wrapTailNeg(m, normalNeg, negOn)
+  );
+  return {
+    subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${condomBadge}${xrayBadge}】`,
+    canvas: tpl.canvas,
+    prompt: pNormal,
+  };
+}
+
+function compilePoolDuoScenePrompt(opts: {
+  tpl: (typeof OTHER_ACTION_TEMPLATES)[string];
+  duo: NonNullable<(typeof OTHER_ACTION_TEMPLATES)[string]["pool_duo"]>;
+  cfg: CharacterConfig;
+  m: Record<string, string>;
+  headUsed: string;
+  charCoreUsed: string;
+  charHasFlatChest: boolean;
+  genderMode: CharacterGenderMode;
+  genderBadge: string;
+  useSceneOutfit: boolean;
+  outfitTagsFromLeft: string;
+  transBg: boolean;
+  transNeg: string;
+  sfSceneLightTags: string;
+  isExplicitDedicatedLight?: boolean;
+  poolSwimGuard: string;
+  poolSwimExtraNeg: string;
+  poolLightNeg: string;
+  footGuard: string;
+  landscapeGuard: string;
+  baseTailNeg: string;
+  negOn: boolean;
+}): ScenePromptItem {
+  const {
+    tpl,
+    duo,
+    cfg,
+    m,
+    headUsed,
+    charCoreUsed,
+    charHasFlatChest,
+    genderMode,
+    genderBadge,
+    useSceneOutfit,
+    outfitTagsFromLeft,
+    transBg,
+    transNeg,
+    sfSceneLightTags,
+    isExplicitDedicatedLight,
+    poolSwimGuard,
+    poolSwimExtraNeg,
+    poolLightNeg,
+    footGuard,
+    landscapeGuard,
+    baseTailNeg,
+    negOn,
+  } = opts;
+
+  const isOral = duo.channel === "oral";
+  const isPullOut = tpl.id === "PLD22";
+  const isYuriShowcase = Boolean(duo.is_yuri_showcase);
+  const wantAuxXray = Boolean(cfg.enable_uterus_xray);
+  const condomOn = Boolean(cfg.enable_condom);
+
+  const swim = tpl.swimsuit_style
+    ? POOL_SWIMWEAR_SPECS[tpl.swimsuit_style]
+    : POOL_SWIMWEAR_SPECS.comp_highleg;
+  const swimState = tpl.swimsuit_state_override ?? swim.state_tags;
+  const femboySwimState =
+    swimState
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s && !/\bbreasts out\b|\bnipples visible/i.test(s))
+      .join(", ") || "1.45::swimsuit aside::";
+
+  const envAndProps = transBg
+    ? joinTags(
+        "2.0::transparent background::, has alpha, alpha transparency, no background",
+        tpl.core_prop_tags || ""
+      )
+    : joinTags(tpl.env_tags, sfSceneLightTags, tpl.core_prop_tags || "");
+
+  const lightBadge = transBg
+    ? " · [🏁透明底]"
+    : isExplicitDedicatedLight
+      ? ""
+      : ` · [${tpl.light_badge}]`;
+  const condomBadge = condomOn ? " · [🛡️安全套]" : "";
+  const xrayBadge = wantAuxXray ? " · [🔬内部透视]" : "";
+  const catBadge = tpl.category.startsWith("13.") ? "🤿泳池伪装" : "🌊泳池双人";
+
+  const duoAnatomyNeg =
+    "extra hands, 3 hands, extra fingers, bad hands, mutated hands, extra arms, extra legs, fused bodies, gaping, censor, mosaic censoring, bar censor";
+
+  const fitPoolNeg = (rawNeg: string): string => {
+    const dedup = deduplicateCommaTags(rawNeg);
+    if (encodeT5Len(dedup) <= 435) return dedup;
+    const parts = dedup.split(",").map((s) => s.trim()).filter(Boolean);
+    while (parts.length > 20 && encodeT5Len(parts.join(", ")) > 435) {
+      parts.pop();
+    }
+    return parts.join(", ");
+  };
+
+  // --------------------------------------------------------------------------
+  // MODE 2: Crossdressing Femboy x Athletic Male Swimmer (Multi-Box 2boys)
+  // --------------------------------------------------------------------------
+  if (genderMode === "femboy") {
+    const femboyCharCore = splitTopLevelCommaSegments(m.char_core)
+      .map((tok) => {
+        const bare = stripWeightPrefix(tok);
+        if (bare === "short female") return "1.25::short male::";
+        if (
+          bare === "small breasts" ||
+          bare === "medium breasts" ||
+          bare === "large breasts" ||
+          bare === "huge breasts" ||
+          bare === "flat chest" ||
+          bare === "breasts" ||
+          bare === "female" ||
+          bare === "1girl"
+        ) {
+          return "";
+        }
+        return tok;
+      })
+      .filter(Boolean)
+      .join(", ");
+
+    const femboyOutfitLeft = splitTopLevelCommaSegments(outfitTagsFromLeft)
+      .filter((tok) => {
+        const bare = stripWeightPrefix(tok);
+        return (
+          Boolean(bare) &&
+          bare !== "bare breasts" &&
+          bare !== "breasts" &&
+          bare !== "cleavage" &&
+          bare !== "bra" &&
+          bare !== "pasties" &&
+          bare !== "heart pasties" &&
+          bare !== "rabbit tail"
+        );
+      })
+      .join(", ");
+
+    const femboyWardrobe = useSceneOutfit
+      ? joinTags(swim.femboy_design_tags, femboySwimState)
+      : femboyOutfitLeft;
+    const exprUsed = exprIf(cfg, duo.expr_tags, "", tpl.id);
+    const roleT = isOral ? "target#oral" : "target#anal";
+    const roleS = isOral ? "source#oral" : "source#anal";
+
+    const condomBase = condomOn
+      ? isPullOut
+        ? "1.75::used condom::, 1.45::cum in condom::"
+        : "1.4::condom::, 1.35::cum in condom::"
+      : "";
+    const condomPartner = condomOn && !isPullOut ? "1.35::condom on penis::" : "";
+    const condomNeg = condomOn && isPullOut ? "condom on penis" : "";
+
+    const xrayTags = wantAuxXray
+      ? isOral
+        ? "1.5::x-ray::, 1.45::cross-section::, 1.45::throat bulge::, internal cumshot"
+        : "1.45::x-ray::, 1.4::cross-section::, 1.5::intestines::, 1.5::cum in ass::, internal cumshot"
+      : "";
+    const xrayNeg = wantAuxXray
+      ? "fetus, baby, embryo, skeleton, bones, skull, ribcage, medical diagram, gore, uterus, cervix, womb"
+      : "x-ray, cross-section, cutaway, uterus";
+
+    const femboyGlobalNeg = fitPoolNeg(
+      joinTags(
+        "1girl, 2girls, female, girl, hetero, breasts, small breasts, medium breasts, large breasts, cleavage, pussy, vulva, vaginal, uterus, cervix, futanari, twins, identical hair, 3boys, multiple boys",
+        duoAnatomyNeg,
+        poolLightNeg,
+        poolSwimExtraNeg,
+        footGuard,
+        tpl.extra_neg || "",
+        condomNeg,
+        xrayNeg,
+        poolSwimGuard,
+        landscapeGuard,
+        transNeg,
+        baseTailNeg
+      )
+    );
+
+    const femboyProseClean = cfg.enable_t5_prose
+      ? `${tpl.femboy_prose}${transBg ? " Isolated on a transparent background." : ""}`
+      : "";
+
+    const baseLine = joinTags(
+      headUsed,
+      "2boys, 1.55::yaoi::, bare feet",
+      "rating:explicit, nsfw, uncensored",
+      condomBase,
+      xrayTags,
+      envAndProps,
+      tpl.framing_tags,
+      tpl.femboy_tags,
+      femboyProseClean,
+      wrapTailNeg(m, femboyGlobalNeg, negOn)
+    );
+
+    const char1Line = joinTags(
+      "1.45::1boy::, 1.55::otoko no ko::, 1.45::crossdressing::",
+      femboyCharCore,
+      "1.55::flat chest::, 1.4::flat male chest::, tiny pink nipples, hairless torso",
+      femboyWardrobe,
+      exprUsed,
+      roleT,
+      negOn ? "-2.5::breasts, pussy, female::" : ""
+    );
+
+    const femboyPartnerPose = duo.partner_tags.replace(
+      /\bsecond female swimmer\b/gi,
+      "athletic male swimmer"
+    );
+    const char2Line = joinTags(
+      "1boy, tall athletic shirtless faceless male swimmer, dark swim briefs pulled down",
+      femboyPartnerPose,
+      condomPartner,
+      roleS,
+      negOn ? "-2.5::otoko no ko, crossdressing, petite, feminine, one-piece swimsuit::" : ""
+    );
+
+    const femboyPrompt = `[Base Prompt]\n${baseLine}\n\n[Character 1 (B3)]\n${char1Line}\n\n[Character 2 (D3)]\n${char2Line}`;
+    return {
+      subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${genderBadge}${condomBadge}${xrayBadge}】`,
+      canvas: tpl.canvas,
+      prompt: femboyPrompt,
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // MODE 4: 2Girls Contrast Swimsuits Yuri Showcase (Multi-Box on PLD18)
+  // --------------------------------------------------------------------------
+  if (isYuriShowcase) {
+    const heroIsAyanami = /\bayanami\b/i.test(m.char_id);
+    const partnerCore = heroIsAyanami
+      ? "hood (azur lane), long blonde hair, blue eyes, slender, slim waist, medium breasts"
+      : "ayanami (azur lane), long white hair, red eyes, slender, slim waist, small breasts";
+    const c1HairGuard = heroIsAyanami ? "-2::blonde hair, blue eyes::" : "-2::white hair, red eyes::";
+    const exprUsed = exprIf(cfg, duo.expr_tags, "", tpl.id);
+
+    const primaryWardrobe = useSceneOutfit
+      ? joinTags(swim.design_tags, swimState)
+      : outfitTagsFromLeft;
+    const contrastWardrobe = useSceneOutfit
+      ? joinTags(POOL_SWIMWEAR_SPECS.sheer_white_onepiece.design_tags, "1.4::swimsuit aside::")
+      : outfitTagsFromLeft;
+
+    const xrayTags = wantAuxXray
+      ? "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.45::cum in uterus::"
+      : "";
+    const xrayNeg = wantAuxXray
+      ? "fetus, baby, embryo, skeleton, bones, medical diagram, gore"
+      : "x-ray, cross-section, cutaway, uterus";
+
+    const yuriProseClean = cfg.enable_t5_prose
+      ? `${tpl.female_prose}${transBg ? " Isolated on a transparent background." : ""}`
+      : "";
+
+    if (genderMode === "normal") {
+      const condomBase = condomOn ? "1.55::used condom::, 1.45::cum in condom::" : "";
+      const yuriNormalNeg = fitPoolNeg(
+        joinTags(
+          "1boy, 2boys, male, penis, hetero, futanari, twins, identical hair, 3girls",
+          charHasFlatChest ? "" : "flat chest",
+          duoAnatomyNeg,
+          poolLightNeg,
+          poolSwimExtraNeg,
+          footGuard,
+          tpl.extra_neg || "",
+          xrayNeg,
+          poolSwimGuard,
+          landscapeGuard,
+          transNeg,
+          baseTailNeg
+        )
+      );
+      const baseLine = joinTags(
+        headUsed,
+        "2girls, 1.55::yuri::, bare feet",
+        "rating:explicit, nsfw, uncensored",
+        condomBase,
+        xrayTags,
+        envAndProps,
+        tpl.framing_tags,
+        tpl.female_tags,
+        yuriProseClean,
+        wrapTailNeg(m, yuriNormalNeg, negOn)
+      );
+      const char1Line = joinTags(
+        "1girl",
+        charCoreUsed,
+        primaryWardrobe,
+        exprUsed,
+        negOn ? c1HairGuard : ""
+      );
+      const char2Line = joinTags(
+        "1girl",
+        partnerCore,
+        contrastWardrobe,
+        "blushing, parted lips"
+      );
+      return {
+        subTitle: `【${tpl.id} · ${tpl.title} · 👯双水着百合${lightBadge}${condomBadge}${xrayBadge}】`,
+        canvas: tpl.canvas,
+        prompt: `[Base Prompt]\n${baseLine}\n\n[Character 1 (B3)]\n${char1Line}\n\n[Character 2 (D3)]\n${char2Line}`,
+      };
+    }
+
+    // Futa-on-Female 2Girls Contrast Swimsuits Yuri
+    const withBalls = genderMode === "futa_with_balls";
+    const condomBase = condomOn ? "1.4::condom::, 1.35::cum in condom::" : "";
+    const condomTop = condomOn ? "1.35::condom on penis::" : "";
+    const yuriFutaNeg = fitPoolNeg(
+      joinTags(
+        "1boy, 2boys, male, yaoi, otoko no ko, flat chest, male chest, 1girl, 3girls, twins, identical hair, double penis, two penises, huge penis, large penis, hyper penis",
+        withBalls ? "huge testicles, large testicles" : "testicles, balls, scrotum",
+        duoAnatomyNeg,
+        poolLightNeg,
+        poolSwimExtraNeg,
+        footGuard,
+        tpl.extra_neg || "",
+        xrayNeg,
+        poolSwimGuard,
+        landscapeGuard,
+        transNeg,
+        baseTailNeg
+      )
+    );
+    const baseLine = joinTags(
+      headUsed,
+      "2girls, 1.5::futanari::, 1.45::futa on female::, yuri, bare feet",
+      "rating:explicit, nsfw, uncensored",
+      condomBase,
+      xrayTags,
+      envAndProps,
+      tpl.framing_tags,
+      tpl.futa_tags,
+      yuriProseClean,
+      wrapTailNeg(m, yuriFutaNeg, negOn)
+    );
+    const char1Line = joinTags(
+      "1girl",
+      partnerCore,
+      primaryWardrobe,
+      "1.55::futanari::",
+      withBalls
+        ? "1.45::futa with balls::, 1.3::small testicles::, testicles"
+        : "1.45::futa without balls::",
+      "1.45::small penis::, erection",
+      condomTop,
+      "source#vaginal",
+      negOn ? "-2.5::pussy::" : ""
+    );
+    const char2Line = joinTags(
+      "1girl",
+      charCoreUsed,
+      contrastWardrobe,
+      exprUsed,
+      "1.35::pussy::, target#vaginal",
+      negOn ? "-2.5::futanari, penis, testicles::" : ""
+    );
+    return {
+      subTitle: `【${tpl.id} · ${tpl.title} · 👯双水着百合${lightBadge}${genderBadge}${condomBadge}${xrayBadge}】`,
+      canvas: tpl.canvas,
+      prompt: `[Base Prompt]\n${baseLine}\n\n[Character 1 (B3)]\n${char1Line}\n\n[Character 2 (D3)]\n${char2Line}`,
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // MODE 3: Male-on-Futa Dual-Line (Single-Box on PLD01..17, 19..22)
+  // --------------------------------------------------------------------------
+  if (genderMode === "futa_no_balls" || genderMode === "futa_with_balls") {
+    const withBalls = genderMode === "futa_with_balls";
+    const rawFutaSegs = splitTopLevelCommaSegments(tpl.futa_tags);
+    const smallPenisSeg =
+      rawFutaSegs.find((tok) => stripWeightPrefix(tok) === "small penis") || "1.4::small penis::";
+    const futaActor = withBalls
+      ? `1girl, 1boy, hetero, faceless male, 1.55::futanari::, 1.45::futa with balls::, ${smallPenisSeg}, 1.3::small testicles::, testicles, bare feet`
+      : `1girl, 1boy, hetero, faceless male, 1.55::futanari::, 1.45::futa without balls::, ${smallPenisSeg}, bare feet`;
+
+    const futaWardrobe = useSceneOutfit
+      ? joinTags(swim.design_tags, swimState)
+      : outfitTagsFromLeft;
+    const futaAction = rawFutaSegs
+      .filter((tok) => {
+        const bare = stripWeightPrefix(tok);
+        return (
+          Boolean(bare) &&
+          bare !== "labia" &&
+          bare !== "spread pussy" &&
+          bare !== "small penis" &&
+          bare !== "small testicles" &&
+          bare !== "testicles" &&
+          bare !== "balls"
+        );
+      })
+      .join(", ");
+
+    const condomTags = condomOn
+      ? isPullOut
+        ? "1.75::used condom::, 1.45::cum in condom::"
+        : "1.4::condom::, 1.35::condom on penis::, 1.35::cum in condom::"
+      : "";
+    const condomNeg = condomOn && isPullOut ? "condom on penis" : "";
+
+    const xrayTags = wantAuxXray
+      ? isOral
+        ? "1.5::x-ray::, 1.45::cross-section::, 1.45::throat bulge::, internal cumshot"
+        : "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.45::cum in uterus::"
+      : "";
+    const xrayNeg = wantAuxXray
+      ? "fetus, baby, embryo, skeleton, bones, medical diagram, gore"
+      : "x-ray, cross-section, cutaway, uterus";
+
+    const futaNeg = fitPoolNeg(
+      joinTags(
+        "2boys, yaoi, otoko no ko, crossdressing, male chest, huge penis, large penis, oversized penis, hyper penis, monster penis, giant penis, 2girls",
+        charHasFlatChest ? "" : "flat chest",
+        withBalls ? "huge testicles, large testicles" : "testicles, balls, scrotum",
+        duoAnatomyNeg,
+        poolLightNeg,
+        poolSwimExtraNeg,
+        footGuard,
+        tpl.extra_neg || "",
+        condomNeg,
+        xrayNeg,
+        poolSwimGuard,
+        landscapeGuard,
+        transNeg,
+        baseTailNeg
+      )
+    );
+
+    const exprUsed = exprIf(cfg, duo.expr_tags, "", tpl.id);
+    const futaProseClean = cfg.enable_t5_prose
+      ? `${tpl.futa_prose}${transBg ? " Isolated on a transparent background." : ""}`
+      : "";
+
+    const pFuta = joinTags(
+      headUsed,
+      futaActor,
+      charCoreUsed,
+      futaWardrobe,
+      envAndProps,
+      tpl.framing_tags,
+      duo.partner_tags,
+      exprUsed,
+      "rating:explicit, nsfw, uncensored",
+      futaAction,
+      condomTags,
+      xrayTags,
+      futaProseClean,
+      wrapTailNeg(m, futaNeg, negOn)
+    );
+    return {
+      subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${genderBadge}${condomBadge}${xrayBadge}】`,
+      canvas: tpl.canvas,
+      prompt: pFuta,
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // MODE 1: Normal Female Heroine x Shirtless Male Swimmer (Single-Box)
+  // --------------------------------------------------------------------------
+  const femaleWardrobe = useSceneOutfit
+    ? joinTags(swim.design_tags, swimState)
+    : outfitTagsFromLeft;
+  const condomTags = condomOn
+    ? isPullOut
+      ? "1.75::used condom::, 1.45::cum in condom::"
+      : "1.4::condom::, 1.35::condom on penis::, 1.35::cum in condom::"
+    : "";
+  const condomNeg = condomOn && isPullOut ? "condom on penis" : "";
+
+  const xrayTags = wantAuxXray
+    ? isOral
+      ? "1.5::x-ray::, 1.45::cross-section::, 1.45::throat bulge::, internal cumshot"
+      : "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.45::cum in uterus::"
+    : "";
+  const xrayNeg = wantAuxXray
+    ? "fetus, baby, embryo, skeleton, bones, medical diagram, gore"
+    : "x-ray, cross-section, cutaway, uterus";
+
+  const normalNeg = fitPoolNeg(
+    joinTags(
+      "2boys, yaoi, futanari, otoko no ko, multiple boys, 2girls",
+      charHasFlatChest ? "" : "flat chest",
+      duoAnatomyNeg,
+      poolLightNeg,
+      poolSwimExtraNeg,
+      footGuard,
+      tpl.extra_neg || "",
+      condomNeg,
+      xrayNeg,
+      poolSwimGuard,
+      landscapeGuard,
+      transNeg,
+      baseTailNeg
+    )
+  );
+
+  const exprUsed = exprIf(cfg, duo.expr_tags, "", tpl.id);
+  const femaleProseClean = cfg.enable_t5_prose
+    ? `${tpl.female_prose}${transBg ? " Isolated on a transparent background." : ""}`
+    : "";
+
+  const pNormal = joinTags(
+    headUsed,
+    "1girl, 1boy, hetero, faceless male, bare feet",
+    charCoreUsed,
+    femaleWardrobe,
+    envAndProps,
+    tpl.framing_tags,
+    duo.partner_tags,
+    exprUsed,
+    "rating:explicit, nsfw, uncensored",
+    tpl.female_tags,
+    condomTags,
+    xrayTags,
+    femaleProseClean,
+    wrapTailNeg(m, normalNeg, negOn)
+  );
+
+  return {
+    subTitle: `【${tpl.id} · ${tpl.title} · ${catBadge}${lightBadge}${condomBadge}${xrayBadge}】`,
+    canvas: tpl.canvas,
+    prompt: pNormal,
+  };
 }
 
 function eyesOpenFor25dBlush(sceneId: string, exprCtrl: CompiledExpressionOverride): boolean {

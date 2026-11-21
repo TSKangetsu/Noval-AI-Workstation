@@ -161,6 +161,42 @@ function splitPoseTitle(fullTitle: string): { main: string; sub: string } {
   return { main: stripped, sub: "" };
 }
 
+export const EXPECTED_FILM_TOOLBAR_W = 680; // ~310px filter controls + ~370px 6 batch buttons
+export const EXPECTED_DUAL_STACK_H = 882; // 52px stage toolbar + 300px min usable hero image + 270px expanded gallery + 260px expanded prompt
+
+export function computePortraitCompactStage(params: {
+  winW: number;
+  winH: number;
+  colW: number;
+  colH: number;
+  wasCompact?: boolean;
+  lastCompactWinW?: number;
+  isTextInputFocused?: boolean;
+}): boolean {
+  const {
+    winW,
+    winH,
+    colW,
+    colH,
+    wasCompact = false,
+    lastCompactWinW = 0,
+    isTextInputFocused = false,
+  } = params;
+  // Landscape Guard: ANY real landscape orientation (desktop, laptop, tablet landscape, phone landscape) -> false!
+  if (winW >= winH) {
+    if (
+      wasCompact &&
+      isTextInputFocused &&
+      winW < EXPECTED_FILM_TOOLBAR_W &&
+      Math.abs(winW - lastCompactWinW) <= 2
+    ) {
+      return true;
+    }
+    return false;
+  }
+  return colW < EXPECTED_FILM_TOOLBAR_W && colH < EXPECTED_DUAL_STACK_H + 40;
+}
+
 export class WorkbenchApp {
   private root: HTMLElement;
   private cfg: CharacterConfig;
@@ -182,6 +218,16 @@ export class WorkbenchApp {
   private currentSceneItems: ScenePromptItem[] = [];
   private isManualPromptEdited = false;
   private promptDrawerExpanded = false;
+  private promptFocusMode: "both" | "pos" | "neg" = "both";
+  private isPortraitCompactStage = false;
+  private lastCompactWinW = 0;
+  private collapsedPromptBarH = 44;
+  private collapsedFilmstripBarH = 86;
+  private portraitFilmOverlayCustomH: number | null = null;
+  private portraitPromptOverlayCustomH: number | null = null;
+  private colCenterResizeObserver: ResizeObserver | null = null;
+  private restoreDesktopFilmstripHeight: (() => void) | null = null;
+  private restoreDesktopPromptDrawerHeight: (() => void) | null = null;
   private showCustomOutfitExtra = false;
   private checkerboardBg = false;
   private mobileCol: "left" | "center" | "right" = "center";
@@ -230,6 +276,8 @@ export class WorkbenchApp {
   // Key DOM Refs
   private elPresetSelect!: HTMLSelectElement;
   private elDeletePresetBtn!: HTMLButtonElement;
+  private elLeftPresetSelect: HTMLSelectElement | null = null;
+  private elLeftDeletePresetBtn: HTMLButtonElement | null = null;
   private elModelBtns = new Map<NaiModelId, HTMLButtonElement>();
   private elCanvasSelect!: HTMLSelectElement;
   private elSeedInput!: HTMLInputElement;
@@ -245,6 +293,11 @@ export class WorkbenchApp {
   private elColCenter!: HTMLElement;
   private elColRight!: HTMLElement;
   private elMobileBtns = new Map<string, HTMLButtonElement>();
+  private elMobileNavLabels = new Map<string, HTMLElement>();
+  private elMobileNavBadges = new Map<string, HTMLElement>();
+  private elMobileQuickGenBtn!: HTMLButtonElement;
+  private elMobileStepsSelect!: HTMLSelectElement;
+  private elMobileUpscaleBtn!: HTMLButtonElement;
 
   // Left Inspector Refs
   private elIdentityCard!: HTMLElement;
@@ -289,6 +342,7 @@ export class WorkbenchApp {
   private elFilmFilterBtns = new Map<GalleryFilterMode, HTMLButtonElement>();
   private elFilmSceneSelect!: HTMLSelectElement;
   private elFilmExpandBtn!: HTMLButtonElement;
+  private elBatchMoveFolderSelect!: HTMLSelectElement;
   private elBatchUpscaleGalleryBtn!: HTMLButtonElement;
   private elBatchDeleteGalleryBtn!: HTMLButtonElement;
   private elUpscaleBtn!: HTMLButtonElement;
@@ -305,6 +359,8 @@ export class WorkbenchApp {
 
   // Prompt Drawer Refs
   private elPromptDrawer!: HTMLElement;
+  private elPromptDrawerBody!: HTMLElement;
+  private elPromptFocusBtns = new Map<"both" | "pos" | "neg", HTMLButtonElement>();
   private elDrawerToggleBtn!: HTMLButtonElement;
   private elPromptSceneLbl!: HTMLElement;
   private elTokenPill!: HTMLElement;
@@ -430,22 +486,52 @@ export class WorkbenchApp {
     this.setupColumnResizers(ws, resizerLeft, resizerRight);
     this.root.appendChild(ws);
 
-    // 3. Mobile Bottom Tab Bar (< 1120px)
+    // 3. Mobile Bottom Tab Bar (< 1120px) + Thumb-Reachable Quick Generate CTA
     const mobileNav = this.el("nav", "mobile-col-nav");
-    const mTabs: Array<["left" | "center" | "right", string]> = [
-      ["left", "👤 人设·画风·Vibe"],
-      ["center", "🖼️ 主画布·词条"],
-      ["right", "🔞 动作库"],
+    const mTabs: Array<["left" | "center" | "right", string, string]> = [
+      ["left", "👤 人设·画风", "V4.5"],
+      ["center", "🖼️ 主画布", "0张"],
+      ["right", "🔞 动作库", "P01"],
     ];
-    for (const [colKey, label] of mTabs) {
-      const b = this.el("button", `btn btn-xs${this.mobileCol === colKey ? " btn-primary" : ""}`, label);
+    this.elMobileBtns.clear();
+    this.elMobileNavLabels.clear();
+    this.elMobileNavBadges.clear();
+    for (const [colKey, label, initBadge] of mTabs) {
+      const b = this.el(
+        "button",
+        `btn btn-xs mobile-nav-tab${this.mobileCol === colKey ? " btn-primary active" : ""}`
+      );
+      const lblSpan = this.el("span", "mnav-label", label);
+      const badgeSpan = this.el(
+        "span",
+        `mnav-badge${colKey === "right" ? " mnav-pose-badge" : ""}`,
+        initBadge
+      );
+      b.append(lblSpan, badgeSpan);
       b.addEventListener("click", () => {
         this.mobileCol = colKey;
         this.syncMobileColumns();
       });
       this.elMobileBtns.set(colKey, b);
+      this.elMobileNavLabels.set(colKey, lblSpan);
+      this.elMobileNavBadges.set(colKey, badgeSpan);
       mobileNav.appendChild(b);
     }
+
+    this.elMobileQuickGenBtn = this.el(
+      "button",
+      "btn btn-generate-hero mobile-quick-gen-btn",
+      "⚡ 生成"
+    );
+    this.elMobileQuickGenBtn.title = "单手快捷生图（正在生图时点击停止）";
+    this.elMobileQuickGenBtn.addEventListener("click", () => {
+      if (this.isGenerating) {
+        this.abortController?.abort();
+        return;
+      }
+      this.elHeroGenBtn.click();
+    });
+    mobileNav.appendChild(this.elMobileQuickGenBtn);
     this.root.appendChild(mobileNav);
 
     // 4. Floating Popovers & Lightbox
@@ -463,14 +549,234 @@ export class WorkbenchApp {
     );
 
     this.syncMobileColumns();
+    if (this.colCenterResizeObserver) {
+      this.colCenterResizeObserver.disconnect();
+    }
+    if (typeof ResizeObserver !== "undefined") {
+      this.colCenterResizeObserver = new ResizeObserver(() => {
+        this.evaluateCenterStageSpaceBudget();
+      });
+      this.colCenterResizeObserver.observe(this.elColCenter);
+    }
+    this.evaluateCenterStageSpaceBudget();
   }
 
   private syncMobileColumns(): void {
+    this.root.dataset.mobileCol = this.mobileCol;
     this.elColLeft.classList.toggle("mobile-active", this.mobileCol === "left");
     this.elColCenter.classList.toggle("mobile-active", this.mobileCol === "center");
     this.elColRight.classList.toggle("mobile-active", this.mobileCol === "right");
     for (const [k, btn] of this.elMobileBtns.entries()) {
-      btn.classList.toggle("btn-primary", k === this.mobileCol);
+      const isAct = k === this.mobileCol;
+      btn.classList.toggle("btn-primary", isAct);
+      btn.classList.toggle("active", isAct);
+    }
+    this.syncMobileNavState();
+    this.evaluateCenterStageSpaceBudget();
+  }
+
+  private snapshotCollapsedBarHeights(): void {
+    if (!this.elColCenter) return;
+    if (this.elPromptDrawer && !this.promptDrawerExpanded) {
+      const measuredPromptH = this.elPromptDrawer.offsetHeight;
+      if (measuredPromptH > 0) {
+        this.collapsedPromptBarH = measuredPromptH;
+      } else if (this.isPortraitCompactStage) {
+        this.collapsedPromptBarH = Math.max(this.collapsedPromptBarH, 56);
+      }
+    }
+    if (
+      this.elFilmstripBar &&
+      !this.filmstripExpanded &&
+      !this.elFilmstripBar.classList.contains("hidden")
+    ) {
+      const measuredFilmH = this.elFilmstripBar.offsetHeight;
+      if (measuredFilmH > 0) {
+        this.collapsedFilmstripBarH = measuredFilmH;
+      }
+    }
+    this.elColCenter.style.setProperty(
+      "--collapsed-prompt-bar-h",
+      `${this.collapsedPromptBarH}px`
+    );
+    const filmReserve =
+      this.elFilmstripBar && !this.elFilmstripBar.classList.contains("hidden")
+        ? this.collapsedFilmstripBarH
+        : 0;
+    this.elColCenter.style.setProperty("--collapsed-filmstrip-h", `${filmReserve}px`);
+  }
+
+  private syncPortraitOverlayState(): void {
+    if (!this.elColCenter || !this.elFilmstripBar || !this.elPromptDrawer) return;
+    if (!this.isPortraitCompactStage) {
+      this.elColCenter.classList.remove(
+        "has-film-overlay",
+        "has-prompt-overlay",
+        "has-visible-filmstrip"
+      );
+      this.elFilmstripBar.classList.remove("has-custom-h");
+      this.elPromptDrawer.classList.remove("has-custom-h");
+      this.elFilmstripBar.style.removeProperty("--portrait-film-overlay-h");
+      this.elPromptDrawer.style.removeProperty("--portrait-prompt-overlay-h");
+      return;
+    }
+
+    const hasVisibleFilm = !this.elFilmstripBar.classList.contains("hidden");
+    this.elColCenter.classList.toggle("has-visible-filmstrip", hasVisibleFilm);
+    this.elColCenter.classList.toggle("has-film-overlay", this.filmstripExpanded);
+    this.elColCenter.classList.toggle("has-prompt-overlay", this.promptDrawerExpanded);
+    this.elColCenter.style.setProperty(
+      "--collapsed-prompt-bar-h",
+      `${this.collapsedPromptBarH}px`
+    );
+    this.elColCenter.style.setProperty(
+      "--collapsed-filmstrip-h",
+      `${hasVisibleFilm ? this.collapsedFilmstripBarH : 0}px`
+    );
+
+    const containerH =
+      this.elColCenter.clientHeight || Math.max(320, window.innerHeight - 140);
+
+    if (this.filmstripExpanded && this.portraitFilmOverlayCustomH !== null) {
+      const maxFilmH = Math.max(180, containerH - this.collapsedPromptBarH);
+      const effFilmH = Math.max(130, Math.min(maxFilmH, this.portraitFilmOverlayCustomH));
+      this.elFilmstripBar.classList.add("has-custom-h");
+      this.elFilmstripBar.style.setProperty("--portrait-film-overlay-h", `${effFilmH}px`);
+    } else {
+      this.elFilmstripBar.classList.remove("has-custom-h");
+      this.elFilmstripBar.style.removeProperty("--portrait-film-overlay-h");
+    }
+
+    if (this.promptDrawerExpanded && this.portraitPromptOverlayCustomH !== null) {
+      const maxPromptH = Math.max(180, containerH);
+      const effPromptH = Math.max(130, Math.min(maxPromptH, this.portraitPromptOverlayCustomH));
+      this.elPromptDrawer.classList.add("has-custom-h");
+      this.elPromptDrawer.style.setProperty("--portrait-prompt-overlay-h", `${effPromptH}px`);
+    } else {
+      this.elPromptDrawer.classList.remove("has-custom-h");
+      this.elPromptDrawer.style.removeProperty("--portrait-prompt-overlay-h");
+    }
+  }
+
+  private evaluateCenterStageSpaceBudget(): void {
+    if (!this.elColCenter) return;
+    const winW = window.innerWidth;
+    const winH = window.innerHeight;
+    const colW = this.elColCenter.clientWidth || winW;
+    const colH = this.elColCenter.clientHeight || Math.max(240, winH - 140);
+    const activeEl = document.activeElement as HTMLElement | null;
+    const isTextInputFocused = Boolean(
+      activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA")
+    );
+
+    const nextCompact = computePortraitCompactStage({
+      winW,
+      winH,
+      colW,
+      colH,
+      wasCompact: this.isPortraitCompactStage,
+      lastCompactWinW: this.lastCompactWinW,
+      isTextInputFocused,
+    });
+    if (nextCompact && winH > winW) {
+      this.lastCompactWinW = winW;
+    }
+
+    const changed = nextCompact !== this.isPortraitCompactStage;
+    this.isPortraitCompactStage = nextCompact;
+    this.elColCenter.classList.toggle("portrait-compact-stage", this.isPortraitCompactStage);
+
+    if (!this.isPortraitCompactStage) {
+      this.syncPortraitOverlayState();
+      if (changed) {
+        this.restoreDesktopFilmstripHeight?.();
+        this.restoreDesktopPromptDrawerHeight?.();
+        this.renderFilmstrip();
+      }
+      return;
+    }
+
+    // Strict mutual exclusion if both drawers were open before entering portrait-compact-stage
+    if (this.filmstripExpanded && this.promptDrawerExpanded) {
+      this.togglePromptDrawer(false);
+    }
+
+    this.snapshotCollapsedBarHeights();
+    this.syncPortraitOverlayState();
+    if (changed) {
+      this.renderFilmstrip();
+    }
+  }
+
+  private setFilmstripExpanded(
+    expanded: boolean,
+    customOverlayH?: number | null
+  ): void {
+    if (expanded) {
+      this.snapshotCollapsedBarHeights();
+      if (this.isPortraitCompactStage) {
+        if (this.promptDrawerExpanded) {
+          this.togglePromptDrawer(false);
+        }
+        this.portraitFilmOverlayCustomH =
+          customOverlayH !== undefined ? customOverlayH : null;
+      }
+    }
+    this.filmstripExpanded = expanded;
+    this.renderFilmstrip();
+    this.syncPortraitOverlayState();
+  }
+
+  private syncMobileNavState(): void {
+    const isV45 = this.apiSettings.model === MODEL_V4_5_FULL;
+    const leftLbl = this.elMobileNavLabels.get("left");
+    if (leftLbl) {
+      leftLbl.textContent = isV45 ? "👤 人设·Vibe" : "👤 人设·画风";
+    }
+    const leftBadge = this.elMobileNavBadges.get("left");
+    if (leftBadge) {
+      const gMode = this.cfg.gender_mode ?? "normal";
+      const gTag =
+        gMode === "femboy"
+          ? "伪娘"
+          : gMode === "futa_no_balls" || gMode === "futa_with_balls"
+            ? "扶他"
+            : "";
+      const mShort = isV45
+        ? "V4.5"
+        : this.apiSettings.model === MODEL_V5_FULL
+          ? "V5H"
+          : "V5M";
+      leftBadge.textContent = gTag ? `${mShort}·${gTag}` : mShort;
+    }
+
+    const centerBadge = this.elMobileNavBadges.get("center");
+    if (centerBadge) {
+      const cnt = this.gallery.length;
+      centerBadge.textContent = `${cnt}张`;
+      centerBadge.classList.toggle("has-count", cnt > 0);
+    }
+
+    const rightBadge = this.elMobileNavBadges.get("right");
+    if (rightBadge) {
+      const poseCode = this.actionMode === "free" ? "FREE" : this.activeSceneId || "P01";
+      rightBadge.textContent = poseCode;
+    }
+
+    if (this.elMobileQuickGenBtn) {
+      const showQuickCta = this.mobileCol !== "center" || this.isGenerating;
+      this.elMobileQuickGenBtn.classList.toggle("hidden-on-stage", !showQuickCta);
+      this.elMobileQuickGenBtn.classList.toggle("is-stopping", this.isGenerating);
+      const batch = this.apiSettings.batch_count || 1;
+      this.elMobileQuickGenBtn.textContent = this.isGenerating
+        ? "⏹"
+        : batch > 1
+          ? `⚡×${batch}`
+          : "⚡";
+      this.elMobileQuickGenBtn.setAttribute(
+        "aria-label",
+        this.isGenerating ? "停止生图" : "立即生图"
+      );
     }
   }
 
@@ -571,6 +877,42 @@ export class WorkbenchApp {
     window.addEventListener("resize", () => applyWidths(false));
   }
 
+  private bindHorizontalWheelScroll(el: HTMLElement): void {
+    el.addEventListener(
+      "wheel",
+      (ev: WheelEvent) => {
+        if (Math.abs(ev.deltaY) > Math.abs(ev.deltaX) && el.scrollWidth > el.clientWidth) {
+          ev.preventDefault();
+          el.scrollLeft += ev.deltaY;
+        }
+      },
+      { passive: false }
+    );
+  }
+
+  private openSavePresetDialog(anchorBtn: HTMLElement): void {
+    this.togglePopover(this.elSavePresetPopover, anchorBtn);
+    this.elSavePresetInput.value = this.cfg.preset_name.startsWith("⭐ ")
+      ? this.cfg.preset_name.replace(/^⭐\s*/, "")
+      : `${this.cfg.eng_name || "角色"} 特调`;
+    this.elSavePresetInput.focus();
+    this.elSavePresetInput.select();
+  }
+
+  private handleResetOrRestorePresetsClick(ev: MouseEvent): void {
+    if (ev.shiftKey) {
+      this.restoreFactoryPresets();
+      return;
+    }
+    this.cfg = createDefaultCharacterConfig();
+    saveActiveConfig(this.cfg);
+    this.isManualPromptEdited = false;
+    this.populatePresetSelect();
+    this.syncAllControls();
+    this.refreshSceneAndPrompt();
+    this.setStatus("↺ 已恢复默认角色与画风参数（提示：Shift+点击 ↺ 可恢复已删出厂预设）");
+  }
+
   // ===========================================================================
   // TOP STUDIO BAR
   // ===========================================================================
@@ -592,12 +934,7 @@ export class WorkbenchApp {
     btnSavePreset.title = "将当前人设、穿搭、画风等保存为自定义预设";
     btnSavePreset.addEventListener("click", (ev) => {
       ev.stopPropagation();
-      this.togglePopover(this.elSavePresetPopover, btnSavePreset);
-      this.elSavePresetInput.value = this.cfg.preset_name.startsWith("⭐ ")
-        ? this.cfg.preset_name.replace(/^⭐\s*/, "")
-        : `${this.cfg.eng_name || "角色"} 特调`;
-      this.elSavePresetInput.focus();
-      this.elSavePresetInput.select();
+      this.openSavePresetDialog(btnSavePreset);
     });
 
     this.elDeletePresetBtn = this.el("button", "btn btn-icon", "🗑️");
@@ -611,32 +948,41 @@ export class WorkbenchApp {
     const btnResetAll = this.el("button", "btn btn-icon", "↺");
     btnResetAll.title = "点击：重置当前面板为默认配置；按住 Shift 点击：恢复全部已删除的出厂角色预设";
     btnResetAll.addEventListener("click", (ev) => {
-      if (ev.shiftKey) {
-        this.restoreFactoryPresets();
-        return;
-      }
-      this.cfg = createDefaultCharacterConfig();
-      saveActiveConfig(this.cfg);
-      this.isManualPromptEdited = false;
-      this.populatePresetSelect();
-      this.syncAllControls();
-      this.refreshSceneAndPrompt();
-      this.setStatus("↺ 已恢复默认角色与画风参数（提示：Shift+点击 ↺ 可恢复已删出厂预设）");
+      this.handleResetOrRestorePresetsClick(ev);
     });
 
     gLeft.append(this.elPresetSelect, btnSavePreset, this.elDeletePresetBtn, btnResetAll);
 
     // Center: Model Segmented Pills + Canvas + Seed + Batch
     const gCenter = this.el("div", "topbar-group topbar-group-center");
-    const modelSeg = this.el("div", "seg-group");
-    const models: Array<[NaiModelId, string, string]> = [
-      [MODEL_V4_5_FULL, "♾️ V4.5 Full", "Opus 标准尺寸 28步真正无限 0 Anlas · 原生支持 Vibe Transfer"],
-      [MODEL_V5_FULL, "🔥 V5 High", "V5 Full High 28步 · 全题材独立负向 UC · Opus 走恢复池"],
-      [MODEL_V5_FULL_MEDIUM, "⚡ V5 Med", "V5 Full Medium 14步极速 · 省约 42% V5 恢复池额度"],
+    const modelSeg = this.el("div", "seg-group topbar-model-seg");
+    const models: Array<[NaiModelId, string, string, string]> = [
+      [
+        MODEL_V4_5_FULL,
+        "♾️ V4.5 Full",
+        "♾️ V4.5",
+        "Opus 标准尺寸 28步真正无限 0 Anlas · 原生支持 Vibe Transfer",
+      ],
+      [
+        MODEL_V5_FULL,
+        "🔥 V5 High",
+        "🔥 V5H",
+        "V5 Full High 28步 · 全题材独立负向 UC · Opus 走恢复池",
+      ],
+      [
+        MODEL_V5_FULL_MEDIUM,
+        "⚡ V5 Med",
+        "⚡ V5M",
+        "V5 Full Medium 14步极速 · 省约 42% V5 恢复池额度",
+      ],
     ];
     this.elModelBtns.clear();
-    for (const [mId, lbl, tip] of models) {
-      const b = this.el("button", "seg-btn", lbl);
+    for (const [mId, deskLbl, mobLbl, tip] of models) {
+      const b = this.el("button", "seg-btn");
+      b.append(
+        this.el("span", "gen-lbl-desk", deskLbl),
+        this.el("span", "gen-lbl-mob", mobLbl)
+      );
       b.title = tip;
       b.addEventListener("click", () => this.setModel(mId));
       this.elModelBtns.set(mId, b);
@@ -710,10 +1056,54 @@ export class WorkbenchApp {
       this.updateBatchCheckedButton();
     });
 
-    gCenter.append(modelSeg, this.elCanvasSelect, seedBox, this.elBatchSelect);
+    this.elMobileStepsSelect = this.el(
+      "select",
+      "batch-select mobile-only-ctrl mobile-steps-select"
+    ) as HTMLSelectElement;
+    this.elMobileStepsSelect.title = "快捷切换采样步数 (Steps)";
+    for (const st of [14, 20, 24, 28, 36, 50]) {
+      const opt = this.el("option", "", `${st}步`);
+      opt.value = String(st);
+      this.elMobileStepsSelect.appendChild(opt);
+    }
+    this.elMobileStepsSelect.addEventListener("change", () => {
+      const s = Math.max(1, Math.min(50, parseInt(this.elMobileStepsSelect.value, 10) || 28));
+      this.apiSettings.steps = s;
+      saveApiSettings(this.apiSettings);
+      this.syncApiControls();
+      this.updateQuotaPill();
+    });
 
-    // Right: MCP Bridge Pill + Quota Pill + Folder Mount + Hero Generate / Stop
+    this.elMobileUpscaleBtn = this.el(
+      "button",
+      "chip-btn mobile-only-ctrl mobile-upscale-chip",
+      "🔍 2x替换"
+    );
+    this.elMobileUpscaleBtn.title = "生图完成后自动调用官方 2x 高清放大替换";
+    this.elMobileUpscaleBtn.addEventListener("click", () => {
+      this.apiSettings.auto_upscale_replace = !this.apiSettings.auto_upscale_replace;
+      saveApiSettings(this.apiSettings);
+      this.syncStageToolbar();
+    });
+
+    gCenter.append(
+      modelSeg,
+      this.elCanvasSelect,
+      this.elMobileStepsSelect,
+      this.elMobileUpscaleBtn,
+      seedBox,
+      this.elBatchSelect
+    );
+
+    const quickStrip = this.el("div", "topbar-quick-strip");
+    quickStrip.append(gLeft, gCenter);
+    this.bindHorizontalWheelScroll(quickStrip);
+
+    // Right: Compact Mobile Brand + MCP Bridge Pill + Quota Pill + Folder Mount + Hero Generate / Stop
     const gRight = this.el("div", "topbar-group topbar-group-right");
+    const mobileBrand = this.el("div", "brand-badge mobile-brand-badge", "✨ 2.0");
+    mobileBrand.title = "NovelAI Studio 2.0";
+
     this.elMcpPill = this.el("button", "mcp-pill");
     this.elMcpPill.title = "MCP 实时控制桥（支持本机与局域网/远程连接）：点击设置服务器地址或开关";
     this.elMcpPill.addEventListener("click", (ev) => {
@@ -735,7 +1125,7 @@ export class WorkbenchApp {
       }
     });
 
-    this.elMountBtn = this.el("button", "btn", "📂 挂载目录");
+    this.elMountBtn = this.el("button", "btn topbar-mount-btn", "📂 挂载目录");
     this.elMountBtn.title = "授权本地文件夹后，每张出图与 2x 放大图将自动按日期子目录落盘保存";
     if (!supportsDirectoryPicker()) {
       this.elMountBtn.style.display = "none";
@@ -780,7 +1170,11 @@ export class WorkbenchApp {
       }
     });
 
-    this.elHeroGenBtn = this.el("button", "btn btn-generate-hero", "🚀 立即生图");
+    this.elHeroGenBtn = this.el("button", "btn btn-generate-hero");
+    this.elHeroGenBtn.append(
+      this.el("span", "gen-lbl-desk", "🚀 立即生图"),
+      this.el("span", "gen-lbl-mob", "⚡ 生成")
+    );
     this.elHeroGenBtn.addEventListener("click", () => {
       const targetId = this.actionMode === "free" ? "FREE" : this.activeSceneId;
       const count = this.apiSettings.batch_count || 1;
@@ -799,8 +1193,15 @@ export class WorkbenchApp {
       }
     });
 
-    gRight.append(this.elMcpPill, this.elQuotaPill, this.elMountBtn, this.elHeroGenBtn, this.elStopGenBtn);
-    bar.append(gLeft, gCenter, gRight);
+    gRight.append(
+      mobileBrand,
+      this.elQuotaPill,
+      this.elMcpPill,
+      this.elMountBtn,
+      this.elHeroGenBtn,
+      this.elStopGenBtn
+    );
+    bar.append(quickStrip, gRight);
     return bar;
   }
 
@@ -810,15 +1211,20 @@ export class WorkbenchApp {
     this.elMcpPill.innerHTML = "";
     const dot = this.el("span", "mcp-dot");
     const resolved = this.mcpBridge.getResolvedEndpoints();
-    let txt = "MCP 待机";
+    let stateSuffix = " 待机";
     if (status === "connected") {
       this.elMcpPill.classList.add("connected");
-      txt = "MCP 已连";
+      stateSuffix = " 已连";
     } else if (status === "disabled") {
       this.elMcpPill.classList.add("disabled");
-      txt = "MCP 已关";
+      stateSuffix = " 已关";
     }
-    this.elMcpPill.append(dot, this.el("span", "", txt));
+    const labelWrap = this.el("span", "mcp-lbl-wrap");
+    labelWrap.append(
+      this.el("span", "", "MCP"),
+      this.el("span", "mcp-state-word", stateSuffix)
+    );
+    this.elMcpPill.append(dot, labelWrap);
 
     if (this.elMcpPopSwitch) {
       const on = this.mcpBridge.isEnabled();
@@ -879,43 +1285,55 @@ export class WorkbenchApp {
   }
 
   private populatePresetSelect(): void {
-    if (!this.elPresetSelect) return;
-    this.elPresetSelect.innerHTML = "";
     const customKeys = Object.keys(this.customPresets);
-    if (customKeys.length > 0) {
-      const grpCustom = document.createElement("optgroup");
-      grpCustom.label = "⭐ 特调 / 自定义角色预设";
-      for (const k of customKeys) {
-        const opt = this.el("option", "", compactOptionText(k, 36));
-        opt.value = k;
-        opt.title = k;
-        grpCustom.appendChild(opt);
-      }
-      this.elPresetSelect.appendChild(grpCustom);
-    }
-
     const builtinKeys = this.getAvailableBuiltinKeys();
-    if (builtinKeys.length > 0) {
-      const grpBuiltin = document.createElement("optgroup");
-      grpBuiltin.label = "👤 内置角色模板";
-      for (const k of builtinKeys) {
-        const opt = this.el("option", "", compactOptionText(k, 36));
-        opt.value = k;
-        opt.title = k;
-        grpBuiltin.appendChild(opt);
-      }
-      this.elPresetSelect.appendChild(grpBuiltin);
+    const allKeys = [...customKeys, ...builtinKeys];
+
+    let selectedKey = this.cfg.preset_name;
+    if (!allKeys.includes(selectedKey) && allKeys.length > 0) {
+      selectedKey = allKeys[0];
+      this.cfg.preset_name = selectedKey;
     }
 
-    const allKeys = [...customKeys, ...builtinKeys];
-    if (allKeys.includes(this.cfg.preset_name)) {
-      this.elPresetSelect.value = this.cfg.preset_name;
-    } else if (allKeys.length > 0) {
-      this.cfg.preset_name = allKeys[0];
-      this.elPresetSelect.value = allKeys[0];
-    }
+    const fillOneSelect = (sel: HTMLSelectElement | null): void => {
+      if (!sel) return;
+      sel.innerHTML = "";
+      if (customKeys.length > 0) {
+        const grpCustom = document.createElement("optgroup");
+        grpCustom.label = "⭐ 特调 / 自定义角色预设";
+        for (const k of customKeys) {
+          const opt = this.el("option", "", compactOptionText(k, 36));
+          opt.value = k;
+          opt.title = k;
+          grpCustom.appendChild(opt);
+        }
+        sel.appendChild(grpCustom);
+      }
+      if (builtinKeys.length > 0) {
+        const grpBuiltin = document.createElement("optgroup");
+        grpBuiltin.label = "👤 内置角色模板";
+        for (const k of builtinKeys) {
+          const opt = this.el("option", "", compactOptionText(k, 36));
+          opt.value = k;
+          opt.title = k;
+          grpBuiltin.appendChild(opt);
+        }
+        sel.appendChild(grpBuiltin);
+      }
+      if (selectedKey && allKeys.includes(selectedKey)) {
+        sel.value = selectedKey;
+      }
+    };
+
+    fillOneSelect(this.elPresetSelect ?? null);
+    fillOneSelect(this.elLeftPresetSelect);
+
+    const disableDel = allKeys.length <= 1;
     if (this.elDeletePresetBtn) {
-      this.elDeletePresetBtn.disabled = allKeys.length <= 1;
+      this.elDeletePresetBtn.disabled = disableDel;
+    }
+    if (this.elLeftDeletePresetBtn) {
+      this.elLeftDeletePresetBtn.disabled = disableDel;
     }
   }
 
@@ -1094,6 +1512,53 @@ export class WorkbenchApp {
 
   private buildLeftColumn(): HTMLElement {
     const col = this.el("aside", "studio-col col-left");
+
+    // --- SYNCED COMPACT PRESET SWITCHER BAR (Visible on <= 1120px above accordion cards) ---
+    const leftPresetBar = this.el("div", "mobile-left-preset-bar");
+    const leftPresetIcon = this.el("span", "mobile-left-preset-lbl", "📑");
+    leftPresetIcon.title = "角色与特调预设快捷切换";
+
+    this.elLeftPresetSelect = this.el("select", "preset-select-left-mirror") as HTMLSelectElement;
+    this.elLeftPresetSelect.title = "切换角色预设（支持内置含Vibe特调预设与自定义保存预设）";
+    this.elLeftPresetSelect.addEventListener("change", () => {
+      if (this.elLeftPresetSelect) {
+        void this.applySelectedCharacterPreset(this.elLeftPresetSelect.value);
+      }
+    });
+
+    const btnLeftSave = this.el("button", "btn btn-icon", "💾");
+    btnLeftSave.title = "将当前人设、穿搭、画风等保存为自定义预设";
+    btnLeftSave.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.openSavePresetDialog(btnLeftSave);
+    });
+
+    this.elLeftDeletePresetBtn = this.el("button", "btn btn-icon", "🗑️");
+    this.elLeftDeletePresetBtn.title =
+      "删除当前下拉框选中的角色预设（刷新不复活；Shift+点击右侧 ↺ 可恢复出厂预设列表）";
+    this.elLeftDeletePresetBtn.addEventListener("click", () => {
+      const cur =
+        this.elLeftPresetSelect?.value || this.elPresetSelect?.value || this.cfg.preset_name;
+      if (!cur) return;
+      void this.deletePresetByKey(cur);
+    });
+
+    const btnLeftReset = this.el("button", "btn btn-icon", "↺");
+    btnLeftReset.title =
+      "点击：重置当前面板为默认配置；按住 Shift 点击：恢复全部已删除的出厂角色预设";
+    btnLeftReset.addEventListener("click", (ev) => {
+      this.handleResetOrRestorePresetsClick(ev);
+    });
+
+    leftPresetBar.append(
+      leftPresetIcon,
+      this.elLeftPresetSelect,
+      btnLeftSave,
+      this.elLeftDeletePresetBtn,
+      btnLeftReset
+    );
+    col.appendChild(leftPresetBar);
+    this.populatePresetSelect();
 
     // --- CARD 1: CHARACTER IDENTITY & BODY (Always collapsed on open) ---
     const c1 = this.createInspectorCard({
@@ -1663,6 +2128,7 @@ export class WorkbenchApp {
     this.elStageMeta = this.el("div", "stage-meta", "就绪 · 选择右侧动作或点击顶部「🚀 立即生图」");
 
     const actions = this.el("div", "stage-actions");
+    this.bindHorizontalWheelScroll(actions);
     this.elAutoUpscaleBtn = this.el("button", "chip-btn", "🔍 生后即2x替换");
     this.elAutoUpscaleBtn.title =
       "开启后：每次生图自动完成官方 2x 高清放大后再推入画廊与全屏灯箱（不推临时1x小图）";
@@ -1700,8 +2166,7 @@ export class WorkbenchApp {
     const btnOpenFolders = this.el("button", "btn btn-xs", "📁 分组");
     btnOpenFolders.title = "拉起底部「两栏 ➔ 三栏」拖拽分组文件夹抽屉（支持预建文件夹与 🎯新图直入）";
     btnOpenFolders.addEventListener("click", () => {
-      this.filmstripExpanded = !this.filmstripExpanded;
-      this.renderFilmstrip();
+      this.setFilmstripExpanded(!this.filmstripExpanded);
     });
 
     this.elStageGridBtn = this.el("button", "btn btn-xs", "🪟 总览");
@@ -1815,8 +2280,7 @@ export class WorkbenchApp {
     this.elFilmExpandBtn = this.el("button", "btn btn-xs btn-primary", "▴ 分栏归档");
     this.elFilmExpandBtn.title = "上拉展开「两栏拖拽归档 ➔ 点击文件夹展开三栏」自动分文件夹视图";
     this.elFilmExpandBtn.addEventListener("click", () => {
-      this.filmstripExpanded = !this.filmstripExpanded;
-      this.renderFilmstrip();
+      this.setFilmstripExpanded(!this.filmstripExpanded);
     });
     filmLeft.appendChild(this.elFilmExpandBtn);
 
@@ -1964,9 +2428,49 @@ export class WorkbenchApp {
       );
     });
 
+    this.elBatchMoveFolderSelect = this.el(
+      "select",
+      "batch-select film-move-folder-select"
+    ) as HTMLSelectElement;
+    this.elBatchMoveFolderSelect.title =
+      "触屏一键归档：将已勾选图片（未勾选时为当前选中图）移入已有或新建文件夹，无需鼠标拖拽";
+    this.elBatchMoveFolderSelect.addEventListener("change", () => {
+      const val = this.elBatchMoveFolderSelect.value;
+      this.elBatchMoveFolderSelect.value = "";
+      if (!val) return;
+      const curRec = this.gallery[this.selectedGalleryIdx];
+      const targetIds =
+        this.checkedGalleryIds.size > 0
+          ? Array.from(this.checkedGalleryIds)
+          : curRec
+            ? [curRec.id]
+            : [];
+      if (targetIds.length === 0) {
+        this.setStatus("⚠️ 请先勾选或选中需要移入文件夹的图片", true);
+        return;
+      }
+      if (val === "__new__") {
+        const firstRec = this.gallery.find((g) => targetIds.includes(g.id));
+        const defaultName = `${firstRec?.scene_id || this.activeSceneId || "分组"}_${this.galleryFolders.length + 1}`;
+        const inputName = window.prompt("新建分组文件夹名称：", defaultName);
+        if (inputName === null) return;
+        const created = this.ensureGalleryFolderExists(inputName.trim() || defaultName);
+        if (!created) return;
+        this.openedFolderName = created;
+        void this.moveGalleryRecordsToFolder(targetIds, created);
+      } else if (val === "__ungroup__") {
+        void this.moveGalleryRecordsToFolder(targetIds, null);
+      } else if (val.startsWith("fld:")) {
+        const folderName = val.slice(4);
+        this.openedFolderName = folderName;
+        void this.moveGalleryRecordsToFolder(targetIds, folderName);
+      }
+    });
+
     filmRight.append(
       btnSelAll,
       btnSelInvert,
+      this.elBatchMoveFolderSelect,
       this.elBatchUpscaleGalleryBtn,
       this.elBatchDeleteGalleryBtn,
       btnClearUnstarred,
@@ -1978,20 +2482,23 @@ export class WorkbenchApp {
     this.elFilmstripBar.append(filmResizer, filmToolbar, this.elFilmstripScroll);
     this.setupFilmstripDrawerResizer(col, this.elFilmstripBar, filmResizer);
 
-    // 4. Collapsible & Vertically Resizable Bottom Live Prompt Drawer
+    // 4. Collapsible & Vertically Resizable Bottom Live Prompt Drawer (defaults collapsed on mobile & load)
     this.elPromptDrawer = this.el("section", "prompt-drawer collapsed");
     const drawerResizer = this.el("div", "prompt-drawer-resizer");
     drawerResizer.title = "上下拖动调节词条面板高度（双击重置）";
     const pBar = this.el("div", "prompt-drawer-bar");
+    pBar.title = "点击展开 / 收起词条微调面板";
     const pLeft = this.el("div", "prompt-bar-left");
 
-    this.elDrawerToggleBtn = this.el("button", "btn btn-xs", "▸ 展开词条微调");
-    this.elDrawerToggleBtn.addEventListener("click", () => {
-      this.promptDrawerExpanded = !this.promptDrawerExpanded;
-      this.elPromptDrawer.classList.toggle("collapsed", !this.promptDrawerExpanded);
-      this.elDrawerToggleBtn.textContent = this.promptDrawerExpanded
-        ? "▾ 收起词条面板"
-        : "▸ 展开词条微调";
+    this.elDrawerToggleBtn = this.el("button", "btn btn-xs prompt-toggle-btn", "▸ 展开词条微调");
+    this.elDrawerToggleBtn.setAttribute("aria-expanded", "false");
+    this.elDrawerToggleBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.togglePromptDrawer();
+    });
+
+    pBar.addEventListener("click", () => {
+      this.togglePromptDrawer();
     });
 
     this.elPromptSceneLbl = this.el("span", "prompt-scene-lbl", "");
@@ -2000,7 +2507,8 @@ export class WorkbenchApp {
     this.elManualLockPill.style.display = "none";
     const btnResetManual = this.el("button", "btn btn-xs", "↺ 恢复引擎词条");
     btnResetManual.style.marginLeft = "4px";
-    btnResetManual.addEventListener("click", () => {
+    btnResetManual.addEventListener("click", (ev) => {
+      ev.stopPropagation();
       this.isManualPromptEdited = false;
       this.refreshSceneAndPrompt();
     });
@@ -2013,14 +2521,38 @@ export class WorkbenchApp {
       this.elManualLockPill
     );
 
-    const pRight = this.el("div", "topbar-group");
+    const pRight = this.el("div", "topbar-group prompt-bar-actions");
+    const focusSeg = this.el("div", "seg-group prompt-focus-seg");
+    const focusModes: Array<["both" | "pos" | "neg", string, string]> = [
+      ["both", "双框", "同时显示正向与负向词条框"],
+      ["pos", "正向", "让 Positive 正向框占满 100% 编辑区（适合手机虚拟键盘输入）"],
+      ["neg", "负向", "让 Negative 负向框占满 100% 编辑区（适合手机虚拟键盘输入）"],
+    ];
+    this.elPromptFocusBtns.clear();
+    for (const [fKey, fLbl, fTip] of focusModes) {
+      const fBtn = this.el(
+        "button",
+        `seg-btn${this.promptFocusMode === fKey ? " active" : ""}`,
+        fLbl
+      );
+      fBtn.title = fTip;
+      fBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this.setPromptFocusMode(fKey);
+      });
+      this.elPromptFocusBtns.set(fKey, fBtn);
+      focusSeg.appendChild(fBtn);
+    }
+
     const btnCopyPos = this.el("button", "btn btn-xs", "📋 复制正向");
-    btnCopyPos.addEventListener("click", () => {
+    btnCopyPos.addEventListener("click", (ev) => {
+      ev.stopPropagation();
       void navigator.clipboard.writeText(this.elPosTextarea.value.trim());
       this.setStatus("📋 已复制正向 Prompt 到剪贴板");
     });
     const btnCopyNeg = this.el("button", "btn btn-xs", "📋 复制负向");
-    btnCopyNeg.addEventListener("click", () => {
+    btnCopyNeg.addEventListener("click", (ev) => {
+      ev.stopPropagation();
       const fullNeg = buildFullNegativeString({
         posPrompt: this.elPosTextarea.value.trim(),
         sceneNegPrompt: this.elNegTextarea.value.trim(),
@@ -2035,16 +2567,19 @@ export class WorkbenchApp {
     });
     const btnCopyInline = this.el("button", "btn btn-xs", "📋 单框内联");
     btnCopyInline.title = "复制把负向包裹为 -2::...:: 的单框合并文本（适合 V5 Medium 网页粘贴）";
-    btnCopyInline.addEventListener("click", () => {
+    btnCopyInline.addEventListener("click", (ev) => {
+      ev.stopPropagation();
       const merged = mergePosAndNegToInline(this.elPosTextarea.value, this.elNegTextarea.value);
       void navigator.clipboard.writeText(merged);
       this.setStatus("📋 已复制单框内联格式 (-2::...::) 到剪贴板");
     });
-    pRight.append(btnCopyPos, btnCopyNeg, btnCopyInline);
+    pRight.append(focusSeg, btnCopyPos, btnCopyNeg, btnCopyInline);
     pBar.append(pLeft, pRight);
 
     const pBody = this.el("div", "prompt-drawer-body");
-    const posCol = this.el("div", "prompt-box-col");
+    pBody.dataset.promptFocus = this.promptFocusMode;
+    this.elPromptDrawerBody = pBody;
+    const posCol = this.el("div", "prompt-box-col prompt-box-pos");
     const posHead = this.el("div", "prompt-box-head");
     posHead.appendChild(this.el("span", "", "✨ Positive Prompt (可直接手改并锁定生图)"));
     this.elPosTextarea = this.el("textarea") as HTMLTextAreaElement;
@@ -2056,7 +2591,7 @@ export class WorkbenchApp {
     });
     posCol.append(posHead, this.elPosTextarea);
 
-    const negCol = this.el("div", "prompt-box-col");
+    const negCol = this.el("div", "prompt-box-col prompt-box-neg");
     const negHead = this.el("div", "prompt-box-head");
     negHead.appendChild(this.el("span", "", "🛡️ Negative UC (场景附加负向词 · V4.5/V5独立通道)"));
     this.elNegTextarea = this.el("textarea") as HTMLTextAreaElement;
@@ -2076,6 +2611,39 @@ export class WorkbenchApp {
     return col;
   }
 
+  private setPromptFocusMode(mode: "both" | "pos" | "neg"): void {
+    this.promptFocusMode = mode;
+    if (this.elPromptDrawerBody) {
+      this.elPromptDrawerBody.dataset.promptFocus = mode;
+    }
+    for (const [k, btn] of this.elPromptFocusBtns.entries()) {
+      btn.classList.toggle("active", k === mode);
+    }
+  }
+
+  private togglePromptDrawer(force?: boolean, customOverlayH?: number | null): void {
+    const next = force !== undefined ? force : !this.promptDrawerExpanded;
+    if (next) {
+      this.snapshotCollapsedBarHeights();
+      if (this.isPortraitCompactStage) {
+        if (this.filmstripExpanded) {
+          this.filmstripExpanded = false;
+          this.renderFilmstrip();
+        }
+        this.portraitPromptOverlayCustomH =
+          customOverlayH !== undefined ? customOverlayH : null;
+      }
+    }
+    this.promptDrawerExpanded = next;
+    this.elPromptDrawer.classList.toggle("collapsed", !this.promptDrawerExpanded);
+    this.elDrawerToggleBtn.textContent = this.promptDrawerExpanded
+      ? "▾ 收起词条面板"
+      : "▸ 展开词条微调";
+    this.elDrawerToggleBtn.setAttribute("aria-expanded", String(this.promptDrawerExpanded));
+    this.snapshotCollapsedBarHeights();
+    this.syncPortraitOverlayState();
+  }
+
   private setupFilmstripDrawerResizer(
     colCenter: HTMLElement,
     bar: HTMLElement,
@@ -2087,6 +2655,11 @@ export class WorkbenchApp {
     const getMaxH = () => {
       const containerH = colCenter.clientHeight || window.innerHeight;
       return Math.max(240, Math.round(containerH * 0.64));
+    };
+    const getPortraitMaxH = () => {
+      const containerH =
+        colCenter.clientHeight || Math.max(320, window.innerHeight - 140);
+      return Math.max(180, containerH - (this.collapsedPromptBarH || 44));
     };
 
     let customH: number | null = null;
@@ -2113,21 +2686,111 @@ export class WorkbenchApp {
         }
       }
     };
+    this.restoreDesktopFilmstripHeight = () => applyH(false);
     applyH(false);
 
     handle.addEventListener("dblclick", () => {
+      if (this.isPortraitCompactStage) {
+        this.portraitFilmOverlayCustomH = null;
+        this.syncPortraitOverlayState();
+        return;
+      }
       customH = null;
       applyH(true);
     });
 
     handle.addEventListener("pointerdown", (ev: PointerEvent) => {
       ev.preventDefault();
-      if (!this.filmstripExpanded) {
-        this.filmstripExpanded = true;
-        this.renderFilmstrip();
-      }
       handle.setPointerCapture(ev.pointerId);
       handle.classList.add("dragging");
+
+      if (this.isPortraitCompactStage) {
+        const wasExpanded = this.filmstripExpanded;
+        const startY = ev.clientY;
+        const startTime = performance.now();
+        const startH = wasExpanded
+          ? bar.offsetHeight || this.portraitFilmOverlayCustomH || getPortraitMaxH()
+          : bar.offsetHeight || this.collapsedFilmstripBarH || 88;
+        let currentlyExpanded = wasExpanded;
+        let liveH = startH;
+        let peakH = startH;
+        bar.classList.add("is-dragging-overlay");
+
+        const onMove = (moveEv: PointerEvent): void => {
+          const dy = startY - moveEv.clientY;
+          const maxH = getPortraitMaxH();
+          if (!currentlyExpanded && dy > 4) {
+            liveH = Math.max(130, Math.min(maxH, Math.round(startH + dy)));
+            peakH = Math.max(peakH, liveH);
+            this.setFilmstripExpanded(true, liveH);
+            bar.classList.add("is-dragging-overlay");
+            currentlyExpanded = true;
+          } else if (currentlyExpanded) {
+            liveH = Math.max(84, Math.min(maxH, Math.round(startH + dy)));
+            peakH = Math.max(peakH, liveH);
+            this.portraitFilmOverlayCustomH = liveH;
+            bar.classList.add("has-custom-h");
+            bar.style.setProperty("--portrait-film-overlay-h", `${liveH}px`);
+          }
+        };
+
+        const onUp = (upEv: PointerEvent): void => {
+          handle.releasePointerCapture(upEv.pointerId);
+          handle.classList.remove("dragging");
+          bar.classList.remove("is-dragging-overlay");
+          handle.removeEventListener("pointermove", onMove);
+          handle.removeEventListener("pointerup", onUp);
+          handle.removeEventListener("pointercancel", onUp);
+
+          const totalDy = startY - upEv.clientY;
+          const isQuickFlick = performance.now() - startTime < 320;
+          const maxH = getPortraitMaxH();
+          const reversedDownAfterPull = peakH - liveH > 26;
+
+          if (!wasExpanded) {
+            if (
+              Math.abs(totalDy) < 8 ||
+              (totalDy > 36 && (!reversedDownAfterPull || isQuickFlick))
+            ) {
+              this.setFilmstripExpanded(true, null);
+            } else if (!currentlyExpanded || liveH < 130) {
+              this.setFilmstripExpanded(false);
+            } else if (liveH >= maxH - 36) {
+              this.portraitFilmOverlayCustomH = null;
+              this.syncPortraitOverlayState();
+            } else {
+              this.portraitFilmOverlayCustomH = liveH;
+              this.syncPortraitOverlayState();
+            }
+          } else {
+            if ((isQuickFlick && totalDy < -42) || liveH < 130) {
+              this.setFilmstripExpanded(false);
+            } else if (Math.abs(totalDy) < 8) {
+              if (this.portraitFilmOverlayCustomH !== null) {
+                this.portraitFilmOverlayCustomH = null;
+                this.syncPortraitOverlayState();
+              } else {
+                this.setFilmstripExpanded(false);
+              }
+            } else if ((isQuickFlick && totalDy > 36) || liveH >= maxH - 36) {
+              this.portraitFilmOverlayCustomH = null;
+              this.syncPortraitOverlayState();
+            } else {
+              this.portraitFilmOverlayCustomH = liveH;
+              this.syncPortraitOverlayState();
+            }
+          }
+        };
+
+        handle.addEventListener("pointermove", onMove);
+        handle.addEventListener("pointerup", onUp);
+        handle.addEventListener("pointercancel", onUp);
+        return;
+      }
+
+      if (!this.filmstripExpanded) {
+        this.setFilmstripExpanded(true);
+      }
       const startY = ev.clientY;
       const startH = customH ?? getDefaultH();
 
@@ -2162,6 +2825,8 @@ export class WorkbenchApp {
       const containerH = colCenter.clientHeight || window.innerHeight;
       return Math.max(220, Math.round(containerH * (isMobile() ? 0.65 : 0.68)));
     };
+    const getPortraitMaxH = () =>
+      Math.max(180, colCenter.clientHeight || Math.max(320, window.innerHeight - 140));
     const MIN_H = 110;
 
     let drawerH: number | null = null;
@@ -2190,9 +2855,15 @@ export class WorkbenchApp {
         }
       }
     };
+    this.restoreDesktopPromptDrawerHeight = () => applyH(false);
     applyH(false);
 
     handle.addEventListener("dblclick", () => {
+      if (this.isPortraitCompactStage) {
+        this.portraitPromptOverlayCustomH = null;
+        this.syncPortraitOverlayState();
+        return;
+      }
       drawerH = null;
       applyH(true);
     });
@@ -2201,6 +2872,91 @@ export class WorkbenchApp {
       ev.preventDefault();
       handle.setPointerCapture(ev.pointerId);
       handle.classList.add("dragging");
+
+      if (this.isPortraitCompactStage) {
+        const wasExpanded = this.promptDrawerExpanded;
+        const startY = ev.clientY;
+        const startTime = performance.now();
+        const startH = wasExpanded
+          ? drawer.offsetHeight || this.portraitPromptOverlayCustomH || getPortraitMaxH()
+          : drawer.offsetHeight || this.collapsedPromptBarH || 56;
+        let currentlyExpanded = wasExpanded;
+        let liveH = startH;
+        let peakH = startH;
+        drawer.classList.add("is-dragging-overlay");
+
+        const onMove = (moveEv: PointerEvent): void => {
+          const dy = startY - moveEv.clientY;
+          const maxH = getPortraitMaxH();
+          if (!currentlyExpanded && dy > 4) {
+            liveH = Math.max(130, Math.min(maxH, Math.round(startH + dy)));
+            peakH = Math.max(peakH, liveH);
+            this.togglePromptDrawer(true, liveH);
+            drawer.classList.add("is-dragging-overlay");
+            currentlyExpanded = true;
+          } else if (currentlyExpanded) {
+            liveH = Math.max(84, Math.min(maxH, Math.round(startH + dy)));
+            peakH = Math.max(peakH, liveH);
+            this.portraitPromptOverlayCustomH = liveH;
+            drawer.classList.add("has-custom-h");
+            drawer.style.setProperty("--portrait-prompt-overlay-h", `${liveH}px`);
+          }
+        };
+
+        const onUp = (upEv: PointerEvent): void => {
+          handle.releasePointerCapture(upEv.pointerId);
+          handle.classList.remove("dragging");
+          drawer.classList.remove("is-dragging-overlay");
+          handle.removeEventListener("pointermove", onMove);
+          handle.removeEventListener("pointerup", onUp);
+          handle.removeEventListener("pointercancel", onUp);
+
+          const totalDy = startY - upEv.clientY;
+          const isQuickFlick = performance.now() - startTime < 320;
+          const maxH = getPortraitMaxH();
+          const reversedDownAfterPull = peakH - liveH > 26;
+
+          if (!wasExpanded) {
+            if (
+              Math.abs(totalDy) < 8 ||
+              (totalDy > 36 && (!reversedDownAfterPull || isQuickFlick))
+            ) {
+              this.togglePromptDrawer(true, null);
+            } else if (!currentlyExpanded || liveH < 130) {
+              this.togglePromptDrawer(false);
+            } else if (liveH >= maxH - 36) {
+              this.portraitPromptOverlayCustomH = null;
+              this.syncPortraitOverlayState();
+            } else {
+              this.portraitPromptOverlayCustomH = liveH;
+              this.syncPortraitOverlayState();
+            }
+          } else {
+            if ((isQuickFlick && totalDy < -42) || liveH < 130) {
+              this.togglePromptDrawer(false);
+            } else if (Math.abs(totalDy) < 8) {
+              if (this.portraitPromptOverlayCustomH !== null) {
+                this.portraitPromptOverlayCustomH = null;
+                this.syncPortraitOverlayState();
+              } else {
+                this.togglePromptDrawer(false);
+              }
+            } else if ((isQuickFlick && totalDy > 36) || liveH >= maxH - 36) {
+              this.portraitPromptOverlayCustomH = null;
+              this.syncPortraitOverlayState();
+            } else {
+              this.portraitPromptOverlayCustomH = liveH;
+              this.syncPortraitOverlayState();
+            }
+          }
+        };
+
+        handle.addEventListener("pointermove", onMove);
+        handle.addEventListener("pointerup", onUp);
+        handle.addEventListener("pointercancel", onUp);
+        return;
+      }
+
       const startY = ev.clientY;
       const startH = drawerH ?? getDefaultH();
 
@@ -2223,7 +2979,7 @@ export class WorkbenchApp {
     });
 
     window.addEventListener("resize", () => {
-      if (drawerH !== null) applyH(false);
+      if (!this.isPortraitCompactStage && drawerH !== null) applyH(false);
     });
   }
 
@@ -3006,6 +3762,25 @@ export class WorkbenchApp {
       return;
     }
 
+    const otherTpl = OTHER_ACTION_TEMPLATES[this.activeSceneId];
+    const hasBuiltinXray = Boolean(
+      otherTpl?.builtin_xray || otherTpl?.kitchen_duo?.channel === "builtin_xray"
+    );
+    const isKtd = this.activeSceneId.startsWith("KTD");
+    const isPld = this.activeSceneId.startsWith("PLD");
+    const isCv = this.activeSceneId.startsWith("CV");
+    const isBt = this.activeSceneId.startsWith("BT");
+    const isHwd = this.activeSceneId.startsWith("HWD");
+    const isPs = this.activeSceneId.startsWith("PS");
+    const isCvDuo = this.activeSceneId === "CV04";
+    const isKtSolo = this.activeSceneId.startsWith("KT") && !isKtd;
+    const isPlSolo = this.activeSceneId.startsWith("PL") && !isPld;
+    const hasCondomChip = isKtd || isPld || isCvDuo || isHwd || isPs;
+    const supportsInternalXray =
+      isKtd || isPld || isKtSolo || isPlSolo || isCv || isBt || isHwd || isPs;
+    const isFemboy = (this.cfg.gender_mode ?? "normal") === "femboy";
+    const xrayAllowed = supportsInternalXray || !isFemboy;
+
     const useSceneOutfit = this.cfg.other_use_scene_outfit !== false;
     const btnSceneOutfit = this.el(
       "button",
@@ -3013,19 +3788,40 @@ export class WorkbenchApp {
       useSceneOutfit ? "👗 场景专属穿搭: ON" : "👗 场景穿搭: OFF (用左侧)"
     );
     btnSceneOutfit.title =
-      "开启：使用 SF 自拍场景专属主题服装（竞泳/风衣/湿衬衫/红绳/保鲜膜/撕黑丝等）；关闭：改用左侧角色穿搭预设";
+      "开启：使用 SF 自拍专属穿搭、KTD/KT/HWD 纯白荷叶边裸围、PLD/PL 泳池专属水着、CV 储精吊带、或 BT 浴室湿身浴巾；关闭：改用左侧角色穿搭预设";
     btnSceneOutfit.addEventListener("click", () => {
       this.cfg.other_use_scene_outfit = !useSceneOutfit;
       this.onCfgChanged();
       this.renderRightModeView();
     });
 
+    let btnCondom: HTMLButtonElement | null = null;
+    if (hasCondomChip) {
+      btnCondom = this.el(
+        "button",
+        `chip-btn${this.cfg.enable_condom ? " active" : ""}`,
+        "🛡️ 安全套"
+      );
+      btnCondom.title =
+        "开关双人厨房 (KTD01~KTD60) / 公共泳池 (PLD01~PLD22) / 双人采精 (CV04) / 家务干扰 (HWD01~HWD15) / 替身盖照 (PS01~PS04) 动作的安全套表现词条";
+      btnCondom.addEventListener("click", () => {
+        this.cfg.enable_condom = !this.cfg.enable_condom;
+        this.onCfgChanged();
+        this.renderRightModeView();
+      });
+    }
+
     const btnXray = this.el(
       "button",
-      `chip-btn${(this.cfg.gender_mode ?? "normal") !== "femboy" && this.cfg.enable_uterus_xray ? " active" : ""}`,
-      "🔬 子宫透视"
+      `chip-btn${hasBuiltinXray || (xrayAllowed && this.cfg.enable_uterus_xray) ? " active" : ""}`,
+      hasBuiltinXray ? "🔬 内置透视" : supportsInternalXray ? "🔬 内部透视" : "🔬 子宫透视"
     );
-    btnXray.disabled = (this.cfg.gender_mode ?? "normal") === "femboy";
+    btnXray.disabled = hasBuiltinXray || !xrayAllowed;
+    btnXray.title = hasBuiltinXray
+      ? "当前动作已内置刻度注射器/下腹剖面透视构图"
+      : supportsInternalXray
+        ? "叠加内部剖面透视（女性/扶他显示子宫或喉部透视，伪娘自动切换肠道剖面 cutaway）"
+        : "叠加子宫内部剖面透视（常规女主/扶他可用）";
     btnXray.addEventListener("click", () => {
       this.cfg.enable_uterus_xray = !this.cfg.enable_uterus_xray;
       this.onCfgChanged();
@@ -3043,7 +3839,11 @@ export class WorkbenchApp {
       this.renderRightModeView();
     });
 
-    r1.append(btnSceneOutfit, btnXray, btnTrans, this.buildPixivBarCensorChip(false));
+    if (btnCondom) {
+      r1.append(btnSceneOutfit, btnCondom, btnXray, btnTrans, this.buildPixivBarCensorChip(false));
+    } else {
+      r1.append(btnSceneOutfit, btnXray, btnTrans, this.buildPixivBarCensorChip(false));
+    }
     this.elContextCtrlBox.appendChild(r1);
   }
 
@@ -3051,7 +3851,8 @@ export class WorkbenchApp {
     const searchRow = this.el("div", "pose-search-row");
     const searchInp = this.el("input") as HTMLInputElement;
     searchInp.type = "text";
-    searchInp.placeholder = "🔍 搜索 TN / BG / SF 编号或关键词...";
+    searchInp.placeholder =
+      "🔍 搜索 TN / BG / SF / KTD / KT / PLD / PL / CV / BT / HWD / PS 编号或关键词...";
     searchInp.value = this.otherSearchQuery;
     searchInp.addEventListener("input", () => {
       this.otherSearchQuery = searchInp.value.trim();
@@ -3081,7 +3882,7 @@ export class WorkbenchApp {
 
     const allOther = this.getAllOtherActionItems();
     const catScroll = this.el("div", "cat-pills-scroll");
-    const allCats = [
+    const baseCats = [
       "全部",
       "1. 触手缠缚",
       "2. 异形虫巢",
@@ -3089,7 +3890,23 @@ export class WorkbenchApp {
       "4. 场所露出",
       "5. 奇特机位",
       "6. 束缚与UI",
+      "7. 裸围厨房",
+      "8. 厨房干扰",
+      "9. 厨房单人",
+      "10. 饭菜双人",
+      "11. 饭菜单人",
+      "12. 泳池双人",
+      "13. 泳池伪装",
+      "14. 泳池单人",
+      "15. 储精自注",
+      "16. 浴室玩具",
+      "17. 家务干扰",
+      "18. 替身盖照",
     ];
+    const extraCats = Array.from(new Set(allOther.map((c) => c.category))).filter(
+      (c) => !baseCats.includes(c)
+    );
+    const allCats = [...baseCats, ...extraCats];
     for (const cat of allCats) {
       const cnt =
         cat === "全部"
@@ -3755,8 +4572,7 @@ export class WorkbenchApp {
   private elRestoreCfgBtn!: HTMLButtonElement;
 
   private buildRestoreRecordPopover(): HTMLElement {
-    const pop = this.el("div", "floating-popover hidden");
-    pop.style.width = "330px";
+    const pop = this.el("div", "floating-popover popover-w-330 hidden");
     pop.addEventListener("click", (ev) => ev.stopPropagation());
 
     const head = this.el("div", "popover-head");
@@ -3803,7 +4619,7 @@ export class WorkbenchApp {
       this.isManualPromptEdited = true;
       this.elManualLockPill.style.display = "inline-flex";
       if (!this.promptDrawerExpanded) {
-        this.elDrawerToggleBtn.click();
+        this.togglePromptDrawer(true);
       }
       this.updateTokenBadgeFromBoxes();
       pop.classList.add("hidden");
@@ -3835,8 +4651,7 @@ export class WorkbenchApp {
   }
 
   private buildMcpPopover(): HTMLElement {
-    const pop = this.el("div", "floating-popover hidden");
-    pop.style.width = "360px";
+    const pop = this.el("div", "floating-popover popover-w-360 hidden");
     pop.addEventListener("click", (ev) => ev.stopPropagation());
 
     const head = this.el("div", "popover-head");
@@ -3913,13 +4728,14 @@ export class WorkbenchApp {
       pop.style.right = "8px";
       pop.style.width = "auto";
       pop.style.top = "auto";
-      pop.style.bottom = "calc(58px + env(safe-area-inset-bottom, 0px))";
+      pop.style.bottom = "calc(62px + env(safe-area-inset-bottom, 0px))";
       return;
     }
+    pop.style.width = "";
     pop.style.right = "";
     pop.style.bottom = "";
     const rect = anchor.getBoundingClientRect();
-    const popW = Math.min(420, window.innerWidth - 20);
+    const popW = Math.min(pop.offsetWidth || 420, window.innerWidth - 20);
     const left = Math.max(10, Math.min(rect.left, window.innerWidth - popW - 10));
     const measuredH = Math.min(pop.offsetHeight || 360, window.innerHeight - 70);
     const top = Math.min(rect.bottom + 6, window.innerHeight - measuredH - 12);
@@ -3928,8 +4744,7 @@ export class WorkbenchApp {
   }
 
   private buildSavePresetPopover(): HTMLElement {
-    const pop = this.el("div", "floating-popover hidden");
-    pop.style.width = "320px";
+    const pop = this.el("div", "floating-popover popover-w-320 hidden");
     pop.addEventListener("click", (ev) => ev.stopPropagation());
 
     const head = this.el("div", "popover-head");
@@ -4129,7 +4944,53 @@ export class WorkbenchApp {
     top.append(headRow, ctrls);
 
     const stage = this.el("div", "lightbox-stage");
+    let swipeStartX = 0;
+    let swipeStartY = 0;
+    let swipeMultiTouch = false;
+    let lastSwipeAt = 0;
+
+    stage.addEventListener(
+      "touchstart",
+      (ev: TouchEvent) => {
+        if (ev.touches.length !== 1) {
+          swipeMultiTouch = true;
+          return;
+        }
+        swipeMultiTouch = false;
+        swipeStartX = ev.touches[0].clientX;
+        swipeStartY = ev.touches[0].clientY;
+      },
+      { passive: true }
+    );
+    stage.addEventListener(
+      "touchmove",
+      (ev: TouchEvent) => {
+        if (ev.touches.length > 1) {
+          swipeMultiTouch = true;
+        }
+      },
+      { passive: true }
+    );
+    stage.addEventListener(
+      "touchend",
+      (ev: TouchEvent) => {
+        if (swipeMultiTouch || !this.lightboxOpen || this.gallery.length <= 1) return;
+        const zoom = window.visualViewport?.scale ?? 1;
+        if (zoom > 1.05) return;
+        const t = ev.changedTouches[0];
+        if (!t) return;
+        const dx = t.clientX - swipeStartX;
+        const dy = t.clientY - swipeStartY;
+        if (Math.abs(dx) > 48 && Math.abs(dx) > 1.5 * Math.abs(dy)) {
+          lastSwipeAt = performance.now();
+          this.stepLightbox(dx < 0 ? 1 : -1, true);
+        }
+      },
+      { passive: true }
+    );
+
     stage.addEventListener("click", (ev) => {
+      if (performance.now() - lastSwipeAt < 320) return;
       if (ev.target === stage) {
         this.closeLightbox();
       }
@@ -4240,6 +5101,15 @@ export class WorkbenchApp {
 
   private syncAllControls(): void {
     for (const fn of this.syncHooks) fn();
+    const availPresetKeys = this.getAllAvailablePresetKeys();
+    if (this.cfg.preset_name && availPresetKeys.includes(this.cfg.preset_name)) {
+      if (this.elPresetSelect && this.elPresetSelect.value !== this.cfg.preset_name) {
+        this.elPresetSelect.value = this.cfg.preset_name;
+      }
+      if (this.elLeftPresetSelect && this.elLeftPresetSelect.value !== this.cfg.preset_name) {
+        this.elLeftPresetSelect.value = this.cfg.preset_name;
+      }
+    }
     this.syncCardSummariesAndSwitches();
     this.syncApiControls();
     this.syncVibeUI();
@@ -4287,15 +5157,12 @@ export class WorkbenchApp {
     const isV45 = this.apiSettings.model === MODEL_V4_5_FULL;
     this.elStyleCard.classList.toggle("muted", !styleOn);
     this.elStyleCardTitle.textContent = isV45 ? "🎨 画风 · 光影 · Vibe" : "🎨 画风与光影";
-    const mobileLeftBtn = this.elMobileBtns.get("left");
-    if (mobileLeftBtn) {
-      mobileLeftBtn.textContent = isV45 ? "👤 人设·画风·Vibe" : "👤 人设·画风";
-    }
     this.elStyleSwitch.classList.toggle("on", styleOn);
     this.elStyleSwitch.textContent = styleOn ? "ON" : "OFF";
     const activeVibeCount = isV45 ? this.getActiveVibeSlots().length : 0;
     this.elStyleSummary.textContent =
       activeVibeCount > 0 ? `+${activeVibeCount}槽Vibe` : compactOptionText(this.cfg.style_preset, 14);
+    this.syncMobileNavState();
   }
 
   private syncApiControls(): void {
@@ -4313,6 +5180,23 @@ export class WorkbenchApp {
     this.elStepsNum.value = String(effSteps);
     this.elStepsRange.disabled = isV5Med;
     this.elStepsNum.disabled = isV5Med;
+    if (this.elMobileStepsSelect) {
+      const presetSteps = [14, 20, 24, 28, 36, 50];
+      const existingCustom = this.elMobileStepsSelect.querySelector(
+        'option[data-custom-step="1"]'
+      ) as HTMLOptionElement | null;
+      if (!presetSteps.includes(effSteps)) {
+        const opt = existingCustom ?? this.el("option", "", "");
+        opt.dataset.customStep = "1";
+        opt.value = String(effSteps);
+        opt.textContent = `${effSteps}步`;
+        if (!existingCustom) this.elMobileStepsSelect.appendChild(opt);
+      } else if (existingCustom) {
+        existingCustom.remove();
+      }
+      this.elMobileStepsSelect.value = String(effSteps);
+      this.elMobileStepsSelect.disabled = isV5Med;
+    }
     this.elStepsHint.textContent = isV5Med
       ? "Steps: 14 (V5 Medium 固定蒸馏步数)"
       : m === MODEL_V4_5_FULL
@@ -4333,6 +5217,7 @@ export class WorkbenchApp {
     this.elApiSummary.textContent = this.apiSettings.api_token.trim()
       ? `${batt.hasBattery ? `🔋${batt.percentText} · ` : ""}${effSteps}步 · UC:${this.elUcModeSelect.value}`
       : "⚠️ 待填Token";
+    this.syncMobileNavState();
   }
 
   private syncOverrideTriggers(): void {
@@ -4347,7 +5232,11 @@ export class WorkbenchApp {
   }
 
   private syncStageToolbar(): void {
-    this.elAutoUpscaleBtn.classList.toggle("active", Boolean(this.apiSettings.auto_upscale_replace));
+    const autoUp = Boolean(this.apiSettings.auto_upscale_replace);
+    this.elAutoUpscaleBtn.classList.toggle("active", autoUp);
+    if (this.elMobileUpscaleBtn) {
+      this.elMobileUpscaleBtn.classList.toggle("active", autoUp);
+    }
     this.elAutoCarouselBtn.classList.toggle(
       "active",
       Boolean(this.apiSettings.auto_fullscreen_carousel)
@@ -4391,7 +5280,18 @@ export class WorkbenchApp {
       this.elBatchDeleteGalleryBtn.textContent =
         chkCnt > 0 ? `🗑️ 删已选(${chkCnt})` : "🗑️ 删已选";
     }
+    if (this.elBatchMoveFolderSelect) {
+      const chkCnt = this.checkedGalleryIds.size;
+      this.elBatchMoveFolderSelect.disabled =
+        (chkCnt === 0 && !hasRec) || this.isGenerating;
+      const headOpt = this.elBatchMoveFolderSelect.options[0];
+      if (headOpt) {
+        headOpt.textContent =
+          chkCnt > 0 ? `📥 移入文件夹(${chkCnt})` : "📥 移入文件夹";
+      }
+    }
     this.updateStageProgressionActionButtons();
+    this.syncMobileNavState();
   }
 
   private syncMountButton(): void {
@@ -4688,6 +5588,7 @@ export class WorkbenchApp {
     }
 
     this.updateTokenBadgeFromBoxes();
+    this.syncMobileNavState();
     if (this.gallery.length === 0) {
       this.renderHeroViewport();
     }
@@ -4806,8 +5707,13 @@ export class WorkbenchApp {
         this.elQuotaPill.appendChild(battBadge);
       }
       this.elQuotaPill.appendChild(
-        this.el("span", "", `· ${this.subInfo.anlas_left}点 (本次~${totalEst}点)`)
+        this.el("span", "quota-verbose-txt", `· ${this.subInfo.anlas_left}点 (本次~${totalEst}点)`)
       );
+      if (!batt.hasBattery) {
+        this.elQuotaPill.appendChild(
+          this.el("span", "quota-compact-txt", `· ${this.subInfo.anlas_left}`)
+        );
+      }
       const isDepletedWarn = totalEst > 0 || (this.subInfo.tier === 3 && batt.hasBattery && batt.level === "low");
       this.elQuotaPill.className = isDepletedWarn ? "quota-pill warn" : "quota-pill";
       const tipLines = [
@@ -4892,6 +5798,15 @@ export class WorkbenchApp {
     // Switch mobile view to Center Stage so user sees live output immediately
     this.mobileCol = "center";
     this.syncMobileColumns();
+    // Option A: Auto-collapse portrait compact overlays on generate (preserving manual prompt lock!)
+    if (this.isPortraitCompactStage) {
+      if (this.filmstripExpanded) {
+        this.setFilmstripExpanded(false);
+      }
+      if (this.promptDrawerExpanded) {
+        this.togglePromptDrawer(false);
+      }
+    }
 
     const activeVibes = this.getActiveVibeSlots();
     const safeLimit = computeSafePosTokenLimit({
@@ -5584,6 +6499,14 @@ export class WorkbenchApp {
       };
     }
     this.stageViewMode = "shootout";
+    if (this.isPortraitCompactStage) {
+      if (this.filmstripExpanded) {
+        this.setFilmstripExpanded(false);
+      }
+      if (this.promptDrawerExpanded) {
+        this.togglePromptDrawer(false);
+      }
+    }
     this.renderHeroViewport();
 
     const snap = anchor.config_snapshot ?? this.captureCurrentConfigSnapshot();
@@ -6998,8 +7921,13 @@ export class WorkbenchApp {
   }
 
   private renderFilmstrip(scrollActiveIntoView = false): void {
+    if (this.isPortraitCompactStage && this.filmstripExpanded && this.promptDrawerExpanded) {
+      this.togglePromptDrawer(false);
+    }
     if (this.gallery.length === 0 && this.galleryFolders.length === 0 && !this.filmstripExpanded) {
       this.elFilmstripBar.classList.add("hidden");
+      this.snapshotCollapsedBarHeights();
+      this.syncPortraitOverlayState();
       this.syncStageToolbar();
       return;
     }
@@ -7009,8 +7937,35 @@ export class WorkbenchApp {
       const grpSuffix =
         this.galleryFolders.length > 0 ? `(${this.galleryFolders.length}组)` : "";
       this.elFilmExpandBtn.textContent = this.filmstripExpanded
-        ? "▾ 收起单行"
+        ? this.isPortraitCompactStage
+          ? "▾ 收起看图"
+          : "▾ 收起单行"
         : `▴ 分栏归档${grpSuffix}`;
+    }
+    if (this.elBatchMoveFolderSelect) {
+      const chkCnt = this.checkedGalleryIds.size;
+      this.elBatchMoveFolderSelect.innerHTML = "";
+      const headOpt = this.el(
+        "option",
+        "",
+        chkCnt > 0 ? `📥 移入文件夹(${chkCnt})` : "📥 移入文件夹"
+      );
+      headOpt.value = "";
+      this.elBatchMoveFolderSelect.appendChild(headOpt);
+      const newOpt = this.el("option", "", "➕ 新建文件夹并移入...");
+      newOpt.value = "__new__";
+      this.elBatchMoveFolderSelect.appendChild(newOpt);
+      for (const fld of this.galleryFolders) {
+        const fldOpt = this.el("option", "", `📁 ${fld.name}`);
+        fldOpt.value = `fld:${fld.name}`;
+        this.elBatchMoveFolderSelect.appendChild(fldOpt);
+      }
+      if (this.gallery.some((g) => Boolean(g.group_folder))) {
+        const outOpt = this.el("option", "", "📤 移出分组 (回未分组)");
+        outOpt.value = "__ungroup__";
+        this.elBatchMoveFolderSelect.appendChild(outOpt);
+      }
+      this.elBatchMoveFolderSelect.value = "";
     }
 
     // Preserve scroll positions across DOM rebuilds (prevents scrollbar reset to top on arrow keys / checkbox clicks)
@@ -7091,6 +8046,7 @@ export class WorkbenchApp {
             activeEl.scrollIntoView({ behavior: "auto", block: "nearest", inline: "nearest" });
           });
       }
+      this.syncPortraitOverlayState();
       this.syncStageToolbar();
       return;
     }
@@ -7104,6 +8060,8 @@ export class WorkbenchApp {
           : "当前筛选条件下暂无图片（点击左侧「全部」返回）"
       );
       this.elFilmstripScroll.appendChild(emptyNote);
+      this.snapshotCollapsedBarHeights();
+      this.syncPortraitOverlayState();
       this.syncStageToolbar();
       return;
     }
@@ -7121,6 +8079,8 @@ export class WorkbenchApp {
     if (scrollActiveIntoView && activeDomChild) {
       activeDomChild.scrollIntoView({ behavior: "auto", inline: "nearest", block: "nearest" });
     }
+    this.snapshotCollapsedBarHeights();
+    this.syncPortraitOverlayState();
     this.syncStageToolbar();
   }
 
@@ -7174,10 +8134,26 @@ export class WorkbenchApp {
       this.closeAllPopovers();
     });
 
+    window.addEventListener("resize", () => {
+      this.evaluateCenterStageSpaceBudget();
+    });
+    window.visualViewport?.addEventListener("resize", () => {
+      this.evaluateCenterStageSpaceBudget();
+    });
+    document.addEventListener("focusout", () => {
+      window.setTimeout(() => this.evaluateCenterStageSpaceBudget(), 60);
+    });
+
     document.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape") {
         if (this.lightboxOpen) {
           this.closeLightbox();
+        } else if (
+          this.isPortraitCompactStage &&
+          (this.filmstripExpanded || this.promptDrawerExpanded)
+        ) {
+          if (this.filmstripExpanded) this.setFilmstripExpanded(false);
+          if (this.promptDrawerExpanded) this.togglePromptDrawer(false);
         } else if (this.stageViewMode === "grid" || this.stageViewMode === "compare") {
           this.stageViewMode = "single";
           this.renderHeroViewport();
@@ -7436,7 +8412,18 @@ export class WorkbenchApp {
         } else if (sid.startsWith("MA")) {
           this.actionMode = "multi_angle";
           this.activeSceneId = sid;
-        } else if (this.isOtherActionId(sid) || sid.startsWith("SF")) {
+        } else if (
+          this.isOtherActionId(sid) ||
+          sid.startsWith("SF") ||
+          sid.startsWith("KTD") ||
+          sid.startsWith("KT") ||
+          sid.startsWith("PLD") ||
+          sid.startsWith("PL") ||
+          sid.startsWith("CV") ||
+          sid.startsWith("BT") ||
+          sid.startsWith("HWD") ||
+          sid.startsWith("PS")
+        ) {
           this.actionMode = "other";
           this.activeSceneId = sid;
         } else if (sid in ALL_POSITIONS_TEMPLATES || sid.startsWith("P")) {
@@ -7497,7 +8484,7 @@ export class WorkbenchApp {
       this.isManualPromptEdited = true;
       this.elManualLockPill.style.display = "inline-flex";
       if (params.expand_drawer === true && !this.promptDrawerExpanded) {
-        this.elDrawerToggleBtn.click();
+        this.togglePromptDrawer(true);
       }
       this.updateTokenBadgeFromBoxes();
       this.setStatus("🤖 MCP 已直接更新当前正向/负向提示词框 (手改已锁定)");
@@ -7698,8 +8685,8 @@ export class WorkbenchApp {
         const created = this.ensureGalleryFolderExists(rawName);
         if (!created) throw new Error(`Invalid folder_name: '${rawName}'`);
         if (params.open === true) {
-          this.filmstripExpanded = true;
           this.openedFolderName = created;
+          this.setFilmstripExpanded(true);
         }
         if (params.pin === true) {
           this.pinnedTargetFolderName = created;
@@ -7764,11 +8751,6 @@ export class WorkbenchApp {
           params.folder_name === null || params.folder_name === undefined
             ? null
             : String(params.folder_name).trim() || null;
-        if (typeof params.expanded === "boolean") {
-          this.filmstripExpanded = params.expanded;
-        } else if (rawName) {
-          this.filmstripExpanded = true;
-        }
         if (rawName) {
           const existingName = resolveExistingFolderName(rawName);
           if (!existingName) throw new Error(`文件夹不存在: '${rawName}'`);
@@ -7776,7 +8758,13 @@ export class WorkbenchApp {
         } else {
           this.openedFolderName = null;
         }
-        this.renderFilmstrip();
+        if (typeof params.expanded === "boolean") {
+          this.setFilmstripExpanded(params.expanded);
+        } else if (rawName) {
+          this.setFilmstripExpanded(true);
+        } else {
+          this.renderFilmstrip();
+        }
         this.setStatus(
           this.openedFolderName
             ? `🤖 MCP 已展开文件夹「${this.openedFolderName}」`
@@ -7841,9 +8829,8 @@ export class WorkbenchApp {
                 targetFolder: targetRaw ? this.ensureGalleryFolderExists(targetRaw) : "",
               };
         if (params.open_target_folder === true && moveRes.targetFolder) {
-          this.filmstripExpanded = true;
           this.openedFolderName = moveRes.targetFolder;
-          this.renderFilmstrip();
+          this.setFilmstripExpanded(true);
         }
         return {
           action,

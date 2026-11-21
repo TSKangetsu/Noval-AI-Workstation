@@ -356,9 +356,15 @@ export function splitPromptPosAndNeg(rawPrompt: string): { posPrompt: string; ne
     const start = cur.end;
     const end = i + 1 < matches.length ? matches[i + 1].index : trimmed.length;
     const body = trimmed.slice(start, end).trim();
-    const { posClean, negParts } = stripInlineNegsKeepingTune2(body);
-    allNegParts.push(...negParts);
-    rebuiltSections.push(`${cur.headerRaw}\n${posClean}`);
+    if (cur.headerRaw.toLowerCase().startsWith("[base prompt")) {
+      const { posClean, negParts } = stripInlineNegsKeepingTune2(body);
+      allNegParts.push(...negParts);
+      rebuiltSections.push(`${cur.headerRaw}\n${posClean}`);
+    } else {
+      // Preserve per-character inline negatives (-2.5::...::) inside [Character N] so buildNaiGeneratePayload
+      // routes them to v4_negative_prompt.caption.char_captions[i] instead of polluting global base_caption UC.
+      rebuiltSections.push(`${cur.headerRaw}\n${body}`);
+    }
   }
   return {
     posPrompt: rebuiltSections.join("\n\n"),
