@@ -422,7 +422,11 @@ export function loadActiveConfig(): CharacterConfig {
       needsCfgSave = true;
     }
     if (merged.lighting_preset) {
-      merged.lighting_preset = normalizeLightingPresetName(merged.lighting_preset);
+      const normLight = normalizeLightingPresetName(merged.lighting_preset);
+      if (normLight !== merged.lighting_preset) {
+        merged.lighting_preset = normLight;
+        needsCfgSave = true;
+      }
     }
     if (merged.other_use_scene_outfit === undefined) {
       merged.other_use_scene_outfit = true;
@@ -519,6 +523,11 @@ export function loadCustomPresets(): Record<string, Partial<CharacterConfig>> {
   }
   for (const delKey of deleted) {
     delete merged[delKey];
+  }
+  for (const pVal of Object.values(merged)) {
+    if (pVal && typeof pVal.lighting_preset === "string") {
+      pVal.lighting_preset = normalizeLightingPresetName(pVal.lighting_preset);
+    }
   }
   return merged;
 }

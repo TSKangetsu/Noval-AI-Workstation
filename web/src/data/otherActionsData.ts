@@ -58,11 +58,40 @@ import {
   type PhotoSubstitutePortraitSpec,
   type PhotoSubstituteStageKind,
 } from "./photoSubstituteActionsData";
+import {
+  ALL_RAW_CAMPING_ENTRIES,
+  CAMPING_BAREFOOT_BAN_UC,
+  CAMPING_LIGHT_DEFAULTS,
+  type CampingActionCategory,
+  type CampingDuoMeta,
+  type CampingLightMode,
+} from "./campingActionsData";
+import {
+  AFTERSEX_DRIP_DRESSED_CHEST_UC,
+  AFTERSEX_DRIP_LIGHT_DEFAULTS,
+  AFTERSEX_DRIP_LIGHT_STREAM_UC,
+  ALL_RAW_AFTERSEX_DRIP_ENTRIES,
+  type AftersexDripActionCategory,
+  type AftersexDripLightMode,
+} from "./aftersexDripActionsData";
+import {
+  ALL_RAW_ONSEN_ENTRIES,
+  ONSEN_BAREFOOT_BAN_UC,
+  ONSEN_LIGHT_DEFAULTS,
+  ONSEN_UNDERGARMENT_UC,
+  type OnsenActionCategory,
+  type OnsenLightMode,
+} from "./onsenYukataActionsData";
 
 export {
+  AFTERSEX_DRIP_DRESSED_CHEST_UC,
+  AFTERSEX_DRIP_LIGHT_DEFAULTS,
+  AFTERSEX_DRIP_LIGHT_STREAM_UC,
   APRON_ONLY_UC,
   BATHROOM_LIGHT_DEFAULTS,
   BATHROOM_TOWEL_UC,
+  CAMPING_BAREFOOT_BAN_UC,
+  CAMPING_LIGHT_DEFAULTS,
   FEMALE_APRON_NO_LEGWEAR,
   FEMALE_NAKED_APRON_CORE,
   FEMALE_NAKED_APRON_REAR_ONLY_CORE,
@@ -74,6 +103,9 @@ export {
   HOUSEWORK_LIGHT_DEFAULTS,
   KITCHEN_LANDSCAPE_ANTI_LETTERBOX_UC,
   kitchenLegwearTagsFor,
+  ONSEN_BAREFOOT_BAN_UC,
+  ONSEN_LIGHT_DEFAULTS,
+  ONSEN_UNDERGARMENT_UC,
   PHOTO_SUBSTITUTE_BELLY_PRESS_ARM_UC,
   PHOTO_SUBSTITUTE_GUARD_UC,
   POOL_LIGHT_DEFAULTS,
@@ -83,8 +115,13 @@ export {
   SPECIMEN_STOCKED_FRIDGE_GROCERY_UC,
   SPECIMEN_YANDERE_GUARD_UC,
   YANDERE_SPECIMEN_EXPR,
+  type AftersexDripActionCategory,
+  type AftersexDripLightMode,
   type BathroomActionCategory,
   type BathroomLightMode,
+  type CampingActionCategory,
+  type CampingDuoMeta,
+  type CampingLightMode,
   type HouseworkActionCategory,
   type HouseworkDuoMeta,
   type HouseworkLightMode,
@@ -92,6 +129,8 @@ export {
   type KitchenFootwearMode,
   type KitchenFutaYuriSpec,
   type KitchenLightMode,
+  type OnsenActionCategory,
+  type OnsenLightMode,
   type PhotoSubstituteCategory,
   type PhotoSubstitutePortraitSpec,
   type PhotoSubstituteStageKind,
@@ -191,6 +230,25 @@ export interface OtherActionTemplate {
   is_aftersex_belly_press?: boolean;
   photo_substitute_stage?: PhotoSubstituteStageKind;
   photo_substitute_expr_tags?: string;
+  is_camping_scene?: boolean;
+  is_camping_duo?: boolean;
+  camping_light_mode?: CampingLightMode;
+  is_inside_tent?: boolean;
+  camping_duo?: CampingDuoMeta;
+  is_aftersex_drip_scene?: boolean;
+  aftersex_drip_light_mode?: AftersexDripLightMode;
+  aftersex_drip_expr_tags?: string;
+  bottomless_hem?: boolean;
+  light_thigh_only?: boolean;
+  allow_wall_mirror?: boolean;
+  is_outdoor_drip?: boolean;
+  is_onsen_scene?: boolean;
+  is_onsen_duo?: boolean;
+  onsen_light_mode?: OnsenLightMode;
+  is_outdoor_onsen?: boolean;
+  is_onsen_yuri_showcase?: boolean;
+  onsen_partner_tags?: string;
+  onsen_expr_tags?: string;
 }
 
 export interface OtherActionChapter {
@@ -219,6 +277,10 @@ export const OTHER_ACTION_CATEGORIES: string[] = [
   "16. 浴室玩具",
   "17. 家务干扰",
   "18. 替身盖照",
+  "19. 露营野餐",
+  "20. 事后滑落",
+  "21. 温泉双人",
+  "22. 温泉单人",
 ];
 
 export const SF_MIRROR_UC = "pov hands, extra hands, 3 hands, extra fingers, bad hands";
@@ -1313,6 +1375,169 @@ const MAPPED_PHOTO_SUBSTITUTE_ENTRIES: RawSfEntry[] = ALL_RAW_PHOTO_SUBSTITUTE_E
   photo_substitute_stage: ps.stage_kind,
 }));
 
+const MAPPED_CAMPING_ENTRIES: RawSfEntry[] = ALL_RAW_CAMPING_ENTRIES.map((cp) => {
+  const isSunlitMode =
+    cp.camping_light_mode === "dappled_meadow_picnic" ||
+    cp.camping_light_mode === "golden_hour_lakeside";
+  const femboyProse = cp.prose
+    .replace(
+      /\bTwo girls in contrasting white and pastel-yellow summer sundresses with intact bodices covering their chests\b/i,
+      "Crossdressing boy in a white summer sundress with intact bodice covering his flat chest"
+    )
+    .replace(/\bher\b/gi, "his")
+    .replace(/\bshe\b/gi, "he");
+  const futaProse = cp.prose.replace(
+    /\bTwo girls in contrasting white and pastel-yellow summer sundresses with intact bodices covering their chests\b/i,
+    "Futanari girl in a white summer sundress with intact bodice covering her chest"
+  );
+  return {
+    id: cp.id,
+    title: cp.title,
+    sub: cp.sub,
+    category: cp.category,
+    canvas: cp.canvas,
+    camera_mode: "direct",
+    lighting_mode: isSunlitMode ? "sunlit_indoor" : "enclosed_indoor",
+    camping_light_mode: cp.camping_light_mode,
+    barefoot: cp.barefoot,
+    is_foot_focus: cp.is_foot_focus,
+    chest_covered: cp.chest_covered,
+    is_inside_tent: cp.is_inside_tent,
+    light_badge: cp.light_badge,
+    light_tags: cp.light_tags,
+    light_prose: cp.light_prose,
+    builtin_outfit: cp.duo.outfit_tags,
+    femboy_outfit: cp.duo.femboy_outfit_tags,
+    framing_tags: cp.framing_tags,
+    env_tags: cp.env_tags,
+    core_prop_tags: cp.core_prop_tags,
+    female_tags: cp.female_tags,
+    femboy_tags: cp.femboy_tags,
+    futa_tags: cp.futa_tags,
+    female_prose: cp.prose,
+    femboy_prose: femboyProse,
+    futa_prose: futaProse,
+    prose_outfit_phrase: cp.duo.prose_outfit_phrase,
+    extra_neg: cp.extra_neg,
+    is_camping_scene: true,
+    is_camping_duo: true,
+    camping_duo: cp.duo,
+  };
+});
+
+const MAPPED_AFTERSEX_DRIP_ENTRIES: RawSfEntry[] = ALL_RAW_AFTERSEX_DRIP_ENTRIES.map((afd) => {
+  const femboyProse = afd.prose
+    .replace(/\bfuller thighs\b/gi, "smooth thighs")
+    .replace(/\bShe\b/g, "He")
+    .replace(/\bshe\b/g, "he")
+    .replace(/\bHer\b/g, "His")
+    .replace(/\bher\b/g, "his");
+  return {
+    id: afd.id,
+    title: afd.title,
+    sub: afd.sub,
+    category: afd.category,
+    canvas: afd.canvas,
+    camera_mode: "direct",
+    lighting_mode: afd.lighting_mode,
+    aftersex_drip_light_mode: afd.aftersex_drip_light_mode,
+    barefoot: afd.barefoot,
+    is_foot_focus: afd.is_foot_focus,
+    bottomless_hem: afd.bottomless_hem,
+    light_thigh_only: afd.light_thigh_only,
+    allow_smartphone_prop: afd.allow_smartphone_prop,
+    allow_wall_mirror: afd.allow_wall_mirror,
+    is_outdoor_drip: afd.is_outdoor_drip,
+    no_face_pov: afd.no_face_pov,
+    strip_slim_waist: afd.strip_slim_waist,
+    light_badge: afd.light_badge,
+    light_tags: afd.light_tags,
+    light_prose: afd.light_prose,
+    builtin_outfit: afd.builtin_outfit,
+    femboy_outfit: afd.femboy_outfit,
+    framing_tags: afd.framing_tags,
+    env_tags: afd.env_tags,
+    core_prop_tags: afd.core_prop_tags,
+    aftersex_drip_expr_tags: afd.aftersex_drip_expr_tags,
+    female_tags: afd.female_tags,
+    femboy_tags: afd.femboy_tags,
+    futa_tags: afd.futa_tags,
+    female_prose: afd.prose,
+    femboy_prose: femboyProse,
+    futa_prose: afd.prose,
+    prose_outfit_phrase: afd.prose_outfit_phrase,
+    extra_neg: afd.extra_neg,
+    is_aftersex_drip_scene: true,
+  };
+});
+
+const MAPPED_ONSEN_ENTRIES: RawSfEntry[] = ALL_RAW_ONSEN_ENTRIES.map((ons) => {
+  const cleanSoloProse = ons.is_solo
+    ? ons.prose
+        .replace(/^An adult woman\s+/i, "")
+        .replace(/^A (?:[a-z -]+\s+)?adult woman\s+/i, "")
+        .replace(/\ban adult woman\b/gi, "she")
+        .replace(/\ba (?:[a-z -]+\s+)?adult woman\b/gi, "she")
+    : ons.prose;
+  const femboyProse = cleanSoloProse
+    .replace(
+      /\bTwo girls in contrasting navy and sakura-pink floral yukata with intact collars covering their chests\b/i,
+      "Crossdressing boy in a navy floral yukata with intact collar covering his flat chest"
+    )
+    .replace(/\bAn adult woman\b/g, "He")
+    .replace(/\ban adult woman\b/g, "he")
+    .replace(/\ba (?:[a-z -]+\s+)?adult woman\b/gi, "he")
+    .replace(/\bShe\b/g, "He")
+    .replace(/\bshe\b/g, "he")
+    .replace(/\bHer\b/g, "His")
+    .replace(/\bher\b/g, "his");
+  const futaProse = cleanSoloProse.replace(
+    /\bTwo girls in contrasting navy and sakura-pink floral yukata with intact collars covering their chests\b/i,
+    "Futanari girl in a navy floral yukata with intact collar covering her chest"
+  );
+  return {
+    id: ons.id,
+    title: ons.title,
+    sub: ons.sub,
+    category: ons.category,
+    canvas: ons.canvas,
+    camera_mode: "direct",
+    lighting_mode: ons.lighting_mode,
+    onsen_light_mode: ons.onsen_light_mode,
+    barefoot: ons.barefoot,
+    is_foot_focus: ons.is_foot_focus,
+    chest_covered: ons.chest_covered,
+    light_thigh_only: ons.light_thigh_only,
+    allow_wall_mirror: ons.allow_wall_mirror,
+    is_outdoor_onsen: ons.is_outdoor_onsen,
+    is_onsen_yuri_showcase: ons.is_yuri_showcase,
+    light_badge: ons.light_badge,
+    light_tags: ons.light_tags,
+    light_prose: ons.light_prose,
+    builtin_outfit: ons.builtin_outfit,
+    femboy_outfit: ons.femboy_outfit,
+    framing_tags: ons.framing_tags,
+    env_tags: ons.env_tags,
+    core_prop_tags: ons.core_prop_tags,
+    onsen_partner_tags: ons.partner_tags,
+    onsen_expr_tags: ons.onsen_expr_tags,
+    female_tags: ons.female_tags,
+    femboy_tags: ons.femboy_tags,
+    futa_tags: ons.futa_tags,
+    female_prose: cleanSoloProse,
+    femboy_prose: femboyProse,
+    futa_prose: futaProse,
+    prose_outfit_phrase: ons.prose_outfit_phrase,
+    extra_neg: ons.extra_neg,
+    keep_wet_clothes:
+      ons.onsen_light_mode === "misty_bamboo_rotenburo" ||
+      ons.onsen_light_mode === "snowy_lantern_rock_bath" ||
+      ons.onsen_light_mode === "amber_hinoki_steam",
+    is_onsen_scene: true,
+    is_onsen_duo: !ons.is_solo,
+  };
+});
+
 const ALL_RAW_OTHER_ENTRIES: RawSfEntry[] = [
   ...RAW_SF_ENTRIES,
   ...ALL_RAW_KITCHEN_ENTRIES,
@@ -1321,6 +1546,9 @@ const ALL_RAW_OTHER_ENTRIES: RawSfEntry[] = [
   ...MAPPED_BATHROOM_ENTRIES,
   ...MAPPED_HOUSEWORK_ENTRIES,
   ...MAPPED_PHOTO_SUBSTITUTE_ENTRIES,
+  ...MAPPED_CAMPING_ENTRIES,
+  ...MAPPED_AFTERSEX_DRIP_ENTRIES,
+  ...MAPPED_ONSEN_ENTRIES,
 ];
 
 export const OTHER_ACTION_TEMPLATES: Record<string, OtherActionTemplate> = Object.fromEntries(

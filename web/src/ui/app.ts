@@ -3772,12 +3772,15 @@ export class WorkbenchApp {
     const isBt = this.activeSceneId.startsWith("BT");
     const isHwd = this.activeSceneId.startsWith("HWD");
     const isPs = this.activeSceneId.startsWith("PS");
+    const isCp = this.activeSceneId.startsWith("CP");
+    const isAfd = this.activeSceneId.startsWith("AFD");
+    const isOns = this.activeSceneId.startsWith("ONS");
     const isCvDuo = this.activeSceneId === "CV04";
     const isKtSolo = this.activeSceneId.startsWith("KT") && !isKtd;
     const isPlSolo = this.activeSceneId.startsWith("PL") && !isPld;
-    const hasCondomChip = isKtd || isPld || isCvDuo || isHwd || isPs;
+    const hasCondomChip = isKtd || isPld || isCvDuo || isHwd || isPs || isCp || isAfd || isOns;
     const supportsInternalXray =
-      isKtd || isPld || isKtSolo || isPlSolo || isCv || isBt || isHwd || isPs;
+      isKtd || isPld || isKtSolo || isPlSolo || isCv || isBt || isHwd || isPs || isCp || isAfd || isOns;
     const isFemboy = (this.cfg.gender_mode ?? "normal") === "femboy";
     const xrayAllowed = supportsInternalXray || !isFemboy;
 
@@ -3803,7 +3806,7 @@ export class WorkbenchApp {
         "🛡️ 安全套"
       );
       btnCondom.title =
-        "开关双人厨房 (KTD01~KTD60) / 公共泳池 (PLD01~PLD22) / 双人采精 (CV04) / 家务干扰 (HWD01~HWD15) / 替身盖照 (PS01~PS04) 动作的安全套表现词条";
+        "开关双人厨房 (KTD01~KTD60) / 公共泳池 (PLD01~PLD22) / 双人采精 (CV04) / 家务干扰 (HWD01~HWD15) / 替身盖照 (PS01~PS04) / 露营野餐 (CP01~CP12) / 事后滑落 (AFD01~AFD15) / 温泉浴衣 (ONS01~ONS55) 动作的安全套表现词条";
       btnCondom.addEventListener("click", () => {
         this.cfg.enable_condom = !this.cfg.enable_condom;
         this.onCfgChanged();
@@ -3852,7 +3855,7 @@ export class WorkbenchApp {
     const searchInp = this.el("input") as HTMLInputElement;
     searchInp.type = "text";
     searchInp.placeholder =
-      "🔍 搜索 TN / BG / SF / KTD / KT / PLD / PL / CV / BT / HWD / PS 编号或关键词...";
+      "🔍 搜索 TN / BG / SF / KTD / KT / PLD / PL / CV / BT / HWD / PS / CP / AFD / ONS 编号或关键词...";
     searchInp.value = this.otherSearchQuery;
     searchInp.addEventListener("input", () => {
       this.otherSearchQuery = searchInp.value.trim();
@@ -3902,6 +3905,10 @@ export class WorkbenchApp {
       "16. 浴室玩具",
       "17. 家务干扰",
       "18. 替身盖照",
+      "19. 露营野餐",
+      "20. 事后滑落",
+      "21. 温泉双人",
+      "22. 温泉单人",
     ];
     const extraCats = Array.from(new Set(allOther.map((c) => c.category))).filter(
       (c) => !baseCats.includes(c)
@@ -8422,7 +8429,10 @@ export class WorkbenchApp {
           sid.startsWith("CV") ||
           sid.startsWith("BT") ||
           sid.startsWith("HWD") ||
-          sid.startsWith("PS")
+          sid.startsWith("PS") ||
+          sid.startsWith("CP") ||
+          sid.startsWith("AFD") ||
+          sid.startsWith("ONS")
         ) {
           this.actionMode = "other";
           this.activeSceneId = sid;
