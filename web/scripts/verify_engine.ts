@@ -5144,7 +5144,10 @@ async function main(): Promise<void> {
 
     const isDuo = Boolean(tpl.is_onsen_duo);
     const lightSpec = ONSEN_LIGHT_DEFAULTS[tpl.onsen_light_mode];
-    const firstOnsLightAnchor = lightSpec.pos.split(",")[0].trim();
+    const lightSpecAnchors = lightSpec.pos
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     for (const gm of ["normal", "femboy", "futa_no_balls", "futa_with_balls"] as const) {
       const onsCfg = {
@@ -5168,8 +5171,8 @@ async function main(): Promise<void> {
 
       // Scene-bound ONSEN_LIGHT_DEFAULTS check
       assert(
-        sp.posPrompt.includes(firstOnsLightAnchor),
-        `${ch.id} (${gm}) failed to inject scene-bound ONSEN_LIGHT_DEFAULTS anchor '${firstOnsLightAnchor}'`
+        lightSpecAnchors.some((anc) => sp.posPrompt.includes(anc)),
+        `${ch.id} (${gm}) failed to inject scene-bound ONSEN_LIGHT_DEFAULTS anchor from '${lightSpec.pos}'`
       );
 
       // Outdoor indoors-stripping check
@@ -5194,8 +5197,37 @@ async function main(): Promise<void> {
         }
       } else {
         assert(
-          !negSet.has("nipples"),
-          `${ch.id} (${gm}) exposed-chest Onsen scene must not block nipples in Negative`
+          !negSet.has("nipples") &&
+            !/\b(?:covering (?:her|his|front) (?:flat )?chest|closed (?:neatly )?over (?:her|his|front) (?:flat )?chest|intact modest collar)\b/i.test(
+              posWithoutNegWeights
+            ),
+          `${ch.id} (${gm}) exposed-chest Onsen scene must not block nipples or claim chest is covered`
+        );
+      }
+      if (gm === "femboy") {
+        assert(
+          !/\b(?:1girl|2girls|girls?|woman|women|female|breasts?|sideboob|underboob|cleavage|pussy|vulva|labia|vaginal|cervix|uterus|futanari|she|her|hers)\b/i.test(
+            posWithoutNegWeights
+          ),
+          `${ch.id} (femboy) leaked female anatomy or pronoun into Positive/Prose`
+        );
+      }
+      const expectedOnsWeighted = Array.from(
+        `${tpl.framing_tags}, ${tpl.env_tags}, ${tpl.core_prop_tags || ""}, ${
+          gm === "femboy" ? tpl.femboy_tags : gm.startsWith("futa_") ? tpl.futa_tags : tpl.female_tags
+        }`.matchAll(/\d+(?:\.\d+)?::([^:]+)::/g)
+      )
+        .map((m) => m[1].trim().toLowerCase())
+        .filter((t) => {
+          if (gm === "femboy" && t === "girl on top") return false;
+          if (gm === "futa_no_balls" && (t === "small testicles" || t === "testicles")) return false;
+          if (gm.startsWith("futa_") && (t === "labia" || t === "spread pussy")) return false;
+          return true;
+        });
+      for (const wTag of expectedOnsWeighted) {
+        assert(
+          sp.posPrompt.toLowerCase().includes(wTag),
+          `${ch.id} (${gm}) clipped weighted scene/anatomy anchor '${wTag}'`
         );
       }
 
@@ -5374,6 +5406,37 @@ async function main(): Promise<void> {
     "ONS01 with other_use_scene_outfit=false must use left-column outfit without chest_covered UC"
   );
 
+  // Verify pre-coital Solo invitation (ONS26) with condom+xray emits unopened condom packet & clean cutaway without post-coital cum
+  const [ons26PrecoitalAux] = generateScenePrompts(
+    "ONS26",
+    {
+      ...createDefaultCharacterConfig(),
+      enable_condom: true,
+      enable_uterus_xray: true,
+    },
+    "3rd"
+  );
+  assert(
+    ons26PrecoitalAux.prompt.includes("1.5::condom packet::") &&
+      ons26PrecoitalAux.prompt.includes("1.45::uterus::") &&
+      !/\bused condom\b|\bcum in condom\b|\bcum in uterus\b/i.test(ons26PrecoitalAux.prompt),
+    "Pre-coital ONS26 with condom+xray must emit unopened condom packet & clean cutaway without post-coital cum tags"
+  );
+
+  // Verify ONS26 & ONS10 with other_use_scene_outfit=false leave zero heroine yukata text
+  for (const noYukataId of ["ONS10", "ONS26"] as const) {
+    const [noYukataItem] = generateScenePrompts(
+      noYukataId,
+      { ...hostileSfCfg, other_use_scene_outfit: false },
+      "3rd"
+    );
+    const spNoYukata = splitPromptPosAndNeg(noYukataItem.prompt);
+    assert(
+      !/\byukata\b/i.test(spNoYukata.posPrompt),
+      `${noYukataId} with other_use_scene_outfit=false leaked 'yukata' into posPrompt`
+    );
+  }
+
   const [ons04FemboyAux] = generateScenePrompts(
     "ONS04",
     {
@@ -5402,9 +5465,123 @@ async function main(): Promise<void> {
     `ONS04 femboy with condom+xray+transparent_bg+3Vibes failed checks (posTokens=${tokOns04Aux.posTokens})`
   );
 
-  // Verify .agents/skills/nai-onsen-yukata/ hygiene (zero code/build vocabulary leaks)
+  // Verify 20/23 Onsen Solo Spreading CG Variation (`enable_solo_spread: true` = 80 prompts) + 3/23 Ineligible Invariance (ONS11, ONS14, ONS15)
+  const expectedIneligibleSoloSpread = new Set(["ONS11", "ONS14", "ONS15"]);
+  let onsenSoloSpreadVerifiedCount = 0;
+  let maxOnsenSpreadPosTokens = 0;
+  let maxOnsenSpreadNegTokens = 0;
+  for (const ch of onsenChapters) {
+    const tpl = OTHER_ACTION_TEMPLATES[ch.id];
+    if (tpl.is_onsen_duo) {
+      assert(!tpl.solo_spread_spec, `${ch.id} Duo must not define solo_spread_spec`);
+      continue;
+    }
+    if (expectedIneligibleSoloSpread.has(ch.id)) {
+      assert(
+        !tpl.solo_spread_spec && Boolean(tpl.solo_spread_disabled_reason),
+        `${ch.id} must omit solo_spread_spec and provide solo_spread_disabled_reason`
+      );
+      const [baseInelig] = generateScenePrompts(
+        ch.id,
+        { ...createDefaultCharacterConfig(), enable_solo_spread: false },
+        "3rd"
+      );
+      const [spInelig] = generateScenePrompts(
+        ch.id,
+        { ...createDefaultCharacterConfig(), enable_solo_spread: true },
+        "3rd"
+      );
+      assert.equal(spInelig.prompt, baseInelig.prompt, `${ch.id} ineligible Solo must stay invariant`);
+      assert.equal(spInelig.subTitle, baseInelig.subTitle, `${ch.id} ineligible Solo subTitle must stay invariant`);
+      continue;
+    }
+
+    assert(tpl.solo_spread_spec, `${ch.id} eligible Solo Onsen must define solo_spread_spec`);
+    for (const gm of ["normal", "femboy", "futa_no_balls", "futa_with_balls"] as const) {
+      const [spItem] = generateScenePrompts(
+        ch.id,
+        {
+          ...createDefaultCharacterConfig(),
+          gender_mode: gm,
+          style_preset: style6Key,
+          lighting_preset: "🔄 随画风与本幕默认光影（不额外覆盖）",
+          enable_solo_spread: true,
+        },
+        "3rd"
+      );
+      assertZeroNestedColons(spItem.prompt, `${ch.id}_SP (${gm})`);
+      assert(spItem.subTitle.includes("🫶掰开差分"), `${ch.id}_SP (${gm}) missing 🫶掰开差分 badge`);
+      const sp = splitPromptPosAndNeg(spItem.prompt);
+      assert(!/-?\d+(?:\.\d+)?::/.test(sp.negPrompt), `${ch.id}_SP (${gm}) negPrompt has weight`);
+      const posNoNeg = sp.posPrompt.replace(/-\d+(?:\.\d+)?::[\s\S]*?::/g, "");
+      const negSetSp = new Set(sp.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+      for (const gTok of [
+        "covering crotch",
+        "covering pussy",
+        "hand over crotch",
+        "holding own penis",
+        "grabbing penis",
+        "extra arms",
+        "3 arms",
+      ]) {
+        assert(negSetSp.has(gTok), `${ch.id}_SP (${gm}) missing spread UC '${gTok}'`);
+      }
+      if (gm === "femboy") {
+        assert(!negSetSp.has("gaping"), `${ch.id}_SP (femboy) must omit bare 'gaping' from UC`);
+        assert(
+          !/\b(?:1girl|2girls|girls?|woman|women|female|breasts?|sideboob|underboob|cleavage|pussy|vulva|labia|vaginal|cervix|uterus|futanari|she|her|hers)\b/i.test(
+            posNoNeg
+          ),
+          `${ch.id}_SP (femboy) leaked female anatomy or pronoun`
+        );
+      } else if (ch.id === "ONS48" || ch.id === "ONS53") {
+        assert(
+          posNoNeg.includes("pussy from behind"),
+          `${ch.id}_SP (${gm}) rear lookback spread must keep 'pussy from behind'`
+        );
+      }
+      const spSpec = tpl.solo_spread_spec;
+      const expSpGender =
+        gm === "femboy"
+          ? spSpec.spread_femboy_tags
+          : gm.startsWith("futa_")
+            ? spSpec.spread_futa_tags
+            : spSpec.spread_female_tags;
+      const expSpWeighted = Array.from(
+        `${spSpec.spread_prop_tags}, ${expSpGender}`.matchAll(/\d+(?:\.\d+)?::([^:]+)::/g)
+      )
+        .map((m) => m[1].trim().toLowerCase())
+        .filter((t) => !(gm === "futa_no_balls" && (t === "small testicles" || t === "testicles")));
+      for (const wTag of expSpWeighted) {
+        assert(
+          sp.posPrompt.toLowerCase().includes(wTag),
+          `${ch.id}_SP (${gm}) clipped weighted spread anchor '${wTag}'`
+        );
+      }
+      const tokSp = countSeparatedT5Tokens({
+        posPrompt: sp.posPrompt,
+        sceneNegPrompt: sp.negPrompt,
+        ucPresetMode: "heavy",
+        appendQuality: true,
+      });
+      assert(
+        tokSp.posTokens <= 500 && tokSp.negTokens <= 512,
+        `${ch.id}_SP (${gm}) exceeded T5 budget: pos=${tokSp.posTokens}/500, neg=${tokSp.negTokens}/512`
+      );
+      if (tokSp.posTokens > maxOnsenSpreadPosTokens) maxOnsenSpreadPosTokens = tokSp.posTokens;
+      if (tokSp.negTokens > maxOnsenSpreadNegTokens) maxOnsenSpreadNegTokens = tokSp.negTokens;
+      onsenSoloSpreadVerifiedCount++;
+    }
+  }
+  assert.equal(onsenSoloSpreadVerifiedCount, 80, "Expected 80 verified Onsen Solo Spread prompts (20 x 4)");
+
+  // Verify .agents/skills/nai-onsen-yukata/ & nai-cg-variations/ hygiene (zero code/build vocabulary leaks)
   const onsenSkillDir = path.resolve(process.cwd(), "../.agents/skills/nai-onsen-yukata");
-  for (const relDoc of ["SKILL.md", "references/onsen_yukata_catalog.md"]) {
+  for (const relDoc of [
+    "SKILL.md",
+    "references/onsen_yukata_catalog.md",
+    "references/onsen_solo_spread_variations.md",
+  ]) {
     const docPath = path.join(onsenSkillDir, relDoc);
     assert(fs.existsSync(docPath), `Missing onsen-yukata skill doc: ${docPath}`);
     const docText = fs.readFileSync(docPath, "utf8");
@@ -5415,6 +5592,15 @@ async function main(): Promise<void> {
       `${relDoc} leaked codebase/build vocabulary`
     );
   }
+  const cgVarSkillDoc = path.resolve(process.cwd(), "../.agents/skills/nai-cg-variations/SKILL.md");
+  assert(fs.existsSync(cgVarSkillDoc), `Missing nai-cg-variations SKILL.md: ${cgVarSkillDoc}`);
+  const cgVarText = fs.readFileSync(cgVarSkillDoc, "utf8");
+  assert(
+    !/storyEngine|engineConstants|otherActionsData|onsenYukataActionsData|verify_engine|NovelAI_Workbench\.html|vite build|tsc --noEmit|npm --prefix/i.test(
+      cgVarText
+    ),
+    "nai-cg-variations/SKILL.md leaked codebase/build vocabulary"
+  );
 
   // 18. Verify Opus Battery Percentage & Recharge Formatter
   const mockSubBase = {
@@ -5559,8 +5745,10 @@ async function main(): Promise<void> {
       appTsSrc.includes("▾ 收起看图") &&
       appTsSrc.includes("bindHorizontalWheelScroll") &&
       appTsSrc.includes("mobile-left-preset-bar") &&
-      appTsSrc.includes("preset-select-left-mirror"),
-    "app.ts must include evaluateCenterStageSpaceBudget, touch folder-move select, prompt-focus-seg, ▾ 收起看图, bindHorizontalWheelScroll, and synced mobile-left-preset-bar"
+      appTsSrc.includes("preset-select-left-mirror") &&
+      appTsSrc.includes("solo-spread-chip") &&
+      appTsSrc.includes("🫶 掰开差分"),
+    "app.ts must include evaluateCenterStageSpaceBudget, touch folder-move select, prompt-focus-seg, ▾ 收起看图, bindHorizontalWheelScroll, synced mobile-left-preset-bar, and solo-spread-chip"
   );
   assert(
     wbCssSrc.includes(".col-center.portrait-compact-stage .filmstrip-bar:not(.expanded) .filmstrip-toolbar") &&
@@ -5589,7 +5777,7 @@ async function main(): Promise<void> {
   );
 
   console.log(
-    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts + 120 SF01~SF30 + ${kitchenVerifiedCount} Kitchen KTD01~KTD60/KT01~KT46 [maxPos=${maxKitchenPosTokens}<=500, MultiBox490=${maxMultiBox490PosTokens}<=490] + ${poolVerifiedCount} Pool PLD01~PLD22/PL01~PL11 [maxPos=${maxPoolPosTokens}<=500, PLD18=${maxPld18PosTokens}<=490] + ${specimenVerifiedCount} Specimen CV01~CV07 [maxPos=${maxSpecimenPosTokens}<=500, maxNeg=${maxSpecimenNegTokens}<=512] + ${bathroomVerifiedCount} Bathroom BT01~BT08 [maxPos=${maxBathroomPosTokens}<=500, maxNeg=${maxBathroomNegTokens}<=512] + ${houseworkVerifiedCount} Housework HWD01~HWD15 [maxPos=${maxHouseworkPosTokens}<=500, MultiBox490=${maxHouseworkMultiBoxPosTokens}<=490, maxNeg=${maxHouseworkNegTokens}<=512] + ${photoSubVerifiedCount} PhotoSubstitute PS01~PS04 [maxPos=${maxPhotoSubPosTokens}<=500, PS02=${maxPs02MultiBoxTokens}<=490, maxNeg=${maxPhotoSubNegTokens}<=512] + ${campingVerifiedCount} Camping CP01~CP12 [maxPos=${maxCampingPosTokens}<=500, MultiBox490=${maxCampingMultiBoxPosTokens}<=490, maxNeg=${maxCampingNegTokens}<=512] + ${afdVerifiedCount} AftersexDrip AFD01~AFD15 [maxPos=${maxAfdPosTokens}<=500, maxNeg=${maxAfdNegTokens}<=512] + ${onsenVerifiedCount} OnsenYukata ONS01~ONS55 [maxPos=${maxOnsenPosTokens}<=500, MultiBox490=${maxOnsenMultiBoxPosTokens}<=490, maxNeg=${maxOnsenNegTokens}<=512] = ${totalPrompts + 120 + kitchenVerifiedCount + poolVerifiedCount + specimenVerifiedCount + bathroomVerifiedCount + houseworkVerifiedCount + photoSubVerifiedCount + campingVerifiedCount + afdVerifiedCount + onsenVerifiedCount} total prompts: 83 Positions x2 + MA0~MA11 + 285 Other Actions + Free Action, 6 Swimwear Outfits + Scene-Bound Venue Lighting + CV01~CV07 + BT01~BT08 + HWD01~HWD15 + PS01~PS04 + CP01~CP12 + AFD01~AFD15 + ONS01~ONS55 Locks Verified, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
+    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts + 120 SF01~SF30 + ${kitchenVerifiedCount} Kitchen KTD01~KTD60/KT01~KT46 [maxPos=${maxKitchenPosTokens}<=500, MultiBox490=${maxMultiBox490PosTokens}<=490] + ${poolVerifiedCount} Pool PLD01~PLD22/PL01~PL11 [maxPos=${maxPoolPosTokens}<=500, PLD18=${maxPld18PosTokens}<=490] + ${specimenVerifiedCount} Specimen CV01~CV07 [maxPos=${maxSpecimenPosTokens}<=500, maxNeg=${maxSpecimenNegTokens}<=512] + ${bathroomVerifiedCount} Bathroom BT01~BT08 [maxPos=${maxBathroomPosTokens}<=500, maxNeg=${maxBathroomNegTokens}<=512] + ${houseworkVerifiedCount} Housework HWD01~HWD15 [maxPos=${maxHouseworkPosTokens}<=500, MultiBox490=${maxHouseworkMultiBoxPosTokens}<=490, maxNeg=${maxHouseworkNegTokens}<=512] + ${photoSubVerifiedCount} PhotoSubstitute PS01~PS04 [maxPos=${maxPhotoSubPosTokens}<=500, PS02=${maxPs02MultiBoxTokens}<=490, maxNeg=${maxPhotoSubNegTokens}<=512] + ${campingVerifiedCount} Camping CP01~CP12 [maxPos=${maxCampingPosTokens}<=500, MultiBox490=${maxCampingMultiBoxPosTokens}<=490, maxNeg=${maxCampingNegTokens}<=512] + ${afdVerifiedCount} AftersexDrip AFD01~AFD15 [maxPos=${maxAfdPosTokens}<=500, maxNeg=${maxAfdNegTokens}<=512] + ${onsenVerifiedCount} OnsenYukata ONS01~ONS55 [maxPos=${maxOnsenPosTokens}<=500, MultiBox490=${maxOnsenMultiBoxPosTokens}<=490, maxNeg=${maxOnsenNegTokens}<=512] + ${onsenSoloSpreadVerifiedCount} OnsenSoloSpread [maxPos=${maxOnsenSpreadPosTokens}<=500, maxNeg=${maxOnsenSpreadNegTokens}<=512] = ${totalPrompts + 120 + kitchenVerifiedCount + poolVerifiedCount + specimenVerifiedCount + bathroomVerifiedCount + houseworkVerifiedCount + photoSubVerifiedCount + campingVerifiedCount + afdVerifiedCount + onsenVerifiedCount + onsenSoloSpreadVerifiedCount} total prompts: 83 Positions x2 + MA0~MA11 + 285 Other Actions + 20 Solo Spread CG Variations + Free Action, 6 Swimwear Outfits + Scene-Bound Venue Lighting + CV01~CV07 + BT01~BT08 + HWD01~HWD15 + PS01~PS04 + CP01~CP12 + AFD01~AFD15 + ONS01~ONS55 Locks Verified, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
   );
 }
 

@@ -39,6 +39,7 @@ import {
   MULTI_ANGLE_TEMPLATES,
   ONSEN_BAREFOOT_BAN_UC,
   ONSEN_LIGHT_DEFAULTS,
+  ONSEN_SOLO_SPREAD_EXTRA_UC,
   ONSEN_UNDERGARMENT_UC,
   OTHER_ACTION_TEMPLATES,
   OUTFIT_PRESETS,
@@ -3697,6 +3698,13 @@ export function generateScenePrompts(
     }
     if (
       !transBg &&
+      isOnsenNonDaylight &&
+      !/\bbacklight/i.test(tpl.light_tags)
+    ) {
+      headStripSet.add("backlighting");
+    }
+    if (
+      !transBg &&
       (isPoolNight ||
         isSpecimenNocturnalFridge ||
         (!isExplicitDedicatedLight && tpl.camping_light_mode === "warm_campfire_ember"))
@@ -3793,16 +3801,17 @@ export function generateScenePrompts(
         })
         .join(", ");
     }
-    // When global lighting_preset is 'auto', automatically inject the skill-calibrated SF/Kitchen/Pool/Specimen/Camping base cel-lock & wet specular block!
+    // When global lighting_preset is 'auto', automatically inject the skill-calibrated SF/Kitchen/Pool/Specimen/Camping/Onsen base cel-lock & wet specular block!
     if (!transBg && isAutoLight && isSfCompatibleCelStyle) {
       const sfBaseLight =
         tpl.lighting_mode === "flash" ||
         isPoolNight ||
         isSpecimenNocturnalFridge ||
+        (isOnsenNonDaylight && !/\bbacklight/i.test(tpl.light_tags)) ||
         (!isExplicitDedicatedLight && tpl.camping_light_mode === "warm_campfire_ember")
           ? SF_BASE_CEL_LIGHT_NO_BACKLIGHT
           : SF_BASE_CEL_LIGHT_BACKLIT;
-      headUsed = joinTags(headUsed, sfBaseLight);
+      headUsed = deduplicatePositiveTagPrefix(joinTags(headUsed, sfBaseLight));
     }
     if (
       (tpl.is_kitchen_scene ||
@@ -3888,9 +3897,22 @@ export function generateScenePrompts(
         .replace(/^[ ,]+|[ ,]+$/g, "");
     }
 
+    const soloSpreadSpec =
+      cfg.enable_solo_spread && tpl.is_onsen_scene && !tpl.is_onsen_duo
+        ? tpl.solo_spread_spec
+        : undefined;
+    const soloSpreadActive = Boolean(soloSpreadSpec);
+    const rawFemaleActionTags = soloSpreadSpec
+      ? soloSpreadSpec.spread_female_tags
+      : tpl.female_tags;
+    const rawFemboyActionTags = soloSpreadSpec
+      ? soloSpreadSpec.spread_femboy_tags
+      : tpl.femboy_tags;
+    const rawFutaActionTags = soloSpreadSpec ? soloSpreadSpec.spread_futa_tags : tpl.futa_tags;
+
     const charHasFlatChest = /\bflat chest\b/i.test(charCoreUsed);
     let actorTags = "1girl, solo";
-    let genderActionTags = tpl.female_tags;
+    let genderActionTags = rawFemaleActionTags;
     let genderProse = tpl.female_prose;
     let genderNeg = charHasFlatChest
       ? "1boy, male, penis, phallus, futanari, testicles, male chest"
@@ -3902,7 +3924,7 @@ export function generateScenePrompts(
         (tpl.is_aftersex_drip_scene || (tpl.is_onsen_scene && tpl.chest_covered)) && useSceneOutfit
           ? "1.55::1boy::, solo, 1.6::otoko no ko::, 1.5::crossdressing::, 1.25::short male::, 1.55::flat chest::, 1.4::flat male chest::, hairless torso"
           : "1.45::1boy::, solo, 1.55::otoko no ko::, 1.45::crossdressing::, 1.35::genderbend::, 1.25::short male::, 1.55::flat chest::, 1.4::flat male chest::, tiny pink nipples, hairless torso";
-      genderActionTags = tpl.femboy_tags;
+      genderActionTags = rawFemboyActionTags;
       genderProse = tpl.femboy_prose;
       genderNeg = joinTags(
         "1girl, female, girl, hetero, breasts, small breasts, medium breasts, large breasts, cleavage, underboob, pussy, vulva, labia, vaginal, uterus, cervix, futanari, muscular male, bara, thick neck, facial hair, mature male, tall male, huge penis, large penis, oversized penis, hyper penis, monster penis, giant penis, huge testicles, large testicles",
@@ -3913,7 +3935,7 @@ export function generateScenePrompts(
       actorTags = tpl.is_onsen_scene
         ? "1girl, solo, 1.6::futanari::, 1.5::futa without balls::, 1.4::small penis::"
         : "1girl, solo, 1.55::futanari::, 1.45::futa without balls::";
-      genderActionTags = splitTopLevelCommaSegments(tpl.futa_tags)
+      genderActionTags = splitTopLevelCommaSegments(rawFutaActionTags)
         .filter((tok) => {
           const bare = tok.replace(/^-?\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
           return (
@@ -3921,8 +3943,7 @@ export function generateScenePrompts(
             bare !== "testicles" &&
             bare !== "small testicles" &&
             bare !== "balls" &&
-            bare !== "labia" &&
-            bare !== "spread pussy"
+            (soloSpreadActive || (bare !== "labia" && bare !== "spread pussy"))
           );
         })
         .join(", ");
@@ -3936,10 +3957,10 @@ export function generateScenePrompts(
       actorTags = tpl.is_onsen_scene
         ? "1girl, solo, 1.6::futanari::, 1.45::futa with balls::, 1.4::small penis::, 1.3::small testicles::, testicles"
         : "1girl, solo, 1.55::futanari::, 1.45::futa with balls::, 1.3::small testicles::, testicles";
-      genderActionTags = splitTopLevelCommaSegments(tpl.futa_tags)
+      genderActionTags = splitTopLevelCommaSegments(rawFutaActionTags)
         .filter((tok) => {
           const bare = tok.replace(/^-?\d+(?:\.\d+)?::([\s\S]+?)::$/, "$1").trim().toLowerCase();
-          return Boolean(bare) && bare !== "labia" && bare !== "spread pussy";
+          return Boolean(bare) && (soloSpreadActive || (bare !== "labia" && bare !== "spread pussy"));
         })
         .join(", ");
       genderProse = tpl.futa_prose;
@@ -3953,8 +3974,15 @@ export function generateScenePrompts(
     let outfitTags = "";
     let customOutfitSafeNeg = "";
     if (useSceneOutfit) {
-      outfitTags =
-        genderMode === "femboy" && tpl.femboy_outfit ? tpl.femboy_outfit : tpl.builtin_outfit;
+      if (soloSpreadSpec?.spread_outfit_override) {
+        outfitTags =
+          genderMode === "femboy"
+            ? soloSpreadSpec.spread_femboy_outfit_override || soloSpreadSpec.spread_outfit_override
+            : soloSpreadSpec.spread_outfit_override;
+      } else {
+        outfitTags =
+          genderMode === "femboy" && tpl.femboy_outfit ? tpl.femboy_outfit : tpl.builtin_outfit;
+      }
     } else if (cfg.enable_outfit) {
       outfitTags = joinTags(m.outfit_pos, m.front_leg_tags);
       if (genderMode === "femboy") {
@@ -4015,6 +4043,48 @@ export function generateScenePrompts(
       }
     }
 
+    if (soloSpreadSpec) {
+      if (useSceneOutfit) {
+        genderProse = genderProse
+          .replace(
+            /\bwhile holding up (?:her|his) blue floral yukata hem\b/i,
+            genderMode === "femboy"
+              ? "with his blue floral yukata hem tucked into his obi sash"
+              : "with her blue floral yukata hem tucked into her obi sash"
+          )
+          .replace(
+            /\band uses both hands to lift (?:her|his) indigo yukata skirt\b/i,
+            "standing"
+          )
+          .replace(
+            /\bwhile tugging open (?:her|his) navy floral yukata hem\b/i,
+            genderMode === "femboy" ? "in his navy floral yukata" : "in her navy floral yukata"
+          )
+          .replace(/\s*while lifting the back hem of (?:her|his) lavender yukata\b/i, "")
+          .replace(
+            /\bwhile lifting (?:her|his) crimson yukata hem\b/i,
+            genderMode === "femboy"
+              ? "with his crimson yukata hem tucked into his obi sash"
+              : "with her crimson yukata hem tucked into her obi sash"
+          );
+      }
+      let spreadSuffix = soloSpreadSpec.spread_prose_suffix;
+      if (!useSceneOutfit) {
+        spreadSuffix = spreadSuffix.replace(
+          /\s*with (?:her|his) (?:front |back )?(?:yukata )?hem tucked into (?:her|his) (?:[a-z-]+ )?(?:obi|sash) (?:so|while)/gi,
+          " while"
+        );
+      }
+      if (genderMode === "femboy") {
+        spreadSuffix = femboyPronounClean(spreadSuffix);
+      }
+      genderProse = `${genderProse.replace(/\.+\s*$/, "")}${spreadSuffix}`;
+    }
+
+    if (tpl.is_onsen_scene && !useSceneOutfit) {
+      genderActionTags = stripOnsenSceneGarmentRefs(genderActionTags);
+    }
+
     const useSfDedicatedLight =
       !transBg &&
       !isExplicitDedicatedLight &&
@@ -4025,7 +4095,21 @@ export function generateScenePrompts(
         : tpl.is_pool_scene && poolLightSpec
           ? joinTags(poolLightSpec.pos, tpl.light_tags)
           : tpl.is_onsen_scene && onsenLightSpec
-            ? joinTags(onsenLightSpec.pos, tpl.light_tags)
+            ? joinTags(
+                splitTopLevelCommaSegments(onsenLightSpec.pos)
+                  .filter((seg) => {
+                    const low = seg.toLowerCase();
+                    const combinedRef = `${tpl.env_tags} ${tpl.light_tags}`.toLowerCase();
+                    if (low.includes("tatami room") && combinedRef.includes("tatami")) return false;
+                    if (low.includes("andon lamp") && /\b(?:andon|lantern light|vending machine light)\b/i.test(combinedRef)) return false;
+                    if (low.includes("cypress bathhouse") && combinedRef.includes("cypress")) return false;
+                    if (low.includes("engawa") && combinedRef.includes("engawa")) return false;
+                    if (low.includes("yukimi-doro") && combinedRef.includes("yukimi-doro")) return false;
+                    return true;
+                  })
+                  .join(", "),
+                tpl.light_tags
+              )
             : tpl.is_specimen_scene ||
                 tpl.is_bathroom_scene ||
                 tpl.is_housework_scene ||
@@ -4059,33 +4143,52 @@ export function generateScenePrompts(
           .replace(/\s{2,}/g, " ")
           .trim()
       : tpl.env_tags;
-    const effectiveEnvTags =
+    const preGarmentEnvTags =
       (tpl.is_specimen_scene ||
         tpl.is_bathroom_scene ||
         tpl.is_aftersex_drip_scene ||
         tpl.is_onsen_scene) &&
       genderMode === "femboy"
-        ? rawEffectiveEnvTags.replace(/\bher\b/gi, "his")
+        ? femboyPronounClean(rawEffectiveEnvTags)
         : rawEffectiveEnvTags;
-    const effectiveCorePropTags =
+    const effectiveEnvTags =
+      tpl.is_onsen_scene && !useSceneOutfit
+        ? stripOnsenSceneGarmentRefs(preGarmentEnvTags)
+        : preGarmentEnvTags;
+    const activeRawCoreProps = soloSpreadSpec
+      ? soloSpreadSpec.spread_prop_tags
+      : tpl.core_prop_tags || "";
+    const preGarmentCorePropTags =
       (tpl.is_specimen_scene || tpl.is_bathroom_scene) &&
       genderMode === "femboy" &&
       tpl.femboy_core_prop_tags
         ? tpl.femboy_core_prop_tags
         : (tpl.is_aftersex_drip_scene || tpl.is_onsen_scene) && genderMode === "femboy"
-          ? (tpl.core_prop_tags || "")
-              .replace(/\bwet bare breasts?\b/gi, "wet flat chest")
-              .replace(/\bbare breasts?\b/gi, "flat chest")
-              .replace(/\bcleavage\b/gi, "flat chest")
-              .replace(/\bher\b/gi, "his")
-          : tpl.core_prop_tags || "";
+          ? femboyPronounClean(
+              activeRawCoreProps
+                .replace(/\bwet bare breasts?\b/gi, "wet flat chest")
+                .replace(/\bbare breasts?\b/gi, "flat chest")
+                .replace(/\bcleavage\b/gi, "flat chest")
+            )
+          : activeRawCoreProps;
+    const effectiveCorePropTags =
+      tpl.is_onsen_scene && !useSceneOutfit
+        ? stripOnsenSceneGarmentRefs(preGarmentCorePropTags)
+        : preGarmentCorePropTags;
     const effectiveFramingTags =
       (tpl.is_specimen_scene ||
         tpl.is_bathroom_scene ||
         tpl.is_aftersex_drip_scene ||
         tpl.is_onsen_scene) &&
       genderMode === "femboy"
-        ? tpl.femboy_framing_tags || tpl.framing_tags.replace(/\bher\b/gi, "his")
+        ? tpl.femboy_framing_tags ||
+          femboyPronounClean(
+            tpl.framing_tags
+              .replace(/(?:,\s*)?\d+(?:\.\d+)?::girl on top::/gi, "")
+              .replace(/\bgirl on top\b/gi, "straddling")
+          )
+            .replace(/,\s*,+/g, ", ")
+            .replace(/^[ ,]+|[ ,]+$/g, "")
         : tpl.framing_tags;
 
     const envAndPropsUsed = transBg
@@ -4664,21 +4767,26 @@ export function generateScenePrompts(
         tpl.is_onsen_scene
       ) {
         if (cfg.enable_condom) {
-          soloCondomTags = "1.55::used condom::, 1.45::cum in condom::";
+          soloCondomTags = tpl.is_precoital_invite
+            ? "1.5::condom packet::, 1.45::holding condom::, foil condom wrapper"
+            : "1.55::used condom::, 1.45::cum in condom::";
           soloCondomBadge = " · [🛡️安全套]";
         }
         if (cfg.enable_uterus_xray && !tpl.builtin_xray) {
           soloXrayBadge = " · [🔬内部透视]";
           if (genderMode === "femboy") {
-            soloXrayTags =
-              "1.45::x-ray::, 1.4::cross-section::, 1.5::intestines::, 1.5::cum in ass::, internal cumshot";
-            soloXrayProse =
-              " accompanied by an anatomical x-ray cross-section of his cum-filled intestines.";
+            soloXrayTags = tpl.is_precoital_invite
+              ? "1.45::x-ray::, 1.4::cross-section::, 1.5::intestines::, anal canal"
+              : "1.45::x-ray::, 1.4::cross-section::, 1.5::intestines::, 1.5::cum in ass::, internal cumshot";
+            soloXrayProse = tpl.is_precoital_invite
+              ? " accompanied by an anatomical x-ray cross-section of his internal canal."
+              : " accompanied by an anatomical x-ray cross-section of his cum-filled intestines.";
             effectiveXrayNeg =
               "fetus, baby, embryo, skeleton, bones, skull, ribcage, medical diagram, gore, uterus, cervix, womb";
           } else {
-            soloXrayTags =
-              "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.45::cum in uterus::";
+            soloXrayTags = tpl.is_precoital_invite
+              ? "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix"
+              : "1.45::x-ray::, 1.4::cross-section::, 1.45::uterus::, cervix, 1.45::cum in uterus::";
             soloXrayProse = " accompanied by a centered x-ray cross-section revealing her uterus.";
             effectiveXrayNeg =
               "fetus, baby, embryo, skeleton, bones, skull, ribcage, medical diagram, gore";
@@ -4701,7 +4809,17 @@ export function generateScenePrompts(
                   ? tpl.aftersex_drip_expr_tags
                   : exprIf(cfg, tpl.aftersex_drip_expr_tags, "", tpl.id)
                 : tpl.is_onsen_scene && tpl.onsen_expr_tags
-                  ? exprIf(cfg, tpl.onsen_expr_tags, "", tpl.id)
+                  ? exprIf(
+                      cfg,
+                      genderMode === "femboy"
+                        ? tpl.onsen_expr_tags
+                            .replace(/\bshe\b/gi, "he")
+                            .replace(/\bhers\b/gi, "his")
+                            .replace(/\bher\b/gi, "his")
+                        : tpl.onsen_expr_tags,
+                      "",
+                      tpl.id
+                    )
                   : "";
 
       let fullNeg = joinTags(
@@ -4715,6 +4833,7 @@ export function generateScenePrompts(
         aftersexDripStreamGuard,
         aftersexDripBarefootBan,
         onsenBarefootBan,
+        soloSpreadActive ? ONSEN_SOLO_SPREAD_EXTRA_UC : "",
         sceneFootGuard,
         kitchenBareFootSockBan,
         tpl.extra_neg || "",
@@ -4726,13 +4845,13 @@ export function generateScenePrompts(
         bathroomTowelGuard,
         sceneLandscapeGuard,
         transNeg,
-        tpl.allow_speculum
+        tpl.allow_speculum || (soloSpreadActive && genderMode === "femboy")
           ? "censor, mosaic censoring, bar censor"
           : "gaping, censor, mosaic censoring, bar censor",
         effectiveXrayNeg,
         baseTailNeg
       );
-      if (tpl.allow_speculum) {
+      if (tpl.allow_speculum || (soloSpreadActive && genderMode === "femboy")) {
         fullNeg = fullNeg
           .split(",")
           .map((s) => s.trim())
@@ -4764,11 +4883,13 @@ export function generateScenePrompts(
         ? `${genderProse.replace(/\.+\s*$/, "")},${soloXrayProse}`
         : genderProse;
       const proseBody = cfg.enable_t5_prose
-        ? /^(?:High-angle|Low-angle|Steep low-angle|Low cushion-level|Ground-level|First-person POV|Overhead|Low eye-level|Low frontal)\b/i.test(
-            baseSoloProse
-          )
-          ? `${baseSoloProse.replace(/\b(as|where) (?:she|he)\b/i, `$1 ${m.name}`)}${sfLightProseTail}${transBg ? " Isolated on a transparent background." : ""}`
-          : `${m.name} ${baseSoloProse}${sfLightProseTail}${transBg ? " Isolated on a transparent background." : ""}`
+        ? baseSoloProse.includes("{name}")
+          ? `${baseSoloProse.replace(/\{name\}/g, m.name)}${sfLightProseTail}${transBg ? " Isolated on a transparent background." : ""}`
+          : /^(?:High-angle|Low-angle|Steep low-angle|Low cushion-level|Ground-level|First-person|Overhead|Frontal low-angle|Low eye-level|Low frontal|Low rear-side)\b/i.test(
+              baseSoloProse
+            )
+            ? `${baseSoloProse.replace(/\b(as|where) (?:she|he)\b/i, `$1 ${m.name}`)}${sfLightProseTail}${transBg ? " Isolated on a transparent background." : ""}`
+            : `${m.name} ${baseSoloProse}${sfLightProseTail}${transBg ? " Isolated on a transparent background." : ""}`
         : "";
       const camBadge = tpl.is_onsen_scene
         ? "♨️温泉单人"
@@ -4813,8 +4934,9 @@ export function generateScenePrompts(
         proseBody,
         wrapTailNeg(m, fullNeg, negOn)
       );
+      const soloSpreadBadge = soloSpreadActive ? " · [🫶掰开差分]" : "";
       results.push({
-        subTitle: `【${tpl.id} · ${tpl.title} · ${camBadge}${sfLightBadge}${genderBadge}${soloCondomBadge}${soloXrayBadge}】`,
+        subTitle: `【${tpl.id} · ${tpl.title} · ${camBadge}${sfLightBadge}${genderBadge}${soloSpreadBadge}${soloCondomBadge}${soloXrayBadge}】`,
         canvas: tpl.canvas,
         prompt: pOther,
       });
@@ -5133,14 +5255,11 @@ export function generateScenePrompts(
     });
   }
 
-  // Post-pass 4.2: Deduplicate repeated single-tag tokens in positive prefix (recovers 10~25 duplicate tokens cleanly)
-  results = results.map((item) => {
-    if (item.prompt.startsWith("[Base Prompt]")) return item;
-    return {
-      ...item,
-      prompt: deduplicatePositiveTagPrefix(item.prompt),
-    };
-  });
+  // Post-pass 4.2: Deduplicate repeated single-tag tokens in positive prefix (including Multi-Box [Base Prompt])
+  results = results.map((item) => ({
+    ...item,
+    prompt: deduplicatePositiveTagPrefix(item.prompt),
+  }));
 
   // Reserve ~24 server-side T5 tokens on 2-person partitioned scenes (`[Character 1/2]`) when no Vibe limit is active
   // so 25~30 `w::...::` weight blocks + multi-character partitions NEVER clip lighting prose at NovelAI's 512 wall.
@@ -5727,7 +5846,7 @@ function compileHouseworkDuoScenePrompt(opts: {
       xrayTags,
       envAndProps,
       tpl.framing_tags,
-      tpl.female_tags,
+      useSceneOutfit ? tpl.female_tags : stripOnsenSceneGarmentRefs(tpl.female_tags),
       yuriProseClean,
       wrapTailNeg(m, yuriGlobalNeg, negOn)
     );
@@ -5968,7 +6087,7 @@ function compileHouseworkDuoScenePrompt(opts: {
       xrayTags,
       futaProps,
       futaFraming,
-      futaAction,
+      useSceneOutfit ? futaAction : stripOnsenSceneGarmentRefs(futaAction),
       futaProseClean,
       wrapTailNeg(m, futaGlobalNeg, negOn)
     );
@@ -6213,7 +6332,7 @@ function compileCampingDuoScenePrompt(opts: {
       xrayTags,
       envAndProps,
       tpl.framing_tags,
-      tpl.female_tags,
+      useSceneOutfit ? tpl.female_tags : stripOnsenSceneGarmentRefs(tpl.female_tags),
       yuriProseClean,
       wrapTailNeg(m, yuriGlobalNeg, negOn)
     );
@@ -6330,7 +6449,7 @@ function compileCampingDuoScenePrompt(opts: {
     );
 
     const char1Line = joinTags(
-      "1.45::1boy::, 1.55::otoko no ko::, 1.45::crossdressing::, 1.35::genderbend::",
+      "1.45::1boy::, 1.55::otoko no ko::, 1.45::crossdressing::",
       femboyCharCore,
       femboyChestTags,
       femboyWardrobe,
@@ -6340,7 +6459,7 @@ function compileCampingDuoScenePrompt(opts: {
     );
 
     const char2Line = joinTags(
-      "1boy, tall shirtless faceless male",
+      /\bfaceless male\b/i.test(femboyPartner) ? "1boy" : "1boy, tall shirtless faceless male",
       femboyPartner,
       "penis",
       condomPartner,
@@ -6426,7 +6545,7 @@ function compileCampingDuoScenePrompt(opts: {
       xrayTags,
       envAndProps,
       futaFraming,
-      futaAction,
+      useSceneOutfit ? futaAction : stripOnsenSceneGarmentRefs(futaAction),
       futaProseClean,
       wrapTailNeg(m, futaGlobalNeg, negOn)
     );
@@ -6441,7 +6560,7 @@ function compileCampingDuoScenePrompt(opts: {
     );
 
     const char2Line = joinTags(
-      "1boy, tall shirtless faceless male",
+      /\bfaceless male\b/i.test(futaPartner) ? "1boy" : "1boy, tall shirtless faceless male",
       futaPartner,
       "penis",
       condomPartner,
@@ -6505,7 +6624,7 @@ function compileCampingDuoScenePrompt(opts: {
     tpl.framing_tags,
     duo.partner_tags,
     exprUsed,
-    tpl.female_tags,
+    useSceneOutfit ? tpl.female_tags : stripOnsenSceneGarmentRefs(tpl.female_tags),
     femaleProseClean,
     wrapTailNeg(m, normalNeg, negOn)
   );
@@ -6514,6 +6633,43 @@ function compileCampingDuoScenePrompt(opts: {
     canvas: tpl.canvas,
     prompt: pNormal,
   };
+}
+
+function femboyPronounClean(raw: string): string {
+  if (!raw) return raw;
+  return raw
+    .replace(/\bShe\b/g, "He")
+    .replace(/\bshe\b/g, "he")
+    .replace(/\bhers\b/gi, "his")
+    .replace(
+      /\b(behind|beneath|beside|watching|looking down at)\s+her\b(?=$|[.,;!]|\s+(?:in|on|at|from|with|by|for|to|into|onto|over|under|above|below|along|across|through|between|while|as|and|raising|gripping|holding|supporting|leaning|lying|sitting|standing|kneeling|walk|walks|walking)\b)/gi,
+      "$1 him"
+    )
+    .replace(/\bHer\b/g, "His")
+    .replace(/\bher\b/g, "his");
+}
+
+function stripOnsenSceneGarmentRefs(raw: string): string {
+  if (!raw) return raw;
+  return raw
+    .replace(/(?:,\s*)?loosened red obi ribbon trailing on tatami/gi, "")
+    .replace(/,\s*below short yukata hem/gi, "")
+    .replace(/\s+onto yukata (?:sash|hem)/gi, "")
+    .replace(/,\s*teasing invitation to untie sash/gi, ", teasing invitation")
+    .replace(
+      /\b(?:parted|lifted)(?:\s+(?:front|back))?\s+yukata(?:\s+(?:hem|skirt))?\s+(?:openly\s+)?(?=(?:exposing|revealing|on\b))/gi,
+      "open posture "
+    )
+    .replace(/\s+with\s+lifted\s+yukata\s+(?=revealing)/gi, " ")
+    .replace(/\b(?:\d+(?:\.\d+)?::)?yukata(?:::)?(?:\s+(?:fabric|hem|skirt|sash|back hem))?/gi, "outfit")
+    .replace(
+      /\b(?:crimson|red)\s+silk\s+(?:\d+(?:\.\d+)?::)?obi(?:::)?\s+(?:sash(?:\s+bow)?|ribbon(?:\s+end)?)/gi,
+      "ribbon"
+    )
+    .replace(/\b(?:\d+(?:\.\d+)?::)?obi(?:::)?(?:\s+(?:sash|ribbon))?/gi, "ribbon")
+    .replace(/,\s*,+/g, ", ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[ ,]+|[ ,]+$/g, "");
 }
 
 function compileOnsenDuoScenePrompt(opts: {
@@ -6624,11 +6780,19 @@ function compileOnsenDuoScenePrompt(opts: {
       ? "javelin (azur lane), short periwinkle hair, amber eyes, slender, slim waist, small breasts"
       : "ayanami (azur lane), long white hair, red eyes, slender, slim waist, small breasts";
     const c1ContrastGuard = heroIsWhiteOrAyanami
-      ? "-2::periwinkle hair, amber eyes, pink yukata::"
-      : "-2::white hair, red eyes, pink yukata::";
+      ? useSceneOutfit
+        ? "-2::periwinkle hair, amber eyes, pink yukata::"
+        : "-2::periwinkle hair, amber eyes::"
+      : useSceneOutfit
+        ? "-2::white hair, red eyes, pink yukata::"
+        : "-2::white hair, red eyes::";
     const c2ContrastGuard = heroIsWhiteOrAyanami
-      ? "-2::white hair, red eyes, navy yukata::"
-      : "-2::purple hair, green eyes, navy yukata::";
+      ? useSceneOutfit
+        ? "-2::white hair, red eyes, navy yukata::"
+        : "-2::white hair, red eyes::"
+      : useSceneOutfit
+        ? "-2::purple hair, green eyes, navy yukata::"
+        : "-2::purple hair, green eyes::";
 
     const c1Wardrobe = useSceneOutfit ? tpl.builtin_outfit : outfitTagsFromLeft;
     const c2Wardrobe = useSceneOutfit
@@ -6674,7 +6838,7 @@ function compileOnsenDuoScenePrompt(opts: {
       xrayTags,
       envAndProps,
       tpl.framing_tags,
-      tpl.female_tags,
+      useSceneOutfit ? tpl.female_tags : stripOnsenSceneGarmentRefs(tpl.female_tags),
       yuriProseClean,
       wrapTailNeg(m, yuriGlobalNeg, negOn)
     );
@@ -6735,17 +6899,27 @@ function compileOnsenDuoScenePrompt(opts: {
       ? "1.55::flat chest::, 1.4::flat male chest::, hairless torso"
       : "1.55::flat chest::, 1.4::flat male chest::, tiny pink nipples, hairless torso";
 
-    const femboyFraming = tpl.framing_tags
-      .replace(/of two girls\s*/gi, "")
-      .replace(/\btwo girls\b/gi, "two boys")
-      .replace(/\bbare breasts\b/gi, "flat chest");
-    const femboyProps = envAndProps
-      .replace(/\bleft girl\b/gi, "boy")
-      .replace(/\bher\b/gi, "his")
-      .replace(/\bbare breasts\b/gi, "flat chest");
-    const femboyPartner = (tpl.onsen_partner_tags || "shirtless faceless male behind him")
-      .replace(/fondling (?:her )?(?:wet )?(?:bare )?breast/gi, "gripping chest")
-      .replace(/\bher\b/gi, "his");
+    const femboyFraming = femboyPronounClean(
+      tpl.framing_tags
+        .replace(/of two girls\s*/gi, "")
+        .replace(/\btwo girls\b/gi, "two boys")
+        .replace(/(?:,\s*)?\d+(?:\.\d+)?::girl on top::/gi, "")
+        .replace(/\bgirl on top\b/gi, "straddling")
+        .replace(/\bbare breasts\b/gi, "flat chest")
+    )
+      .replace(/,\s*,+/g, ", ")
+      .replace(/^[ ,]+|[ ,]+$/g, "");
+    const femboyProps = femboyPronounClean(
+      envAndProps
+        .replace(/\bleft girl\b/gi, "boy")
+        .replace(/\bbare breasts\b/gi, "flat chest")
+    );
+    const femboyPartner = femboyPronounClean(
+      (tpl.onsen_partner_tags || "shirtless faceless male behind him").replace(
+        /fondling (?:her )?(?:wet )?(?:bare )?breast/gi,
+        "gripping chest"
+      )
+    );
 
     const condomBase = condomOn ? "1.4::condom::, 1.35::cum in condom::" : "";
     const condomPartner = condomOn ? "1.35::condom on penis::" : "";
@@ -6774,7 +6948,15 @@ function compileOnsenDuoScenePrompt(opts: {
       )
     );
 
-    const exprUsed = exprIf(cfg, tpl.onsen_expr_tags || "", "", tpl.id);
+    const exprUsed = exprIf(
+      cfg,
+      (tpl.onsen_expr_tags || "")
+        .replace(/\bshe\b/gi, "he")
+        .replace(/\bhers\b/gi, "his")
+        .replace(/\bher\b/gi, "his"),
+      "",
+      tpl.id
+    );
     const femboyProseBase = isYuriShowcase
       ? "Crossdressing boy seated on a white futon over tatami mats in a warm ryokan room wearing a navy floral yukata closed over his flat chest while holding a sweet three-color dango skewer."
       : tpl.femboy_prose;
@@ -6790,13 +6972,13 @@ function compileOnsenDuoScenePrompt(opts: {
       xrayTags,
       femboyProps,
       femboyFraming,
-      tpl.femboy_tags,
+      useSceneOutfit ? tpl.femboy_tags : stripOnsenSceneGarmentRefs(tpl.femboy_tags),
       femboyProseClean,
       wrapTailNeg(m, femboyGlobalNeg, negOn)
     );
 
     const char1Line = joinTags(
-      "1.45::1boy::, 1.55::otoko no ko::, 1.45::crossdressing::, 1.35::genderbend::",
+      "1.45::1boy::, 1.55::otoko no ko::, 1.45::crossdressing::",
       femboyCharCore,
       femboyChestTags,
       femboyWardrobe,
@@ -6806,7 +6988,7 @@ function compileOnsenDuoScenePrompt(opts: {
     );
 
     const char2Line = joinTags(
-      "1boy, tall shirtless faceless male",
+      /\bfaceless male\b/i.test(femboyPartner) ? "1boy" : "1boy, tall shirtless faceless male",
       femboyPartner,
       "penis",
       condomPartner,
@@ -6894,7 +7076,7 @@ function compileOnsenDuoScenePrompt(opts: {
       xrayTags,
       envAndProps,
       futaFraming,
-      futaAction,
+      useSceneOutfit ? futaAction : stripOnsenSceneGarmentRefs(futaAction),
       futaProseClean,
       wrapTailNeg(m, futaGlobalNeg, negOn)
     );
@@ -6909,7 +7091,7 @@ function compileOnsenDuoScenePrompt(opts: {
     );
 
     const char2Line = joinTags(
-      "1boy, tall shirtless faceless male",
+      /\bfaceless male\b/i.test(futaPartner) ? "1boy" : "1boy, tall shirtless faceless male",
       futaPartner,
       "penis",
       condomPartner,
@@ -6974,7 +7156,7 @@ function compileOnsenDuoScenePrompt(opts: {
     tpl.framing_tags,
     tpl.onsen_partner_tags || "",
     exprUsed,
-    tpl.female_tags,
+    useSceneOutfit ? tpl.female_tags : stripOnsenSceneGarmentRefs(tpl.female_tags),
     femaleProseClean,
     wrapTailNeg(m, normalNeg, negOn)
   );
@@ -9340,6 +9522,18 @@ function resolveCreaturePovSpec(sceneId: string, xrayOn = false): { poseTags: st
 }
 
 function deduplicatePositiveTagPrefix(rawPrompt: string): string {
+  if (rawPrompt.startsWith("[Base Prompt]")) {
+    return rawPrompt
+      .split(/\n\n+/)
+      .map((sec) => {
+        const nl = sec.indexOf("\n");
+        if (nl === -1) return sec;
+        const header = sec.slice(0, nl);
+        const body = sec.slice(nl + 1).trim();
+        return `${header}\n${deduplicatePositiveTagPrefix(body)}`;
+      })
+      .join("\n\n");
+  }
   const negBlocks: string[] = [];
   const posOnly = rawPrompt
     .replace(/(?:,\s*)?(-(?:[1-9]\d*(?:\.\d+)?)::[\s\S]*?::)/g, (_m, block: string) => {
@@ -9418,8 +9612,12 @@ function enforcePositiveTokenBudget(
       const baseHeaderMatch = /^\[Base Prompt\]\s*:?\s*\n?/.exec(baseSection);
       const baseHeader = baseHeaderMatch ? baseHeaderMatch[0] : "[Base Prompt]\n";
       const baseBody = baseSection.slice(baseHeader.length).trim();
-      const charOverhead = measureEffectivePosTokens(`[Base Prompt]\nmasterpiece${charSections}`) - 1;
-      const baseBudget = Math.max(120, maxPosTokens - Math.max(0, charOverhead));
+      const baseSoloTokenCost = measureEffectivePosTokens("masterpiece");
+      const charOverhead = Math.max(
+        0,
+        measureEffectivePosTokens(`[Base Prompt]\nmasterpiece${charSections}`) - baseSoloTokenCost
+      );
+      const baseBudget = Math.max(120, maxPosTokens - charOverhead);
       const trimmedBase = enforcePositiveTokenBudget(baseBody, baseBudget, allowTagTrim);
       const rebuilt = `${baseHeader}${trimmedBase}${charSections}`;
       if (measureEffectivePosTokens(rebuilt) <= maxPosTokens) {
@@ -9531,8 +9729,18 @@ function enforcePositiveTokenBudget(
         return tagsWithoutCw;
       }
     }
-    // Extreme custom-tag overflow fallback: trim trailing unessential tags until within budget
+    // Extreme custom-tag overflow fallback: drop unweighted >=5-word descriptive clauses first so weighted `w::...::` & short env tags survive
     const tagTokens = splitTopLevelCommaSegments(tagsPart);
+    for (let idx = tagTokens.length - 1; idx >= 6 && tagTokens.length > 10; idx--) {
+      const seg = tagTokens[idx];
+      if (!seg.includes("::") && seg.trim().split(/\s+/).length >= 5) {
+        tagTokens.splice(idx, 1);
+        const shrunk = rebuild(tagTokens.join(", "), false);
+        if (measureEffectivePosTokens(shrunk) <= maxPosTokens) {
+          return shrunk;
+        }
+      }
+    }
     while (tagTokens.length > 10) {
       tagTokens.pop();
       const shrunk = rebuild(tagTokens.join(", "), false);
@@ -9543,7 +9751,7 @@ function enforcePositiveTokenBudget(
     return tagsOnlyCand;
   }
 
-  // No trailing T5 prose present: if tags alone still exceed maxPosTokens, drop trailing cw first, then trim tags
+  // No trailing T5 prose present: if tags alone still exceed maxPosTokens, drop trailing cw & unweighted >=5-word clauses first
   if (allowTagTrim) {
     if (trailingCwBlocks.length > 0) {
       const noCw = rebuild(posOnly, false);
@@ -9552,6 +9760,16 @@ function enforcePositiveTokenBudget(
       }
     }
     const tagTokens = splitTopLevelCommaSegments(posOnly);
+    for (let idx = tagTokens.length - 1; idx >= 6 && tagTokens.length > 10; idx--) {
+      const seg = tagTokens[idx];
+      if (!seg.includes("::") && seg.trim().split(/\s+/).length >= 5) {
+        tagTokens.splice(idx, 1);
+        const shrunk = rebuild(tagTokens.join(", "), false);
+        if (measureEffectivePosTokens(shrunk) <= maxPosTokens) {
+          return shrunk;
+        }
+      }
+    }
     while (tagTokens.length > 10) {
       tagTokens.pop();
       const shrunk = rebuild(tagTokens.join(", "), false);

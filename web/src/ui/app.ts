@@ -3842,11 +3842,33 @@ export class WorkbenchApp {
       this.renderRightModeView();
     });
 
-    if (btnCondom) {
-      r1.append(btnSceneOutfit, btnCondom, btnXray, btnTrans, this.buildPixivBarCensorChip(false));
-    } else {
-      r1.append(btnSceneOutfit, btnXray, btnTrans, this.buildPixivBarCensorChip(false));
+    let btnSoloSpread: HTMLButtonElement | null = null;
+    if (otherTpl?.category === "22. 温泉单人") {
+      const spreadEligible = Boolean(otherTpl.solo_spread_spec);
+      const spreadActive = spreadEligible && Boolean(this.cfg.enable_solo_spread);
+      btnSoloSpread = this.el(
+        "button",
+        `chip-btn solo-spread-chip${spreadActive ? " active" : ""}`,
+        "🫶 掰开差分"
+      );
+      btnSoloSpread.disabled = !spreadEligible;
+      btnSoloSpread.title = spreadEligible
+        ? "一键切换「22. 温泉单人」掰开展示 CG 差分（保持双手守恒 <=2 手、4性别解剖路由与防自遮挡锁）"
+        : otherTpl.solo_spread_disabled_reason ||
+          "当前单人温泉动作构图（ONS11 站立背影系带遮挡 / ONS14 石阶迈步行走中 / ONS15 已内置单手擦拭动作）不适用掰开差分";
+      btnSoloSpread.addEventListener("click", () => {
+        if (!spreadEligible) return;
+        this.cfg.enable_solo_spread = !this.cfg.enable_solo_spread;
+        this.onCfgChanged();
+        this.renderRightModeView();
+      });
     }
+
+    const r1Controls: HTMLElement[] = [btnSceneOutfit];
+    if (btnSoloSpread) r1Controls.push(btnSoloSpread);
+    if (btnCondom) r1Controls.push(btnCondom);
+    r1Controls.push(btnXray, btnTrans, this.buildPixivBarCensorChip(false));
+    r1.append(...r1Controls);
     this.elContextCtrlBox.appendChild(r1);
   }
 
@@ -8279,7 +8301,14 @@ export class WorkbenchApp {
         neg_tokens: counts.negTokens,
         safe_pos_limit: this.apiSettings.model === MODEL_V5_FULL_MEDIUM ? 512 : safeLimit,
       },
-      character_config: { ...this.cfg },
+      character_config: {
+        ...this.cfg,
+        enable_solo_spread: Boolean(this.cfg.enable_solo_spread),
+      },
+      solo_spread_eligible:
+        this.actionMode === "other"
+          ? Boolean(OTHER_ACTION_TEMPLATES[this.activeSceneId]?.solo_spread_spec)
+          : false,
       api_settings: {
         ...safeApiSettings,
         has_api_token: Boolean(this.apiSettings.api_token.trim()),

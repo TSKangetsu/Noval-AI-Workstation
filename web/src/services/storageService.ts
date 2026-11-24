@@ -431,6 +431,11 @@ export function loadActiveConfig(): CharacterConfig {
     if (merged.other_use_scene_outfit === undefined) {
       merged.other_use_scene_outfit = true;
     }
+    if (merged.enable_solo_spread === undefined) {
+      merged.enable_solo_spread = false;
+    } else {
+      merged.enable_solo_spread = Boolean(merged.enable_solo_spread);
+    }
     delete (merged as unknown as Record<string, unknown>).eye_color;
     delete (merged as unknown as Record<string, unknown>).hair_tags;
     if (!parsed.wb_v2_migrated) {
@@ -527,6 +532,9 @@ export function loadCustomPresets(): Record<string, Partial<CharacterConfig>> {
   for (const pVal of Object.values(merged)) {
     if (pVal && typeof pVal.lighting_preset === "string") {
       pVal.lighting_preset = normalizeLightingPresetName(pVal.lighting_preset);
+    }
+    if (pVal && pVal.enable_solo_spread !== undefined) {
+      pVal.enable_solo_spread = Boolean(pVal.enable_solo_spread);
     }
   }
   return merged;

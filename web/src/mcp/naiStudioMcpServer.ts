@@ -701,6 +701,7 @@ function lookupPresetCatalog(category: string, query = ""): Record<string, unkno
           "3. 奇特机位": "5. 奇特机位",
           "4. 束缚与UI": "6. 束缚与UI",
         };
+        const tpl = OTHER_ACTION_TEMPLATES[c.id];
         return {
           id: c.id,
           title: c.title,
@@ -708,6 +709,9 @@ function lookupPresetCatalog(category: string, query = ""): Record<string, unkno
           category: sfCatMap[c.category] || c.category,
           camera_mode: c.camera_mode,
           canvas: c.canvas,
+          ...(c.category === "22. 温泉单人"
+            ? { solo_spread_eligible: Boolean(tpl?.solo_spread_spec) }
+            : {}),
         };
       }),
     ],
@@ -759,7 +763,7 @@ const MCP_TOOLS = [
   {
     name: "nai_update_config",
     description:
-      "Directly push configuration changes to the open NovelAI_Workbench.html webpage in real time. Supports updating any CharacterConfig field (char_tag, extra_char_tags, gender_mode: 'normal'|'femboy'|'futa_no_balls'|'futa_with_balls', body_preset, bust_preset, outfit_preset, custom_outfit_tags, outfit_state_mode, style_preset, lighting_preset, pos_stage, pos_male_mode, pos_scene, enable_condom, enable_uterus_xray, pixiv_bar_censor: 'off'|'white'|'black'|'mosaic', other_use_scene_outfit, free_action_tags, free_action_prose, free_action_nsfw, etc.), NaiApiSettings (model, steps, scale, cfg_rescale, canvas_preset, seed, batch_count, auto_upscale_replace), action_mode ('positions' | 'multi_angle' | 'other' | 'free'), and active_scene_id ('P01'..'P51' | 'MP01'..'MP15' | 'TN01'..'TN12' | 'BG01'..'BG20' | 'MA0'..'MA11' | 'MA7A'..'MA7E' | 'SF01'..'SF30' | 'KTD01'..'KTD60' | 'KT01'..'KT46' | 'PLD01'..'PLD22' | 'PL01'..'PL11' | 'CV01'..'CV07' | 'BT01'..'BT08' | 'HWD01'..'HWD15' | 'PS01'..'PS04' | 'CP01'..'CP12' | 'AFD01'..'AFD15' | 'ONS01'..'ONS55' | 'FREE').",
+      "Directly push configuration changes to the open NovelAI_Workbench.html webpage in real time. Supports updating any CharacterConfig field (char_tag, extra_char_tags, gender_mode: 'normal'|'femboy'|'futa_no_balls'|'futa_with_balls', body_preset, bust_preset, outfit_preset, custom_outfit_tags, outfit_state_mode, style_preset, lighting_preset, pos_stage, pos_male_mode, pos_scene, enable_condom, enable_uterus_xray, enable_solo_spread, pixiv_bar_censor: 'off'|'white'|'black'|'mosaic', other_use_scene_outfit, free_action_tags, free_action_prose, free_action_nsfw, etc.), NaiApiSettings (model, steps, scale, cfg_rescale, canvas_preset, seed, batch_count, auto_upscale_replace), action_mode ('positions' | 'multi_angle' | 'other' | 'free'), and active_scene_id ('P01'..'P51' | 'MP01'..'MP15' | 'TN01'..'TN12' | 'BG01'..'BG20' | 'MA0'..'MA11' | 'MA7A'..'MA7E' | 'SF01'..'SF30' | 'KTD01'..'KTD60' | 'KT01'..'KT46' | 'PLD01'..'PLD22' | 'PL01'..'PL11' | 'CV01'..'CV07' | 'BT01'..'BT08' | 'HWD01'..'HWD15' | 'PS01'..'PS04' | 'CP01'..'CP12' | 'AFD01'..'AFD15' | 'ONS01'..'ONS55' | 'FREE').",
     inputSchema: {
       type: "object",
       properties: {

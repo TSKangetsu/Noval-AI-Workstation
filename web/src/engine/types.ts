@@ -58,6 +58,7 @@ export interface CharacterConfig {
   enable_multi_angle_nsfw: boolean;
   enable_uterus_xray: boolean;
   enable_condom: boolean;
+  enable_solo_spread?: boolean;
   pixiv_bar_censor?: PixivBarCensorMode;
   other_use_scene_outfit?: boolean;
 
@@ -136,6 +137,7 @@ export function createDefaultCharacterConfig(): CharacterConfig {
     enable_multi_angle_nsfw: false,
     enable_uterus_xray: false,
     enable_condom: false,
+    enable_solo_spread: false,
     pixiv_bar_censor: "off",
     other_use_scene_outfit: true,
 

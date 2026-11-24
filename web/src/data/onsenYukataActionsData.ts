@@ -1,5 +1,5 @@
 // NovelAI V4.5 / V5 Japanese Hot-Spring Onsen & Ryokan Yukata Scenes (ONS01-ONS55 · 21. 温泉双人 [32] + 22. 温泉单人 [23])
-// Empirically calibrated across 5 Scene-Bound Onsen Lighting Modes, Chest-Coverage & Geta/Slipper Footwear Hygiene, Sake-Tipsy Mechanics, and 4-Mode Gender Isolation.
+// Empirically calibrated across 5 Scene-Bound Onsen Lighting Modes, Chest-Coverage & Geta/Slipper Footwear Hygiene, Sake-Tipsy Mechanics, Solo Spreading CG Variations (20/23), and 4-Mode Gender Isolation.
 
 export type OnsenActionCategory = "21. 温泉双人" | "22. 温泉单人";
 
@@ -9,6 +9,25 @@ export type OnsenLightMode =
   | "amber_hinoki_steam"
   | "tatami_andon_warm"
   | "lantern_onsen_town_night";
+
+export type OnsenSoloSpreadArchetype =
+  | "one_hand_prop_frontal"
+  | "two_hand_symmetrical"
+  | "rear_lookback_one_hand";
+
+export interface OnsenSoloSpreadSpec {
+  archetype: OnsenSoloSpreadArchetype;
+  spread_outfit_override?: string;
+  spread_femboy_outfit_override?: string;
+  spread_prop_tags: string;
+  spread_female_tags: string;
+  spread_femboy_tags: string;
+  spread_futa_tags: string;
+  spread_prose_suffix: string;
+}
+
+export const ONSEN_SOLO_SPREAD_EXTRA_UC =
+  "covering crotch, covering pussy, hand over crotch, holding own penis, grabbing penis, extra arms, 3 arms";
 
 export const ONSEN_LIGHT_DEFAULTS: Record<
   OnsenLightMode,
@@ -63,6 +82,7 @@ export interface RawOnsenActionEntry {
   category: OnsenActionCategory;
   canvas: "竖图 832x1216" | "横图 1216x832";
   is_solo: boolean;
+  is_precoital_invite: boolean;
   lighting_mode: "sunlit_indoor" | "steamy_glass" | "warm_spot" | "night_neon";
   onsen_light_mode: OnsenLightMode;
   light_badge: string;
@@ -88,6 +108,8 @@ export interface RawOnsenActionEntry {
   prose: string;
   prose_outfit_phrase: string;
   extra_neg: string;
+  solo_spread_spec?: OnsenSoloSpreadSpec;
+  solo_spread_disabled_reason?: string;
 }
 
 export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
@@ -98,6 +120,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "sunlit_indoor",
     "onsen_light_mode": "misty_bamboo_rotenburo",
     "light_badge": "🎋竹林晨雾汤烟",
@@ -121,7 +144,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "1.55::anal::, underwater rear entry in hot spring, 1.4::small penis::",
     "futa_tags": "1.5::vaginal::, underwater rear entry in hot spring, 1.45::ejaculation:: on stone rim",
     "prose": "An adult woman with a small white towel folded on her head and a bath towel wrapped around her chest leans against a wet mossy boulder rim in a misty bamboo open-air hot spring with partner behind her.",
-    "prose_outfit_phrase": "",
+    "prose_outfit_phrase": "with a small white towel folded on her head and a bath towel wrapped around her chest",
     "extra_neg": "indoors, modern bathroom, ceramic tiles, swimsuit, bikini"
   },
   {
@@ -131,6 +154,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "snowy_lantern_rock_bath",
     "light_badge": "❄️雪见石灯夜汤",
@@ -154,7 +178,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "1.55::anal::, underwater straddle in snowy hot spring, 1.4::small penis::",
     "futa_tags": "1.5::vaginal::, underwater straddle in snowy hot spring, 1.45::ejaculation::",
     "prose": "An adult woman wrapped in a white chest towel straddles in a steaming snow-lined outdoor rock hot spring at night, holding a small ceramic sake cup beside a floating wooden sake tray.",
-    "prose_outfit_phrase": "in a white chest towel",
+    "prose_outfit_phrase": "wrapped in a white chest towel",
     "extra_neg": "indoors, daylight, summer, swimsuit, bikini, modern tiles"
   },
   {
@@ -164,6 +188,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "steamy_glass",
     "onsen_light_mode": "amber_hinoki_steam",
     "light_badge": "♨️桧木琥珀暖雾",
@@ -178,16 +203,16 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "is_yuri_showcase": false,
     "builtin_outfit": "adult woman, unwrapped wet white towel, slipped down off torso, exposing wet bare breasts, pink nipples, glistening water droplets on skin, 1.5::bare feet::",
     "femboy_outfit": "unwrapped wet white towel, slipped down off torso, exposing wet flat male chest, glistening water droplets on skin, 1.5::bare feet::",
-    "framing_tags": "cowboy shot, three-quarter frontal-side view, seated on submerged wooden, bench in cypress bath, one wet bare leg raised and, draped over thick hinoki wooden tub rim",
+    "framing_tags": "cowboy shot, three-quarter frontal-side view, seated on submerged wooden bench, in cypress bath, one wet bare leg raised and, draped over thick hinoki wooden tub rim",
     "env_tags": "indoors, traditional Japanese 1.65::hinoki bath:: room, fragrant golden cypress timber tub, shoji window with night bamboo silhouette, steaming clear water",
-    "core_prop_tags": "soaked white small towel floating loose, on the water surface beside her, one hand grips the warm cypress rim",
+    "core_prop_tags": "soaked white small towel floating loose, on the water surface, beside her while one hand, grips warm cypress rim",
     "partner_tags": "wet shirtless faceless male, behind her in the cypress tub, with one hand fondling her wet breast",
     "onsen_expr_tags": "head tilted back against his shoulder, heavy hot-spring blush, half-closed misty eyes, breathless sigh",
     "female_tags": "1.55::vaginal::, leg-up seated entry in cypress tub, 1.45::cum drip:: on wooden rim",
     "femboy_tags": "1.55::anal::, leg-up seated entry in cypress tub, 1.4::small penis::",
     "futa_tags": "1.5::vaginal::, leg-up seated entry in cypress tub, 1.45::ejaculation:: on wooden rim",
     "prose": "An adult woman in a steaming traditional hinoki cypress bathhouse leans back in her partner's embrace with her wet towel slipped loose and one bare leg draped over the thick wooden tub rim.",
-    "prose_outfit_phrase": "",
+    "prose_outfit_phrase": "with her wet towel slipped loose and",
     "extra_neg": "white ceramic tiles, plastic tub, swimsuit, footwear"
   },
   {
@@ -197,6 +222,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "steamy_glass",
     "onsen_light_mode": "amber_hinoki_steam",
     "light_badge": "♨️桧木琥珀暖雾",
@@ -230,6 +256,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "横图 1216x832",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "sunlit_indoor",
     "onsen_light_mode": "misty_bamboo_rotenburo",
     "light_badge": "🎋竹林晨雾汤烟",
@@ -263,6 +290,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -280,13 +308,13 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "framing_tags": "cowboy shot, three-quarter side-frontal view pressed, standing against wooden shoji lattice frame, 1.5::standing sex::, 1.5::from behind::",
     "env_tags": "indoors, traditional Japanese ryokan corridor, and tatami room divider, glowing white 1.65::shoji:: sliding paper door with cedar lattice, polished wooden sill",
     "core_prop_tags": "both palms, bracing carefully, against slender wooden lattice bars trying not, to tear delicate white shoji paper",
-    "partner_tags": "faceless male in open dark ryokan yukata, standing flush behind her, with one hand fondling her breast",
+    "partner_tags": "faceless male in open dark ryokan yukata, standing flush, behind her with, one hand fondling her breast",
     "onsen_expr_tags": "1.55::endurance::, flushed cheeks pressed near wooden frame, teary eyes, stifled gasping mouth",
     "female_tags": "1.55::vaginal::, standing rear entry against shoji frame, 1.45::cum drip:: down inner thigh",
     "femboy_tags": "1.55::anal::, standing rear entry against shoji frame, 1.4::small penis::",
     "futa_tags": "1.5::vaginal::, standing rear entry against shoji frame, 1.45::ejaculation::",
     "prose": "An adult woman in a loosened indigo floral yukata slipped off her shoulders braces both hands carefully on the wooden lattice of a warm-lit shoji paper sliding door with partner behind her.",
-    "prose_outfit_phrase": "in a loosened indigo floral yukata",
+    "prose_outfit_phrase": "in a loosened indigo floral yukata slipped off her shoulders",
     "extra_neg": "western door, glass elevator, modern apartment, shoes"
   },
   {
@@ -296,6 +324,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -319,7 +348,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "1.55::anal::, missionary on tatami futon, 1.4::small penis::",
     "futa_tags": "1.5::vaginal::, missionary on tatami futon, 1.45::ejaculation:: onto yukata sash",
     "prose": "First-person overhead missionary view looking down at an adult woman lying on a crisp white ryokan futon over tatami mats under warm andon lamp light, wearing a navy floral yukata closed over her chest with the lower hem parted open.",
-    "prose_outfit_phrase": "wearing a navy floral yukata",
+    "prose_outfit_phrase": "wearing a navy floral yukata closed over her chest with the lower hem parted open",
     "extra_neg": "western bedframe, mattress springs, shoes, modern bedroom"
   },
   {
@@ -329,6 +358,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -347,12 +377,12 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "env_tags": "indoors, traditional ryokan tatami suite, low dark-red 1.55::kotatsu:: style lacquer tea table, silk zabuton floor cushions, alcove scroll",
     "core_prop_tags": "both hands cradling a ceramic 1.6::teacup:: bowl of green matcha tea above a small wooden plate of pink wagashi sweets trying not to spill",
     "partner_tags": "faceless male, kneeling behind her on the tatami mat, gripping her waist",
-    "onsen_expr_tags": "1.6::endurance::, teary eyes fixed on, quivering green matcha surface, flushed cheeks, bitten lower lip",
+    "onsen_expr_tags": "1.6::endurance::, teary eyes fixed, on quivering green matcha surface, flushed cheeks, bitten lower lip",
     "female_tags": "1.55::vaginal::, kneeling rear entry at low tea table, 1.45::cum drip::",
     "femboy_tags": "1.55::anal::, kneeling rear entry at low tea table, 1.4::small penis::",
     "futa_tags": "1.5::vaginal::, kneeling rear entry at low tea table, 1.45::ejaculation:: onto zabuton cushion",
     "prose": "Barefoot on tatami mats in a pastel-green floral yukata closed over her chest, kneeling over a low lacquer ryokan table cradling a ceramic bowl of green matcha tea while back hem is lifted.",
-    "prose_outfit_phrase": "in a pastel-green floral yukata",
+    "prose_outfit_phrase": "in a pastel-green floral yukata closed over her chest",
     "extra_neg": "modern dining chair, western table, shoes, footwear"
   },
   {
@@ -362,6 +392,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -395,6 +426,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -418,7 +450,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "1.55::anal::, on ryokan tatami futon, 1.4::small penis::",
     "futa_tags": "1.5::vaginal::, on ryokan tatami futon, 1.45::ejaculation::",
     "prose": "Two girls in contrasting navy and sakura-pink floral yukata with intact collars covering their chests sit side-by-side on a white futon in a warm tatami room; the first girl holds a sweet three-color dango skewer to the short-haired girl's lips while the short-haired girl reaches one hand across beneath her parted navy yukata hem.",
-    "prose_outfit_phrase": "",
+    "prose_outfit_phrase": "in contrasting navy and sakura-pink floral yukata with intact collars covering their chests|beneath her parted navy yukata hem",
     "extra_neg": "western bed, scissoring, extra arms, 5 arms, 3 arms, fused arms, extra legs, 5 legs, shoes"
   },
   {
@@ -428,6 +460,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": false,
     "lighting_mode": "steamy_glass",
     "onsen_light_mode": "amber_hinoki_steam",
     "light_badge": "♨️桧木琥珀暖雾",
@@ -451,8 +484,9 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "1.6::after sex::, 1.6::after anal::, 1.52::cumdrip::, 1.48::cum on legs::, glistening white streams flowing vertically downward, along bare inner thighs",
     "futa_tags": "1.6::after sex::, 1.52::cumdrip::, 1.48::cum on legs::, glistening white streams flowing vertically downward, along bare inner thighs",
     "prose": "Low-angle head-to-toe rear-side view of an adult woman standing barefoot on woven rattan flooring beside a bamboo clothes basket in a warm onsen changing room, tying the red sash of her intact short pink floral bath yukata while white streams trace vertically down her bare inner thighs.",
-    "prose_outfit_phrase": "",
-    "extra_neg": "cropped head, out of frame, torn clothes, split back seam, modern locker, shoes, socks, sideways cum string, horizontal string"
+    "prose_outfit_phrase": "tying the red sash of her intact short pink floral bath yukata",
+    "extra_neg": "cropped head, out of frame, torn clothes, split back seam, modern locker, shoes, socks, sideways cum string, horizontal string",
+    "solo_spread_disabled_reason": "当前动作（ONS11 脱衣所站立背影系腰封）为背侧站立且双手系带遮挡下身焦点，不适用掰开差分"
   },
   {
     "id": "ONS12",
@@ -461,6 +495,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": false,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "lantern_onsen_town_night",
     "light_badge": "🏮夜街提灯回廊",
@@ -484,8 +519,16 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "1.6::after sex::, 1.6::after anal::, 1.5::cumdrip::, 1.48::cum on legs::, glistening white streams tracing, vertically down inner thighs",
     "futa_tags": "1.6::after sex::, 1.5::cumdrip::, 1.48::cum on legs::, glistening white streams tracing, vertically down inner thighs",
     "prose": "Low-angle view of an adult woman seated on a lantern-lit ryokan wooden veranda soaking her bare feet in a steaming stone footbath with her light-blue floral yukata gathered at her knees, holding a retro glass bottle of cold milk while white traces glisten down her inner thighs.",
-    "prose_outfit_phrase": "in a steaming stone footbath with her light-blue floral yukata",
-    "extra_neg": "indoors, plastic bottle, soda can, shoes, socks, sideways cum string, horizontal string"
+    "prose_outfit_phrase": "with her light-blue floral yukata gathered at her knees",
+    "extra_neg": "indoors, plastic bottle, soda can, shoes, socks, sideways cum string, horizontal string",
+    "solo_spread_spec": {
+      "archetype": "one_hand_prop_frontal",
+      "spread_prop_tags": "right hand holding a retro cold glass 1.65::milk bottle:: near her lips while left hand reaches between parted knees with fingers gently spreading",
+      "spread_female_tags": "1.6::after sex::, 1.35::labia::, 1.25::spread pussy::, 1.55::spreading own pussy::, fingers, 1.5::cum in pussy::, 1.5::cumdrip:: down inner thighs",
+      "spread_femboy_tags": "1.6::after sex::, 1.6::after anal::, 1.4::small penis::, 1.45::spread anus::, 1.45::spreading own ass::, fingers, 1.5::cumdrip::",
+      "spread_futa_tags": "1.6::after sex::, 1.4::small penis::, 1.35::labia::, 1.25::spread pussy::, 1.5::spreading own pussy::, fingers, 1.5::cumdrip::",
+      "spread_prose_suffix": " while her free left hand reaches between her thighs to spread open with her fingers."
+    }
   },
   {
     "id": "ONS13",
@@ -494,6 +537,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": false,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "snowy_lantern_rock_bath",
     "light_badge": "❄️雪见石灯夜汤",
@@ -518,7 +562,15 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "futa_tags": "1.6::after sex::, 1.4::small penis:: visible under clear water, delicate white wisps along inner thighs",
     "prose": "An adult woman with a folded white towel on her head and a wet white towel wrapped around her chest reclines solo on a shallow stone bench in a snow-lined lantern-lit outdoor hot spring, rosy-cheeked with faint white traces drifting along her inner thighs in the clear water.",
     "prose_outfit_phrase": "with a folded white towel on her head and a wet white towel wrapped around her chest",
-    "extra_neg": "indoors, daylight, swimsuit, bikini, modern tiles, swimming pool"
+    "extra_neg": "indoors, daylight, swimsuit, bikini, modern tiles, swimming pool",
+    "solo_spread_spec": {
+      "archetype": "two_hand_symmetrical",
+      "spread_prop_tags": "small folded white cotton 1.55::towel on head:: resting on her head while both wet hands reach down between parted thighs in crystal-clear shallow water",
+      "spread_female_tags": "1.6::after sex::, 1.35::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, both hands fingers, 1.5::cum in pussy::, white wisps in clear water",
+      "spread_femboy_tags": "1.6::after sex::, 1.6::after anal::, 1.4::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers in clear water",
+      "spread_futa_tags": "1.6::after sex::, 1.4::small penis::, 1.35::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers in clear water",
+      "spread_prose_suffix": " while reaching both wet hands between her thighs in the shallow clear water to spread open with her fingers."
+    }
   },
   {
     "id": "ONS14",
@@ -527,6 +579,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": false,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "lantern_onsen_town_night",
     "light_badge": "🏮夜街提灯回廊",
@@ -540,18 +593,19 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "is_outdoor_onsen": true,
     "is_yuri_showcase": false,
     "builtin_outfit": "adult woman, intact knee-length crimson floral summer 1.6::yukata:: dress closed neatly over chest and back with gold obi sash, intact back fabric covering hips, bare calves and inner thighs visible, from below, as she steps up, wooden 1.55::geta:: sandals",
-    "femboy_outfit": "intact knee-length crimson floral summer 1.6::yukata:: dress closed neatly over chest and back with gold obi sash, intact back fabric covering hips, bare calves and inner thighs visible, from below, as she steps up, wooden 1.55::geta:: sandals",
+    "femboy_outfit": "intact knee-length crimson floral summer 1.6::yukata:: dress closed neatly over chest and back with gold obi sash, intact back fabric covering hips, bare calves and inner thighs visible, from below, as he steps up, wooden 1.55::geta:: sandals",
     "framing_tags": "full body, 1.7::from below::, steep low-angle upward rear-side view, from lower steps, watching her walk naturally up stone steps, one foot stepping onto upper step",
     "env_tags": "outdoors, atmospheric traditional Japanese 1.6::onsen town:: stone staircase lane at night, wooden ryokan facades, glowing paper lanterns",
     "core_prop_tags": "right hand swinging a small woven 1.55::bamboo basket:: bath tote while left hand holds a round paper 1.5::uchiwa:: fan casually at her side",
     "partner_tags": "",
-    "onsen_expr_tags": "head turned slightly in, profile admiring lantern lights, carefree happy evening smile, soft rosy cheeks",
+    "onsen_expr_tags": "head turned slightly, in profile admiring lantern lights, carefree happy evening smile, soft rosy cheeks",
     "female_tags": "1.6::after sex::, 1.52::cumdrip::, 1.48::cum on legs::, glistening white streams flowing straight vertically downward, along bare inner thighs",
     "femboy_tags": "1.6::after sex::, 1.6::after anal::, 1.52::cumdrip::, 1.48::cum on legs::, glistening white streams flowing vertically downward, along bare inner thighs",
     "futa_tags": "1.6::after sex::, 1.52::cumdrip::, 1.48::cum on legs::, glistening white streams flowing vertically downward, along bare inner thighs",
     "prose": "Steep low-angle upward rear-side view from lower stone steps as an adult woman walks carefree up a lantern-lit hot-spring town staircase in wooden geta sandals and an intact knee-length crimson floral yukata, carrying a bamboo bath basket and paper fan while white streams trace vertically down her inner thighs.",
     "prose_outfit_phrase": "in wooden geta sandals and an intact knee-length crimson floral yukata",
-    "extra_neg": "indoors, bare buttocks, cutout back, open back, daylight, cars, sneakers, socks, sideways cum string, horizontal string"
+    "extra_neg": "indoors, bare buttocks, cutout back, open back, daylight, cars, sneakers, socks, sideways cum string, horizontal string",
+    "solo_spread_disabled_reason": "当前动作（ONS14 红灯笼石阶迈步漫步）处于木屐拾级行走步态且双手持物，不适用掰开差分"
   },
   {
     "id": "ONS15",
@@ -560,6 +614,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -576,15 +631,16 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_outfit": "lavender wisteria-patterned cotton 1.6::yukata:: with collar closed over chest and loosely tied purple obi, lower yukata hem, parted open on floor cushion, over wide-spread bare knees, 1.5::bare feet:: resting on tatami",
     "framing_tags": "full body, 1.65::from below::, low-angle upward frontal-three-quarter view, seated directly on flat purple silk cushion, on tatami mat floor, 1.7::spread legs::, thighs parted wide open",
     "env_tags": "indoors, traditional Japanese ryokan woven 1.6::tatami:: mat floor, flat purple silk 1.6::zabuton:: floor cushion directly on tatami, tissue box and lacquer comb case placed, beside her on tatami mat, shoji screen behind",
-    "core_prop_tags": "left hand, holding wooden tsuge comb near damp hair, right hand reaches down, between wide-parted thighs pressing crumpled white, paper tissue to wipe inner thigh",
+    "core_prop_tags": "left hand, holding wooden tsuge comb near damp hair, right hand reaches down, between wide-parted thighs pressing crumpled, white paper tissue to wipe inner thigh",
     "partner_tags": "",
     "onsen_expr_tags": "flustered shy blush, misty eyes, looking down at her wiping hand, lightly bitten lip",
     "female_tags": "1.65::after sex::, 1.6::cumdrip::, 1.55::cum string::, sticky white strings stretching, between crumpled tissue and, glistening bare inner thighs",
     "femboy_tags": "1.65::after sex::, 1.6::after anal::, 1.4::small penis::, 1.6::cumdrip::, 1.55::cum string:: between tissue and inner thighs",
     "futa_tags": "1.65::after sex::, 1.4::small penis::, 1.6::cumdrip::, 1.55::cum string:: between tissue and inner thighs",
     "prose": "Low-angle upward view of an adult woman sitting barefoot directly on a purple silk zabuton cushion on woven ryokan tatami mats with legs spread wide open, wearing a lavender yukata closed over her chest while wiping sticky white strings between her inner thighs with a paper tissue.",
-    "prose_outfit_phrase": "wearing a lavender yukata",
-    "extra_neg": "table, desk, bench, wooden stool, sitting on table, western chair, shoes, socks, pants"
+    "prose_outfit_phrase": "wearing a lavender yukata closed over her chest",
+    "extra_neg": "table, desk, bench, wooden stool, sitting on table, western chair, shoes, socks, pants",
+    "solo_spread_disabled_reason": "当前动作（ONS15 和室坐垫纸巾擦拭）右手已在腿间执行纸巾擦拭核心动作，不适用掰开差分"
   },
   {
     "id": "ONS16",
@@ -593,6 +649,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "lantern_onsen_town_night",
     "light_badge": "🏮夜街提灯回廊",
@@ -610,13 +667,13 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "framing_tags": "cowboy shot, three-quarter side-frontal view pressed, standing against traditional wooden window, sill and vertical lattice bars, 1.5::standing sex::, 1.5::from behind::",
     "env_tags": "indoors, traditional Japanese ryokan second-floor corridor window, half-open cedar 1.6::wooden lattice:: renji-mado window overlooking night lantern courtyard, polished wood sill",
     "core_prop_tags": "both hands, gripping smooth cedar window sill, and vertical wooden lattice bars, biting her lip to stay quiet, above the courtyard",
-    "partner_tags": "faceless male in dark open ryokan yukata, standing flush behind her, with one hand fondling her bare breast",
+    "partner_tags": "faceless male in dark open ryokan yukata, standing flush, behind her with one hand, fondling her bare breast",
     "onsen_expr_tags": "1.6::endurance::, flushed cheeks, misty teary eyes, glancing anxiously past wooden lattice, stifled trembling lips",
     "female_tags": "1.55::vaginal::, standing rear entry against wooden lattice window, 1.5::cum drip:: down inner thigh",
     "femboy_tags": "1.55::anal::, standing rear entry against wooden lattice window, 1.4::small penis::",
     "futa_tags": "1.5::vaginal::, standing rear entry against wooden lattice window, 1.45::ejaculation::",
     "prose": "An adult woman in a loosened crimson floral yukata slipped off her shoulders grips the cedar sill and vertical bars of a ryokan wooden lattice window overlooking a lantern-lit night courtyard with partner behind her.",
-    "prose_outfit_phrase": "in a loosened crimson floral yukata",
+    "prose_outfit_phrase": "in a loosened crimson floral yukata slipped off her shoulders",
     "extra_neg": "modern glass skyscraper, aluminum window frame, curtains, shoes"
   },
   {
@@ -626,6 +683,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "steamy_glass",
     "onsen_light_mode": "amber_hinoki_steam",
     "light_badge": "♨️桧木琥珀暖雾",
@@ -649,7 +707,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "1.55::anal::, standing rear entry at noren doorway, 1.4::small penis::",
     "futa_tags": "1.5::vaginal::, standing rear entry at noren doorway, 1.45::ejaculation::",
     "prose": "An adult woman in a loosened teal floral yukata slipped off her shoulders braces against a cedar doorway pillar beside an indigo bathhouse noren curtain amidst warm steam with partner pressing behind her.",
-    "prose_outfit_phrase": "in a loosened teal floral yukata",
+    "prose_outfit_phrase": "in a loosened teal floral yukata slipped off her shoulders",
     "extra_neg": "western hinged door, metal doorknob, modern tiles, shoes"
   },
   {
@@ -659,6 +717,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": false,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "lantern_onsen_town_night",
     "light_badge": "🏮夜街提灯回廊",
@@ -673,7 +732,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "is_yuri_showcase": false,
     "builtin_outfit": "adult woman, light-blue hydrangea-patterned cotton 1.6::yukata:: with intact modest collar covering front chest and yellow obi sash, lower yukata hem pushed all way up, above waist, exposing wide-spread bare thighs, 1.5::bare feet::",
     "femboy_outfit": "light-blue hydrangea-patterned cotton 1.6::yukata:: with intact modest collar covering front chest and yellow obi sash, lower yukata hem pushed all way up, above waist, exposing wide-spread bare thighs, 1.5::bare feet::",
-    "framing_tags": "full body, 1.65::from below::, frontal low-angle upward view, leaning back on both hands, on wooden veranda edge, 1.75::spread legs::, 1.6::m legs::, knees bent and thighs spread wide open, toward viewer",
+    "framing_tags": "full body, 1.65::from below::, frontal low-angle upward view, leaning back on both hands, on wooden veranda edge, 1.75::spread legs::, 1.6::m legs::, knees bent and thighs spread, wide open toward viewer",
     "env_tags": "semi-outdoors, traditional ryokan wooden 1.55::engawa:: veranda at night, steaming stone-rimmed 1.6::ashiyu:: footbath below with bare heels resting on wet stone rim, glowing paper lantern",
     "core_prop_tags": "both palms bracing behind hips on the polished wooden veranda floor while an opened retro glass 1.6::milk bottle:: and paper cap sit right beside her hip",
     "partner_tags": "",
@@ -682,8 +741,16 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "1.65::after sex::, 1.6::after anal::, 1.4::small penis::, 1.6::cumdrip::, glistening white streams down inner thighs",
     "futa_tags": "1.65::after sex::, 1.4::small penis::, 1.6::cumdrip::, glistening white streams down inner thighs",
     "prose": "Frontal low-angle view of an adult woman leaning back on her hands on a lantern-lit ryokan wooden veranda beside a glass bottle of milk, wearing a light-blue floral yukata closed over her chest with her legs spread wide open in an M-pose above a steaming stone footbath while white streams trickle down her inner thighs.",
-    "prose_outfit_phrase": "wearing a light-blue floral yukata",
-    "extra_neg": "indoors, shoes, socks, pants, plastic bottle, western chair"
+    "prose_outfit_phrase": "wearing a light-blue floral yukata closed over her chest",
+    "extra_neg": "indoors, shoes, socks, pants, plastic bottle, western chair",
+    "solo_spread_spec": {
+      "archetype": "two_hand_symmetrical",
+      "spread_prop_tags": "back leaning against cedar veranda post beside an opened retro glass 1.6::milk bottle:: while both hands reach down between wide M-spread thighs",
+      "spread_female_tags": "1.65::after sex::, 1.4::labia::, 1.35::spread pussy::, 1.6::spreading own pussy::, both hands fingers, 1.55::cum in pussy::, 1.55::cumdrip::",
+      "spread_femboy_tags": "1.65::after sex::, 1.6::after anal::, 1.4::small penis::, 1.5::spread anus::, 1.55::spreading own ass::, both hands fingers, 1.55::cumdrip::",
+      "spread_futa_tags": "1.65::after sex::, 1.4::small penis::, 1.4::labia::, 1.35::spread pussy::, 1.55::spreading own pussy::, fingers, 1.55::cumdrip::",
+      "spread_prose_suffix": " while using both hands between her wide-spread knees to pull open and display."
+    }
   },
   {
     "id": "ONS19",
@@ -692,6 +759,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": false,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "lantern_onsen_town_night",
     "light_badge": "🏮夜街提灯回廊",
@@ -715,8 +783,18 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "1.65::after sex::, 1.6::after anal::, 1.4::small penis::, 1.6::cumdrip::, white streams down inner thighs",
     "futa_tags": "1.65::after sex::, 1.4::small penis::, 1.6::cumdrip::, white streams down inner thighs",
     "prose": "Low-angle frontal view of an adult woman squatting wide-legged with bare feet in a steaming stone footbath along a lantern-lit ryokan veranda, pressing a cold glass bottle of milk to her flushed cheek while holding up her blue floral yukata hem to reveal white streams down her inner thighs.",
-    "prose_outfit_phrase": "",
-    "extra_neg": "indoors, shoes, socks, sneakers, plastic bottle, pants"
+    "prose_outfit_phrase": "while holding up her blue floral yukata hem",
+    "extra_neg": "indoors, shoes, socks, sneakers, plastic bottle, pants",
+    "solo_spread_spec": {
+      "archetype": "one_hand_prop_frontal",
+      "spread_outfit_override": "adult woman, light-blue hydrangea-patterned cotton 1.6::yukata:: with intact modest collar covering chest and lower hem tucked neatly into yellow obi sash exposing bare thighs, 1.5::bare feet::",
+      "spread_femboy_outfit_override": "light-blue hydrangea-patterned cotton 1.6::yukata:: with intact modest collar covering chest and lower hem tucked neatly into yellow obi sash exposing bare thighs, 1.5::bare feet::",
+      "spread_prop_tags": "right hand pressing a cold retro glass 1.65::milk bottle:: against her flushed cheek while left hand reaches down between wide-squatting thighs to spread",
+      "spread_female_tags": "1.65::after sex::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.55::cum in pussy::, 1.55::cumdrip::",
+      "spread_femboy_tags": "1.65::after sex::, 1.6::after anal::, 1.4::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, 1.55::cumdrip::",
+      "spread_futa_tags": "1.65::after sex::, 1.4::small penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers, 1.55::cumdrip::",
+      "spread_prose_suffix": " while her free left hand reaches down between her squatting thighs to spread open with her fingers."
+    }
   },
   {
     "id": "ONS20",
@@ -725,6 +803,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -737,8 +816,8 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "allow_wall_mirror": false,
     "is_outdoor_onsen": false,
     "is_yuri_showcase": false,
-    "builtin_outfit": "adult woman, disheveled indigo floral 1.6::yukata:: from earlier with red obi sash untied and collar slipped loosely off one shoulder exposing bare breasts and pink nipples, lower yukata skirts fallen completely open, on tatami, 1.5::bare feet::",
-    "femboy_outfit": "disheveled indigo floral 1.6::yukata:: from earlier with red obi sash untied and collar slipped loosely off one shoulder exposing flat male chest, lower yukata skirts fallen completely open, on tatami, 1.5::bare feet::",
+    "builtin_outfit": "adult woman, disheveled indigo floral 1.6::yukata:: from earlier with red obi sash untied and collar slipped loosely off one shoulder exposing bare breasts and pink nipples, lower yukata skirts fallen, completely open on tatami, 1.5::bare feet::",
+    "femboy_outfit": "disheveled indigo floral 1.6::yukata:: from earlier with red obi sash untied and collar slipped loosely off one shoulder exposing flat male chest, lower yukata skirts fallen, completely open on tatami, 1.5::bare feet::",
     "framing_tags": "full body, high-clarity three-quarter frontal low-angle view slumped exhausted, on tatami floor with back, leaning limp, against lower wooden frame, of shoji sliding door, 1.75::spread legs::, limp W-sitting and wide-splayed thighs",
     "env_tags": "indoors, traditional Japanese ryokan woven 1.6::tatami:: mat floor right beside glowing white 1.65::shoji:: sliding paper door, loosened red obi ribbon trailing on tatami",
     "core_prop_tags": "both arms, resting limp and powerless at her sides, with open palms on woven tatami mat, chest heaving softly",
@@ -749,7 +828,15 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "futa_tags": "1.7::after sex::, 1.4::small penis::, 1.65::cum overflow::, 1.6::cumdrip:: onto tatami mat between wide-splayed thighs",
     "prose": "An adult woman in a disheveled loosened indigo floral yukata slumps exhausted directly on woven ryokan tatami mats leaning her back against a warm-lit shoji sliding paper door, her legs splayed wide open as glossy white fluid overflows onto the tatami.",
     "prose_outfit_phrase": "in a disheveled loosened indigo floral yukata",
-    "extra_neg": "table, chair, bedframe, shoes, socks, standing"
+    "extra_neg": "table, chair, bedframe, shoes, socks, standing",
+    "solo_spread_spec": {
+      "archetype": "two_hand_symmetrical",
+      "spread_prop_tags": "both trembling hands reaching inward, between wide-splayed thighs on woven tatami mat, to spread open in dazed display",
+      "spread_female_tags": "1.7::after sex::, 1.65::after vaginal::, 1.4::labia::, 1.35::spread pussy::, 1.6::spreading own pussy::, fingers, 1.65::cum overflow::, 1.6::cum in pussy::",
+      "spread_femboy_tags": "1.7::after sex::, 1.65::after anal::, 1.4::small penis::, 1.5::spread anus::, 1.55::spreading own ass::, fingers, 1.65::cum overflow::",
+      "spread_futa_tags": "1.7::after sex::, 1.4::small penis::, 1.4::labia::, 1.35::spread pussy::, 1.55::spreading own pussy::, fingers, 1.65::cum overflow::",
+      "spread_prose_suffix": " while reaching both trembling hands between her wide-splayed thighs to spread open."
+    }
   },
   {
     "id": "ONS21",
@@ -758,6 +845,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -775,7 +863,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "framing_tags": "cowboy shot, three-quarter frontal view straddling partner's lap, beside low banquet table, 1.55::girl on top::, 1.55::straddling::, thighs parted across his lap",
     "env_tags": "indoors, traditional Japanese ryokan tatami room, low lacquer banquet table with white ceramic 1.6::tokkuri:: sake carafe and small side dishes, silk zabuton cushions",
     "core_prop_tags": "right hand lightly raising a tiny porcelain 1.6::ochoko:: sake cup with a playful tipsy tilt while left hand rests on partner's shoulder for balance",
-    "partner_tags": "short-haired faceless male in dark ryokan yukata, seated on zabuton cushion beneath her, gripping her hips",
+    "partner_tags": "short-haired faceless male in dark ryokan yukata, seated on zabuton cushion, beneath her gripping her hips",
     "onsen_expr_tags": "1.65::drunk::, sweet warm sake tipsy crimson blush, across cheeks and ears, dreamy 1.55::half-closed eyes::, soft intoxicated smile with parted lips",
     "female_tags": "1.55::vaginal::, cowgirl lap straddle on tatami, 1.5::cum overflow::",
     "femboy_tags": "1.55::anal::, cowgirl lap straddle on tatami, 1.4::small penis::",
@@ -791,10 +879,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "lantern_onsen_town_night",
     "light_badge": "🏮夜街提灯回廊",
-    "light_tags": "silver full moonlight mingling, with warm amber paper lantern glow, on wooden balcony, misty night valley below",
+    "light_tags": "silver full moonlight mingling with, warm amber paper lantern glow, on wooden balcony, misty night valley below",
     "light_prose": "",
     "barefoot": true,
     "is_foot_focus": true,
@@ -808,7 +897,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "framing_tags": "cowboy shot, three-quarter side-rear view, leaning forearms on wooden balcony railing, 1.5::standing sex::, 1.5::from behind::",
     "env_tags": "semi-outdoors, traditional luxury ryokan wooden moon-viewing balcony, overlooking misty hot-spring village lights, glowing chochin lantern, full moon in night sky",
     "core_prop_tags": "one hand cradling a cut-glass tumbler of amber 1.6::plum wine:: on the rocks with a round green plum on the cedar railing while other hand grips the railing",
-    "partner_tags": "faceless male in open, ryokan haori and yukata, standing flush behind her at balcony railing",
+    "partner_tags": "faceless male, in open ryokan haori and yukata, standing flush behind her at balcony railing",
     "onsen_expr_tags": "1.65::drunk::, warm tipsy rosy blush, against cool night breeze, hazy 1.55::half-closed eyes:: glancing back, soft tipsy sigh",
     "female_tags": "1.55::vaginal::, standing rear entry at moonlit railing, 1.5::cum drip:: down inner thigh",
     "femboy_tags": "1.55::anal::, standing rear entry at moonlit railing, 1.4::small penis::",
@@ -824,6 +913,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "sunlit_indoor",
     "onsen_light_mode": "misty_bamboo_rotenburo",
     "light_badge": "🎋竹林晨雾汤烟",
@@ -841,7 +931,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "framing_tags": "cowboy shot, three-quarter frontal view, leaning back limp and tipsy, against partner's chest in steaming bath, thighs parted under clear shallow waterline",
     "env_tags": "outdoors, natural rock open-air 1.65::onsen:: rotenburo, mossy stones, white ceramic sake flask, resting on flat poolside rock, rising white steam",
     "core_prop_tags": "one hand holding a traditional square cedar 1.6::masu:: wooden sake box cup near her chest while her other arm hooks lazily back around partner's neck",
-    "partner_tags": "wet shirtless faceless male, seated on submerged rock behind her, supporting her waist underwater",
+    "partner_tags": "wet shirtless faceless male, seated on submerged rock, behind her supporting her waist underwater",
     "onsen_expr_tags": "1.65::drunk::, deep hot-spring, warm-sake scarlet flush from cheeks to collarbones, dreamy 1.55::half-closed eyes::, relaxed intoxicated smile",
     "female_tags": "1.55::vaginal::, underwater seated embrace, rippling hot-spring water refraction around parted thighs",
     "femboy_tags": "1.55::anal::, underwater seated embrace in hot spring, 1.4::small penis::",
@@ -857,6 +947,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -873,8 +964,8 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_outfit": "cream floral 1.6::yukata:: with intact modest collar covering chest and green obi, lower yukata hem parted open along thighs, 1.5::bare feet::",
     "framing_tags": "full body side-three-quarter view lying sideways, on tatami beside raised kotatsu quilt, 1.6::spooning::, upper leg lifted comfortably",
     "env_tags": "indoors, cozy winter Japanese ryokan tatami room, wooden 1.65::kotatsu:: table with thick red-patterned quilt half-lifted aside, ceramic sake warmer and, mandarin oranges on tabletop",
-    "core_prop_tags": "one hand resting on tatami lightly, holding empty white ceramic, sake cup by rim, warm quilt drapes over the table edge",
-    "partner_tags": "short-haired faceless male lying sideways behind her, on the tatami mat beside the kotatsu, holding her hip",
+    "core_prop_tags": "one hand resting on tatami lightly, holding empty, white ceramic sake cup by rim, warm quilt drapes over the table edge",
+    "partner_tags": "short-haired faceless male lying sideways, behind her on tatami mat beside kotatsu, holding her hip",
     "onsen_expr_tags": "1.65::drunk::, sleepy warm sake blush, misty 1.55::half-closed eyes::, soft warm breath and contented tipsy expression",
     "female_tags": "1.55::vaginal::, sideways spooning beside kotatsu, 1.5::cum drip:: onto tatami",
     "femboy_tags": "1.55::anal::, sideways spooning beside kotatsu, 1.4::small penis::",
@@ -890,6 +981,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -923,6 +1015,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": true,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -946,8 +1039,16 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "1.55::spread legs::, parted yukata hem exposing 1.45::small penis::, 1.4::erect penis::, seductive bedtime invitation",
     "futa_tags": "1.55::spread legs::, parted yukata hem exposing 1.45::erect penis::, glistens with arousal, seductive bedtime invitation",
     "prose": "First-person POV of a warmly tipsy adult woman reclining on a white ryokan futon beside a sake tray, rosy-cheeked with dreamy half-closed eyes as she lifts the corner of the quilt and beckons the viewer to join her while her pink floral yukata parts over her thighs.",
-    "prose_outfit_phrase": "",
-    "extra_neg": "western bedframe, shoes, socks, pants"
+    "prose_outfit_phrase": "while her pink floral yukata parts over her thighs",
+    "extra_neg": "western bedframe, shoes, socks, pants",
+    "solo_spread_spec": {
+      "archetype": "one_hand_prop_frontal",
+      "spread_prop_tags": "left hand lifting open the corner of the fluffy white futon 1.55::blanket:: while right hand reaches down between parted thighs spreading with fingers",
+      "spread_female_tags": "1.55::spread legs::, 1.4::labia::, 1.25::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::, seductive bedtime invitation",
+      "spread_femboy_tags": "1.55::spread legs::, 1.45::small penis::, 1.4::erect penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, seductive bedtime invitation",
+      "spread_futa_tags": "1.55::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.25::spread pussy::, 1.55::spreading own pussy::, fingers, seductive bedtime invitation",
+      "spread_prose_suffix": " while sliding her other hand down between her thighs to spread open in an explicit bedtime invitation."
+    }
   },
   {
     "id": "ONS27",
@@ -956,6 +1057,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": true,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "lantern_onsen_town_night",
     "light_badge": "🏮夜街提灯回廊",
@@ -970,7 +1072,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "is_yuri_showcase": false,
     "builtin_outfit": "adult woman, soaked clinging white cotton bath 1.55::towel:: wrapped securely across front chest with lower towel edge lifted open in shallow clear water, rosy steamed skin, 1.5::bare feet::",
     "femboy_outfit": "soaked clinging white cotton bath 1.55::towel:: wrapped securely across front chest with lower towel edge lifted open in shallow clear water, rosy steamed skin, 1.5::bare feet::",
-    "framing_tags": "full body, 1.55::pov::, low three-quarter frontal view, seated on wet wooden step at, edge of private outdoor bath, 1.65::spread legs:: under shallow clear waterline, leaning slightly toward viewer",
+    "framing_tags": "full body, 1.55::pov::, low three-quarter frontal view, seated on wet wooden step, at edge of private outdoor bath, 1.65::spread legs:: under shallow clear waterline, leaning slightly toward viewer",
     "env_tags": "semi-outdoors, secluded luxury ryokan private stone-and-cypress 1.65::onsen:: bath at night, wooden floating sake tray, with carafe and two cups nearby, bamboo fence",
     "core_prop_tags": "right hand extended forward toward viewer in a teasing 1.6::beckoning:: come-hither gesture with wet fingertips while left hand rests on warm stone rim",
     "partner_tags": "",
@@ -980,7 +1082,15 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "futa_tags": "parted thighs visible through crystal-clear shallow hot-spring water exposing 1.45::erect penis::, inviting viewer into bath",
     "prose": "First-person POV at the edge of a lantern-lit private open-air hot spring beside a floating sake tray, where a rosy tipsy adult woman in a chest-wrapped white bath towel sits on the shallow step with parted thighs and extends one wet hand beckoning the viewer into the water.",
     "prose_outfit_phrase": "in a chest-wrapped white bath towel",
-    "extra_neg": "indoors, modern bathroom, ceramic tiles, swimsuit, bikini, shoes"
+    "extra_neg": "indoors, modern bathroom, ceramic tiles, swimsuit, bikini, shoes",
+    "solo_spread_spec": {
+      "archetype": "one_hand_prop_frontal",
+      "spread_prop_tags": "right hand extended forward in a teasing 1.55::beckoning:: gesture while left wet hand reaches between parted thighs at shallow waterline spreading with fingers",
+      "spread_female_tags": "1.4::labia::, 1.25::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.45::pussy juice:: visible at shallow clear waterline",
+      "spread_femboy_tags": "1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers visible at shallow clear waterline",
+      "spread_futa_tags": "1.45::erect penis::, 1.4::labia::, 1.25::spread pussy::, 1.55::spreading own pussy::, fingers visible at shallow clear waterline",
+      "spread_prose_suffix": " while her other wet hand reaches between her thighs at the clear waterline to spread open."
+    }
   },
   {
     "id": "ONS28",
@@ -989,6 +1099,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "lantern_onsen_town_night",
     "light_badge": "🏮夜街提灯回廊",
@@ -1006,7 +1117,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "framing_tags": "full body three-quarter frontal view, seated sideways, across partner's lap on traditional bamboo bench, 1.55::sitting on lap::, 1.5::straddling::, bare legs raised",
     "env_tags": "semi-outdoors, traditional Japanese ryokan garden veranda, woven red-cloth-topped 1.6::wooden bench:: cooling platform, frosted green glass 1.55::sake bottle:: in wooden ice bucket beside them",
     "core_prop_tags": "one hand, holding a chilled cut-bamboo sake cup, with water droplets, her other arm drapes lazily, over partner's shoulder",
-    "partner_tags": "short-haired faceless male in dark ryokan yukata, seated on the bench beneath her, holding her waist",
+    "partner_tags": "short-haired faceless male in dark ryokan yukata, seated on the bench, beneath her holding her waist",
     "onsen_expr_tags": "1.65::drunk::, sweet chilled-sake tipsy blush, dreamy 1.55::half-closed eyes::, relaxed affectionate tipsy smile",
     "female_tags": "1.55::vaginal::, sideways lap straddle on garden bench, 1.5::cum drip:: down thigh",
     "femboy_tags": "1.55::anal::, sideways lap straddle on garden bench, 1.4::small penis::",
@@ -1022,6 +1133,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "steamy_glass",
     "onsen_light_mode": "amber_hinoki_steam",
     "light_badge": "♨️桧木琥珀暖雾",
@@ -1039,7 +1151,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "framing_tags": "cowboy shot, three-quarter frontal-side view, leaning back against partner, inside a deep round wooden barrel tub, knees parted under clear water",
     "env_tags": "indoors, traditional Japanese ryokan private bath, round copper-hooped 1.65::wooden bathtub:: taru-buro made of golden cypress, pink cherry-blossom petals floating, on clear steaming water",
     "core_prop_tags": "right hand raised clearly above water holding a shallow red-lacquer 1.6::sakazuki:: sake saucer with a floating sakura petal near her lips while left hand grips the dry wooden barrel rim",
-    "partner_tags": "short-haired wet shirtless faceless male, seated behind her, inside round wooden tub embracing her waist",
+    "partner_tags": "short-haired wet shirtless faceless male, seated behind her inside round, wooden tub embracing her waist",
     "onsen_expr_tags": "1.65::drunk::, lush scarlet sake-and-steam blush, hazy 1.55::half-closed eyes::, soft intoxicated sigh over red sake saucer",
     "female_tags": "1.55::vaginal::, underwater seated entry in round wooden tub, rippling sakura petals",
     "femboy_tags": "1.55::anal::, underwater seated entry in round wooden tub, 1.4::small penis::",
@@ -1055,6 +1167,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -1078,7 +1191,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "1.55::anal::, kneeling rear entry on tatami mat, 1.4::small penis::",
     "futa_tags": "1.5::vaginal::, kneeling rear entry on tatami mat, 1.45::ejaculation:: onto tatami",
     "prose": "Kneeling barefoot on ryokan tatami mats before a black-lacquer sake tray in an apricot floral yukata closed over her chest, a rosy tipsy adult woman tries to steady a white porcelain flask pouring warm sake during rear entry.",
-    "prose_outfit_phrase": "in an apricot floral yukata",
+    "prose_outfit_phrase": "in an apricot floral yukata closed over her chest",
     "extra_neg": "western dining table, chairs, shoes, socks"
   },
   {
@@ -1088,6 +1201,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "lantern_onsen_town_night",
     "light_badge": "🏮夜街提灯回廊",
@@ -1121,10 +1235,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": true,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
-    "light_tags": "warm nostalgic glow, from retro drink vending machine mingling, with dim amber corridor lantern light, at night",
+    "light_tags": "warm nostalgic glow, from retro drink vending machine, mingling with dim amber corridor lantern light, at night",
     "light_prose": "",
     "barefoot": false,
     "is_foot_focus": false,
@@ -1144,8 +1259,18 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "lifted yukata skirt openly exposing 1.45::small penis:: and 1.4::erect penis:: in teasing late-night room invitation",
     "futa_tags": "lifted yukata skirt openly exposing 1.45::erect penis:: and bare inner thighs in teasing late-night room invitation",
     "prose": "First-person POV in a quiet night ryokan alcove beside a glowing retro drink vending machine, where a playfully tipsy adult woman bites a wooden room-key tag with red tassel between her teeth and uses both hands to lift her indigo yukata skirt in a bold invitation.",
-    "prose_outfit_phrase": "",
-    "extra_neg": "convenience store, bright fluorescent supermarket, street asphalt, sneakers"
+    "prose_outfit_phrase": "to lift her indigo yukata skirt",
+    "extra_neg": "convenience store, bright fluorescent supermarket, street asphalt, sneakers",
+    "solo_spread_spec": {
+      "archetype": "two_hand_symmetrical",
+      "spread_outfit_override": "adult woman, indigo-and-white geometric cotton 1.6::yukata:: with intact modest collar closed over chest and front yukata hem tucked up into crimson obi sash exposing bare waist and thighs, ryokan slippers",
+      "spread_femboy_outfit_override": "indigo-and-white geometric cotton 1.6::yukata:: with intact modest collar closed over chest and front yukata hem tucked up into crimson obi sash exposing bare waist and thighs, ryokan slippers",
+      "spread_prop_tags": "holding a carved wooden ryokan room-key tag with red tassel 1.6::in mouth:: between her teeth while both hands reach down between parted thighs spreading open with fingers",
+      "spread_female_tags": "1.6::spread legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, both hands fingers, glistening 1.5::pussy juice::",
+      "spread_femboy_tags": "1.6::spread legs::, 1.45::small penis::, 1.4::erect penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers",
+      "spread_futa_tags": "1.6::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers",
+      "spread_prose_suffix": " with her front yukata hem tucked into her red obi so both hands reach down to spread open."
+    }
   },
   {
     "id": "ONS33",
@@ -1154,6 +1279,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -1176,8 +1302,8 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "female_tags": "1.55::vaginal::, missionary insertion below bare belly, glistening 1.5::cum overflow:: onto futon",
     "femboy_tags": "1.55::anal::, missionary below bare belly, with balanced sake cup, 1.4::small penis::",
     "futa_tags": "1.5::vaginal::, missionary below bare belly, 1.45::ejaculation:: near sake cup",
-    "prose": "Overhead first-person missionary POV on a white ryokan futon where a warmly tipsy adult woman in a half-open burgundy yukata covering her chest tries desperately to hold still so a small porcelain sake cup balanced upright on her bare stomach does not spill.",
-    "prose_outfit_phrase": "in a half-open burgundy yukata",
+    "prose": "Overhead first-person missionary POV on a white ryokan futon where a warmly tipsy adult woman in a loosened burgundy yukata slipped off her shoulders tries desperately to hold still so a small porcelain sake cup balanced upright on her bare stomach does not spill.",
+    "prose_outfit_phrase": "in a loosened burgundy yukata slipped off her shoulders",
     "extra_neg": "western bedframe, bra, panties, male head, male back"
   },
   {
@@ -1187,6 +1313,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -1220,10 +1347,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "lantern_onsen_town_night",
     "light_badge": "🏮夜街提灯回廊",
-    "light_tags": "warm blurry bokeh of red, outdoor hot-spring lanterns glowing, through white steam-fogged glass window at night",
+    "light_tags": "warm blurry bokeh, of red outdoor hot-spring lanterns glowing, through white steam-fogged glass window at night",
     "light_prose": "",
     "barefoot": true,
     "is_foot_focus": true,
@@ -1233,8 +1361,8 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "is_outdoor_onsen": false,
     "is_yuri_showcase": false,
     "builtin_outfit": "adult woman, damp white cotton onsen towel slipped down, around hips, exposing wet bare breasts, pink nipples flattened against fogged glass, small floating sake cup on wooden sill",
-    "femboy_outfit": "damp white cotton onsen towel slipped down, around hips, exposing wet flat male chest flattened, against fogged glass, small floating sake cup on wooden sill",
-    "framing_tags": "cowboy shot, close three-quarter view seen, from outside through steamed glass, as her body presses flush, against the fogged window, 1.6::against glass::, 1.5::from behind::",
+    "femboy_outfit": "damp white cotton onsen towel slipped down, around hips, exposing wet flat male chest, flattened against fogged glass, small floating sake cup on wooden sill",
+    "framing_tags": "cowboy shot, close three-quarter view seen from outside, through steamed glass, as her body presses flush, against the fogged window, 1.6::against glass::, 1.5::from behind::",
     "env_tags": "indoors, luxury Japanese hot-spring bathhouse panoramic cedar-framed window covered in thick white 1.6::condensation:: and water droplets, blurred glowing night lanterns outside",
     "core_prop_tags": "right index finger tracing a clear 1.65::heart:: shape into the white misty window condensation while her left palm and wet bare breasts flatten softly against the warm glass",
     "partner_tags": "wet shirtless short-haired faceless male pressing flush, behind her in the steaming bathhouse",
@@ -1253,6 +1381,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": true,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -1276,8 +1405,16 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "wide-parted bare thighs exposing 1.45::small penis:: and 1.4::erect penis::, clear sake droplets trickling down flat chest, seductive invitation",
     "futa_tags": "wide-parted bare thighs exposing 1.45::erect penis::, clear sake droplets trickling down torso, seductive invitation",
     "prose": "First-person low-angle POV of a sultry tipsy adult woman seated wide-legged on a ryokan tatami cushion, tilting a white porcelain flask so clear sake trickles down her collarbone into her loosened plum floral yukata as she invites the viewer closer.",
-    "prose_outfit_phrase": "",
-    "extra_neg": "western chair, bedframe, shoes, socks, bra"
+    "prose_outfit_phrase": "into her loosened plum floral yukata",
+    "extra_neg": "western chair, bedframe, shoes, socks, bra",
+    "solo_spread_spec": {
+      "archetype": "one_hand_prop_frontal",
+      "spread_prop_tags": "right hand tilting a white porcelain 1.65::tokkuri:: sake carafe pouring clear sake across her collarbone while left hand reaches between wide-parted thighs spreading open with fingers",
+      "spread_female_tags": "1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::, clear sake droplets on torso",
+      "spread_femboy_tags": "1.45::small penis::, 1.4::erect penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, clear sake droplets on chest",
+      "spread_futa_tags": "1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers, clear sake droplets on torso",
+      "spread_prose_suffix": " while her left hand reaches down between her wide-parted thighs to spread open with her fingers."
+    }
   },
   {
     "id": "ONS37",
@@ -1286,6 +1423,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": true,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -1298,9 +1436,9 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "allow_wall_mirror": false,
     "is_outdoor_onsen": false,
     "is_yuri_showcase": false,
-    "builtin_outfit": "adult woman, ivory-white camellia-patterned cotton 1.6::yukata:: with collar closed over chest while half-untied red obi ribbon trails toward viewer, lower yukata hem fallen open, between wide-parted knees, 1.5::bare feet::",
-    "femboy_outfit": "ivory-white camellia-patterned cotton 1.6::yukata:: with collar closed over chest while half-untied red obi ribbon trails toward viewer, lower yukata hem fallen open, between wide-parted knees, 1.5::bare feet::",
-    "framing_tags": "full body, 1.55::pov::, frontal kneeling W-sit on edge of, white ryokan futon facing viewer, 1.65::spread legs::, knees parted wide",
+    "builtin_outfit": "adult woman, ivory-white camellia-patterned cotton 1.6::yukata:: with collar closed over chest while half-untied red obi ribbon trails toward viewer, lower yukata hem fallen, open between wide-parted knees, 1.5::bare feet::",
+    "femboy_outfit": "ivory-white camellia-patterned cotton 1.6::yukata:: with collar closed over chest while half-untied red obi ribbon trails toward viewer, lower yukata hem fallen, open between wide-parted knees, 1.5::bare feet::",
+    "framing_tags": "full body, 1.55::pov::, frontal kneeling W-sit on edge, of white ryokan futon facing viewer, 1.65::spread legs::, knees parted wide",
     "env_tags": "indoors, traditional Japanese ryokan 1.6::tatami:: room, thick white cotton 1.6::futon:: bedding, wooden tray, with white ceramic tokkuri sake carafe nearby",
     "core_prop_tags": "playfully holding the rim of a small white porcelain 1.6::ochoko:: sake cup 1.6::in mouth:: between her parted lips while extending one hand forward offering the long untying crimson silk 1.6::obi:: ribbon end toward the viewer",
     "partner_tags": "",
@@ -1310,7 +1448,15 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "futa_tags": "parted yukata hem exposing 1.45::erect penis:: between kneeling thighs, teasing invitation to untie sash",
     "prose": "First-person POV kneeling on a white ryokan futon beside a sake carafe, where a rosy tipsy adult woman in an ivory floral yukata bites the rim of a small porcelain sake cup in her mouth while holding out the end of her red obi sash for the viewer to pull.",
     "prose_outfit_phrase": "in an ivory floral yukata",
-    "extra_neg": "western bedframe, shoes, socks, pants"
+    "extra_neg": "western bedframe, shoes, socks, pants",
+    "solo_spread_spec": {
+      "archetype": "one_hand_prop_frontal",
+      "spread_prop_tags": "holding the rim of a small white porcelain 1.6::ochoko:: sake cup 1.6::in mouth:: while left hand offers the red silk 1.6::obi:: ribbon end and right hand reaches between wide-parted knees spreading open with fingers",
+      "spread_female_tags": "1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice:: between kneeling thighs",
+      "spread_femboy_tags": "1.45::small penis::, 1.4::erect penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers between kneeling thighs",
+      "spread_futa_tags": "1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers between kneeling thighs",
+      "spread_prose_suffix": " while her free right hand reaches down between her parted knees to spread open with her fingers."
+    }
   },
   {
     "id": "ONS38",
@@ -1319,6 +1465,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -1336,7 +1483,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "framing_tags": "cowboy shot, three-quarter frontal view, seated straddling partner's lap, beside low banquet table, 1.55::girl on top::, 1.55::straddling::",
     "env_tags": "indoors, traditional Japanese ryokan tatami suite, low lacquer table, with two white ceramic tokkuri sake flasks, shoji screen backdrop",
     "core_prop_tags": "right hand holding a small white porcelain 1.6::ochoko:: sake cup clinking gently against partner's porcelain sake cup in a warm toast while left hand rests on his shoulder",
-    "partner_tags": "short-haired faceless male in dark ryokan yukata, seated beneath her raising his small white, porcelain sake cup to clink hers",
+    "partner_tags": "short-haired faceless male in dark ryokan yukata, seated beneath, her raising his small white porcelain sake, cup to clink hers",
     "onsen_expr_tags": "1.65::drunk::, loving warm sake crimson blush, dreamy 1.55::half-closed eyes:: smiling warmly at the clinking sake cups",
     "female_tags": "1.55::vaginal::, cowgirl straddle during sake toast, 1.5::cum overflow::",
     "femboy_tags": "1.55::anal::, straddle during sake toast, 1.4::small penis::",
@@ -1352,6 +1499,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "snowy_lantern_rock_bath",
     "light_badge": "❄️雪见石灯夜汤",
@@ -1369,7 +1517,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "framing_tags": "cowboy shot, three-quarter side-rear view, leaning against cedar veranda pillar, watching falling snow, 1.5::standing sex::, 1.5::from behind::",
     "env_tags": "semi-outdoors, covered wooden ryokan engawa veranda, overlooking snow-dusted garden boulders, glowing stone yukimi lantern at night",
     "core_prop_tags": "both hands warming around a steaming fresh-cut green 1.65::bamboo:: takezake sake flask and matching green bamboo cup releasing fragrant white steam",
-    "partner_tags": "short-haired faceless male in, ryokan yukata and haori, standing flush, behind her in the snowy veranda warmth",
+    "partner_tags": "short-haired faceless male, in ryokan yukata and haori, standing flush, behind her in the snowy veranda warmth",
     "onsen_expr_tags": "1.65::drunk::, rosy winter-and-hot-sake crimson cheeks, misty 1.55::half-closed eyes::, puff of warm white breath, in cold night air",
     "female_tags": "1.55::vaginal::, standing rear entry on snowy veranda, 1.5::cum drip:: down inner thigh",
     "femboy_tags": "1.55::anal::, standing rear entry on snowy veranda, 1.4::small penis::",
@@ -1385,6 +1533,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -1408,7 +1557,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "1.55::anal::, kneeling rear entry over sake table, 1.4::small penis::, 1.3::small testicles::",
     "futa_tags": "1.5::vaginal::, kneeling rear entry over sake table, 1.45::ejaculation::",
     "prose": "Kneeling barefoot on tatami mats with upper body sprawled across a low black-lacquer table scattered with empty white sake flasks and cups, resting a flushed tipsy cheek flat on the cool tabletop as the blue yukata hem is lifted from behind.",
-    "prose_outfit_phrase": "",
+    "prose_outfit_phrase": "as the blue yukata hem is lifted from behind",
     "extra_neg": "western dining chair, modern bar counter, shoes, socks"
   },
   {
@@ -1418,6 +1567,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -1434,7 +1584,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_outfit": "coral-pink peony-patterned cotton 1.6::yukata:: with intact modest collar closed over chest and deep-red obi sash, lower yukata skirt parted across partner's lap, 1.45::bare feet::",
     "framing_tags": "cowboy shot, close three-quarter profile-frontal view straddling partner's lap, leaning close to his face, 1.55::girl on top::, 1.55::straddling::, 1.55::imminent kiss::",
     "env_tags": "indoors, traditional Japanese ryokan tatami room, soft white futon cushion, lacquer tray, with white ceramic sake flask nearby",
-    "core_prop_tags": "right hand holding a just-emptied small porcelain 1.6::ochoko:: sake cup at her side while left hand gently cups partner's jaw, clear glistening sake droplet at, corner of her lips",
+    "core_prop_tags": "right hand holding a just-emptied small porcelain 1.6::ochoko:: sake cup at her side while left hand gently cups partner's jaw, clear glistening sake droplet, at corner of her lips",
     "partner_tags": "short-haired faceless male in dark ryokan yukata, seated beneath her holding her waist",
     "onsen_expr_tags": "1.65::drunk::, ardent warm sake blush, sultry 1.55::half-closed eyes::, puffed cheeks, holding warm sake to feed mouth-to-mouth",
     "female_tags": "1.55::vaginal::, close embrace cowgirl straddle, 1.5::cum overflow::",
@@ -1451,6 +1601,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "lantern_onsen_town_night",
     "light_badge": "🏮夜街提灯回廊",
@@ -1468,7 +1619,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "framing_tags": "cowboy shot, three-quarter side-rear view, leaning over red-lacquered wooden bridge railing, 1.5::standing sex::, 1.5::from behind::",
     "env_tags": "outdoors, traditional Japanese ryokan night garden, arched vermilion-red wooden 1.6::bridge:: over misty pond, maple trees, glowing paper lanterns",
     "core_prop_tags": "right hand dangling a traditional tied 1.6::gourd:: hyotan sake flask with red cord by its neck while left hand grips the vermilion wooden bridge post",
-    "partner_tags": "short-haired faceless male in dark ryokan yukata, standing flush behind her, on the arched wooden bridge",
+    "partner_tags": "short-haired faceless male in dark ryokan yukata, standing flush, behind her on the arched wooden bridge",
     "onsen_expr_tags": "1.65::drunk::, glowing night-breeze sake blush, dreamy 1.55::half-closed eyes:: glancing back over shoulder, carefree tipsy smile",
     "female_tags": "1.55::vaginal::, standing rear entry on garden bridge, 1.5::cum drip:: down inner thigh",
     "femboy_tags": "1.55::anal::, standing rear entry on garden bridge, 1.4::small penis::",
@@ -1484,6 +1635,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -1499,9 +1651,9 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "builtin_outfit": "adult woman, emerald-green floral cotton 1.6::yukata:: with intact modest collar neatly closed over front chest and crimson obi sash, lower yukata hem parted open across thighs, 1.5::bare feet::",
     "femboy_outfit": "emerald-green floral cotton 1.6::yukata:: with intact modest collar neatly closed over front chest and crimson obi sash, lower yukata hem parted open across thighs, 1.5::bare feet::",
     "framing_tags": "full body three-quarter frontal view straddling upright, on partner's lap on tatami cushions, 1.55::girl on top::, 1.55::straddling::",
-    "env_tags": "indoors, luxury Japanese ryokan tatami suite, ornate painted gold-leaf folding 1.6::byobu:: screen behind, low tray lined, with four tiny porcelain sake penalty cups",
+    "env_tags": "indoors, luxury Japanese ryokan tatami suite, ornate painted gold-leaf folding 1.6::byobu:: screen behind, low tray lined with four, tiny porcelain sake penalty cups",
     "core_prop_tags": "left hand holding a white porcelain 1.6::ochoko:: penalty sake cup at her lips while right hand flashes a clumsy playful 1.6::peace sign:: after losing rock-paper-scissors",
-    "partner_tags": "short-haired faceless male in ryokan yukata, reclining on zabuton cushions beneath her, gripping her hips",
+    "partner_tags": "short-haired faceless male in ryokan yukata, reclining on zabuton cushions, beneath her gripping her hips",
     "onsen_expr_tags": "1.65::drunk::, embarrassed giggling sake crimson blush, playful 1.55::half-closed eyes::, cute tipsy grin",
     "female_tags": "1.55::vaginal::, upright cowgirl straddle on tatami, 1.5::cum overflow::",
     "femboy_tags": "1.55::anal::, upright cowgirl straddle on tatami, 1.4::small penis::",
@@ -1517,6 +1669,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "lantern_onsen_town_night",
     "light_badge": "🏮夜街提灯回廊",
@@ -1534,7 +1687,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "framing_tags": "full body three-quarter frontal-side view, seated on partner's lap, at wooden footbath bench, bare feet dipped in steaming water",
     "env_tags": "semi-outdoors, traditional ryokan night wooden engawa and steaming stone-rimmed 1.6::ashiyu:: footbath pool, glowing paper chochin lantern",
     "core_prop_tags": "both hands holding a square cedar 1.6::masu:: wooden sake box raised right against her parted lips as she sips chilled sake directly from the wooden corner",
-    "partner_tags": "short-haired faceless male in dark ryokan yukata, seated on the wooden bench behind her, holding her thighs apart",
+    "partner_tags": "short-haired faceless male in dark ryokan yukata, seated on the wooden bench, behind her holding her thighs apart",
     "onsen_expr_tags": "1.65::drunk::, 1.55::endurance::, rosy sake blush, misty teary 1.55::half-closed eyes:: sipping chilled sake from the cedar masu rim",
     "female_tags": "1.55::vaginal::, seated lap entry above steaming footbath, 1.5::cum drip:: down calf",
     "femboy_tags": "1.55::anal::, seated lap entry above steaming footbath, 1.4::small penis::",
@@ -1550,10 +1703,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "21. 温泉双人",
     "canvas": "竖图 832x1216",
     "is_solo": false,
+    "is_precoital_invite": false,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
-    "light_tags": "warm golden paper floor lamp, casting soft highlights on porcelain, carafe and flushed neck",
+    "light_tags": "warm golden paper floor lamp, casting soft highlights, on porcelain carafe and flushed neck",
     "light_prose": "",
     "barefoot": true,
     "is_foot_focus": true,
@@ -1568,7 +1722,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "env_tags": "indoors, cozy Japanese ryokan tatami guestroom, white cotton futon mat, lacquer tray, with empty sake cups beside them, shoji lattice",
     "core_prop_tags": "tilting her head back as partner's hand holds a white porcelain 1.65::tokkuri:: sake carafe pouring a thin glistening stream of sake directly into her open mouth while her hands grip his forearm",
     "partner_tags": "short-haired faceless male in dark ryokan yukata, seated behind her supporting her back, tilting the sake flask",
-    "onsen_expr_tags": "1.7::drunk::, intoxicated scarlet blush from cheeks to neck, ecstatic 1.55::half-closed eyes::, open mouth catching trickling sake, with a drop rolling down chin",
+    "onsen_expr_tags": "1.7::drunk::, intoxicated scarlet blush from cheeks to neck, ecstatic 1.55::half-closed eyes::, open mouth catching trickling, sake with drop rolling down chin",
     "female_tags": "1.55::vaginal::, reclined lap embrace insertion, glistening 1.5::cum overflow::",
     "femboy_tags": "1.55::anal::, reclined lap embrace on tatami, 1.4::small penis::",
     "futa_tags": "1.5::vaginal::, reclined lap embrace on tatami, 1.45::ejaculation::",
@@ -1583,6 +1737,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": true,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -1595,8 +1750,8 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "allow_wall_mirror": false,
     "is_outdoor_onsen": false,
     "is_yuri_showcase": false,
-    "builtin_outfit": "adult woman, crimson morning-glory cotton 1.6::yukata:: with intact modest collar covering chest and gold obi sash, lower yukata skirt fallen open, along raised upper thigh, 1.5::bare feet::",
-    "femboy_outfit": "crimson morning-glory cotton 1.6::yukata:: with intact modest collar covering chest and gold obi sash, lower yukata skirt fallen open, along raised upper thigh, 1.5::bare feet::",
+    "builtin_outfit": "adult woman, crimson morning-glory cotton 1.6::yukata:: with intact modest collar covering chest and gold obi sash, lower yukata skirt fallen, open along raised upper thigh, 1.5::bare feet::",
+    "femboy_outfit": "crimson morning-glory cotton 1.6::yukata:: with intact modest collar covering chest and gold obi sash, lower yukata skirt fallen, open along raised upper thigh, 1.5::bare feet::",
     "framing_tags": "full body, 1.55::pov::, low eye-level side-frontal view lying sideways, on tatami cushion propped on one elbow, upper leg raised slightly apart",
     "env_tags": "indoors, traditional Japanese ryokan 1.6::tatami:: room, low black-lacquer table at her hip, with white ceramic tokkuri flask, spilled clear sake droplets",
     "core_prop_tags": "left hand propping up her flushed cheek while right index finger playfully tips an empty white porcelain 1.6::ochoko:: sake cup on the tatami mat",
@@ -1606,8 +1761,16 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "1.55::spread legs::, parted yukata hem revealing 1.45::small penis::, seductive evening invitation",
     "futa_tags": "1.55::spread legs::, parted yukata hem revealing 1.45::erect penis::, seductive evening invitation",
     "prose": "First-person floor-level POV of a warmly tipsy adult woman lying sideways on ryokan tatami mats propped on one elbow beside a low sake table, playfully tipping a porcelain sake cup while her crimson floral yukata parts along her raised leg.",
-    "prose_outfit_phrase": "",
-    "extra_neg": "western bed, sofa, shoes, socks, pants"
+    "prose_outfit_phrase": "while her crimson floral yukata parts along her raised leg",
+    "extra_neg": "western bed, sofa, shoes, socks, pants",
+    "solo_spread_spec": {
+      "archetype": "one_hand_prop_frontal",
+      "spread_prop_tags": "left hand propping up her flushed cheek, beside spilled sake flask, right hand reaches down between, parted thighs spreading open with fingers",
+      "spread_female_tags": "1.55::spread legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
+      "spread_femboy_tags": "1.55::spread legs::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers",
+      "spread_futa_tags": "1.55::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers",
+      "spread_prose_suffix": " while her right hand reaches between her thighs to spread open with her fingers."
+    }
   },
   {
     "id": "ONS47",
@@ -1616,6 +1779,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": true,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -1639,8 +1803,18 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "parted front yukata hem revealing 1.45::small penis:: at doorway, late-night sake invitation",
     "futa_tags": "parted front yukata hem revealing 1.45::erect penis:: at doorway, late-night sake invitation",
     "prose": "First-person POV at the open sliding door of a warm ryokan room where a rosy tipsy adult woman leans against the cedar doorframe holding up a white porcelain sake flask while tugging open her navy floral yukata hem to welcome the viewer inside.",
-    "prose_outfit_phrase": "",
-    "extra_neg": "metal door, modern apartment, shoes, socks"
+    "prose_outfit_phrase": "while tugging open her navy floral yukata hem",
+    "extra_neg": "metal door, modern apartment, shoes, socks",
+    "solo_spread_spec": {
+      "archetype": "one_hand_prop_frontal",
+      "spread_outfit_override": "adult woman, navy-and-gold fan-patterned cotton 1.6::yukata:: with intact modest collar covering chest and front hem tucked neatly into red obi sash exposing bare thighs, 1.5::bare feet::",
+      "spread_femboy_outfit_override": "navy-and-gold fan-patterned cotton 1.6::yukata:: with intact modest collar covering chest and front hem tucked neatly into red obi sash exposing bare thighs, 1.5::bare feet::",
+      "spread_prop_tags": "left hand clearly gripping the neck of a warm white porcelain 1.6::tokkuri:: sake flask held at chest height while right hand reaches down between parted thighs spreading open with fingers, no hand on doorframe",
+      "spread_female_tags": "1.55::spread legs::, 1.4::labia::, 1.25::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.45::pussy juice::",
+      "spread_femboy_tags": "1.55::spread legs::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers",
+      "spread_futa_tags": "1.55::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.25::spread pussy::, 1.55::spreading own pussy::, fingers",
+      "spread_prose_suffix": " with her front hem tucked into her red sash so her right hand spreads open at the doorway."
+    }
   },
   {
     "id": "ONS48",
@@ -1649,6 +1823,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": true,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "lantern_onsen_town_night",
     "light_badge": "🏮夜街提灯回廊",
@@ -1672,8 +1847,18 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "lifted back yukata hem revealing bare hips and 1.4::small penis:: from behind, coy moonlit invitation",
     "futa_tags": "lifted back yukata hem revealing bare hips and 1.45::erect penis:: from behind, coy moonlit invitation",
     "prose": "Low-angle rear-side POV on a moonlit wooden ryokan veranda where a warmly tipsy adult woman holds a glass of amber iced plum wine on the railing and glances coyly back over her shoulder while lifting the back hem of her lavender yukata.",
-    "prose_outfit_phrase": "",
-    "extra_neg": "indoors, daylight, modern balcony, metal railing, shoes, socks"
+    "prose_outfit_phrase": "while lifting the back hem of her lavender yukata",
+    "extra_neg": "indoors, daylight, modern balcony, metal railing, shoes, socks",
+    "solo_spread_spec": {
+      "archetype": "rear_lookback_one_hand",
+      "spread_outfit_override": "adult woman, wisteria-lavender floral cotton 1.6::yukata:: with intact collar closed over chest and back yukata hem tucked into purple obi sash exposing bare rounded hips, 1.5::bare feet::",
+      "spread_femboy_outfit_override": "wisteria-lavender floral cotton 1.6::yukata:: with intact collar closed over chest and back yukata hem tucked into purple obi sash exposing bare rounded hips, 1.5::bare feet::",
+      "spread_prop_tags": "left hand holding a glass tumbler of amber 1.6::plum wine:: on wooden railing while right hand reaches back behind hip spreading open with fingers from behind",
+      "spread_female_tags": "1.55::pussy from behind::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.45::pussy juice::",
+      "spread_femboy_tags": "1.5::spread anus::, 1.55::spreading own ass::, fingers from behind, 1.4::small penis::",
+      "spread_futa_tags": "1.5::pussy from behind::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, 1.4::erect penis::, fingers",
+      "spread_prose_suffix": " with her back hem tucked into her sash while reaching one hand back to spread open from behind."
+    }
   },
   {
     "id": "ONS49",
@@ -1682,6 +1867,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": true,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -1705,8 +1891,16 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "wide-parted bare thighs under lifted kotatsu quilt revealing 1.45::small penis::, inviting viewer under warm kotatsu",
     "futa_tags": "wide-parted bare thighs under lifted kotatsu quilt revealing 1.45::erect penis::, inviting viewer under warm kotatsu",
     "prose": "First-person floor-level POV in a cozy ryokan room where a rosy tipsy adult woman in a cream floral yukata sits at a kotatsu topped with warm sake, holding a porcelain cup while lifting the red quilt wide open to invite the viewer underneath.",
-    "prose_outfit_phrase": "in a cozy ryokan room where a rosy tipsy adult woman in a cream floral yukata",
-    "extra_neg": "western dining table, office chair, shoes, socks"
+    "prose_outfit_phrase": "in a cream floral yukata",
+    "extra_neg": "western dining table, office chair, shoes, socks",
+    "solo_spread_spec": {
+      "archetype": "one_hand_prop_frontal",
+      "spread_prop_tags": "right hand lifting up the thick red-patterned kotatsu 1.55::blanket:: quilt while left hand reaches down between wide-spread thighs spreading open with fingers",
+      "spread_female_tags": "1.65::spread legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
+      "spread_femboy_tags": "1.65::spread legs::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers",
+      "spread_futa_tags": "1.65::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers",
+      "spread_prose_suffix": " while her left hand reaches down under the lifted red kotatsu quilt to spread open with her fingers."
+    }
   },
   {
     "id": "ONS50",
@@ -1715,6 +1909,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": true,
     "lighting_mode": "steamy_glass",
     "onsen_light_mode": "amber_hinoki_steam",
     "light_badge": "♨️桧木琥珀暖雾",
@@ -1739,7 +1934,15 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "futa_tags": "wide-parted thighs on wooden tub rim revealing 1.45::erect penis:: above steaming water, offering sake cup to viewer",
     "prose": "First-person POV inside a steaming golden cypress bathhouse where a rosy tipsy adult woman in a chest-wrapped white bath towel sits wide-legged on the wooden tub rim and extends a red-lacquer sake saucer toward the viewer.",
     "prose_outfit_phrase": "in a chest-wrapped white bath towel",
-    "extra_neg": "white ceramic tiles, plastic tub, swimsuit, bikini, shoes"
+    "extra_neg": "white ceramic tiles, plastic tub, swimsuit, bikini, shoes",
+    "solo_spread_spec": {
+      "archetype": "one_hand_prop_frontal",
+      "spread_prop_tags": "right hand extending a shallow red-lacquer 1.6::sakazuki:: sake saucer toward viewer while left hand reaches between wide-parted thighs on cypress tub rim spreading open with fingers",
+      "spread_female_tags": "1.7::spread legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
+      "spread_femboy_tags": "1.7::spread legs::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers",
+      "spread_futa_tags": "1.7::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers",
+      "spread_prose_suffix": " while her left hand reaches between her thighs on the wooden tub rim to spread open."
+    }
   },
   {
     "id": "ONS51",
@@ -1748,6 +1951,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": true,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -1762,7 +1966,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "is_yuri_showcase": false,
     "builtin_outfit": "adult woman, teal dragonfly-patterned cotton 1.6::yukata:: with intact modest collar covering chest and coral obi sash, lower yukata skirt parted wide, as one leg drapes over chair arm, 1.5::bare feet::",
     "femboy_outfit": "teal dragonfly-patterned cotton 1.6::yukata:: with intact modest collar covering chest and coral obi sash, lower yukata skirt parted wide, as one leg drapes over chair arm, 1.5::bare feet::",
-    "framing_tags": "full body, 1.55::pov::, low frontal-three-quarter view, lounging askew in low, woven rattan ryokan chair, one bare leg hooked high, over the wooden armrest, 1.65::spread legs::",
+    "framing_tags": "full body, 1.55::pov::, low frontal-three-quarter view, lounging askew, in low woven rattan ryokan chair, one bare leg hooked high, over the wooden armrest, 1.65::spread legs::",
     "env_tags": "indoors, classic Japanese ryokan hiroen window-side sitting area, woven rattan armchair, low glass-topped tea table, with ice bucket and sake cup, shoji lattice",
     "core_prop_tags": "right hand lazily cradling a frosted green glass 1.6::sake bottle:: against her shoulder while left hand rests on inner thigh holding yukata hem open",
     "partner_tags": "",
@@ -1771,8 +1975,16 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "wide-open posture in rattan chair revealing bare thighs and 1.45::small penis::, relaxed late-night drink invitation",
     "futa_tags": "wide-open posture in rattan chair revealing bare thighs and 1.45::erect penis::, relaxed late-night drink invitation",
     "prose": "First-person POV in a nostalgic ryokan window lounge where a languidly tipsy adult woman in a teal floral yukata slouches in a low rattan chair with one bare leg draped over the armrest, cradling a frosted green sake bottle as she invites the viewer closer.",
-    "prose_outfit_phrase": "in a nostalgic ryokan window lounge where a languidly tipsy adult woman in a teal floral yukata",
-    "extra_neg": "office swivel chair, computer monitor, shoes, socks"
+    "prose_outfit_phrase": "in a teal floral yukata",
+    "extra_neg": "office swivel chair, computer monitor, shoes, socks",
+    "solo_spread_spec": {
+      "archetype": "one_hand_prop_frontal",
+      "spread_prop_tags": "right hand lazily cradling a frosted green glass 1.6::sake bottle:: against her shoulder while left hand reaches between wide-open thighs in rattan chair spreading open with fingers",
+      "spread_female_tags": "1.65::spread legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
+      "spread_femboy_tags": "1.65::spread legs::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers",
+      "spread_futa_tags": "1.65::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers",
+      "spread_prose_suffix": " while her left hand reaches between her thighs in the rattan armchair to spread open with her fingers."
+    }
   },
   {
     "id": "ONS52",
@@ -1781,6 +1993,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": true,
     "lighting_mode": "steamy_glass",
     "onsen_light_mode": "amber_hinoki_steam",
     "light_badge": "♨️桧木琥珀暖雾",
@@ -1804,8 +2017,16 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "wide-parted bare thighs on wooden bench revealing 1.45::small penis:: and 1.3::small testicles::, teasingly untying sash",
     "futa_tags": "wide-parted bare thighs on wooden bench revealing 1.45::erect penis::, teasingly untying sash",
     "prose": "Low-angle frontal POV in a warm wooden onsen changing room beside a cedar masu sake cup, sitting barefoot with knees parted wide on a cypress bench while tugging loose the red obi sash of a blue yukata in invitation.",
-    "prose_outfit_phrase": "",
-    "extra_neg": "metal gym locker, white hospital tiles, shoes, socks"
+    "prose_outfit_phrase": "while tugging loose the red obi sash of a blue yukata",
+    "extra_neg": "metal gym locker, white hospital tiles, shoes, socks",
+    "solo_spread_spec": {
+      "archetype": "one_hand_prop_frontal",
+      "spread_prop_tags": "left hand, resting on wooden masu sake cup, beside hip, right hand reaches down, between wide-parted knees spreading open with fingers",
+      "spread_female_tags": "1.7::spread legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
+      "spread_femboy_tags": "1.7::spread legs::, 1.45::small penis::, 1.3::small testicles::, 1.5::spread anus::, 1.55::spreading own ass::, fingers",
+      "spread_futa_tags": "1.7::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers",
+      "spread_prose_suffix": " while reaching down between wide-parted knees on the wooden bench to spread open."
+    }
   },
   {
     "id": "ONS53",
@@ -1814,6 +2035,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": true,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -1832,13 +2054,21 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "env_tags": "indoors, traditional Japanese ryokan 1.6::tatami:: room, tall cedar-framed standing floor 1.55::mirror:: in front reflecting her flushed tipsy face, sake tray beside mat",
     "core_prop_tags": "left forearm resting on white cushion while right hand holds a small white porcelain 1.6::ochoko:: sake cup extended back toward viewer",
     "partner_tags": "",
-    "onsen_expr_tags": "1.65::drunk::, sultry warm sake blush visible both, looking back and in mirror, 1.55::half-closed eyes::, teasing smile",
+    "onsen_expr_tags": "1.65::drunk::, sultry warm sake blush visible, both looking back and in mirror, 1.55::half-closed eyes::, teasing smile",
     "female_tags": "arched rear posture with lifted yukata revealing bare rounded hips and glistening 1.45::pussy::, seductive invitation",
     "femboy_tags": "arched rear posture with lifted yukata revealing bare hips and 1.4::small penis::, seductive invitation",
     "futa_tags": "arched rear posture with lifted yukata revealing bare hips and 1.45::erect penis::, seductive invitation",
     "prose": "Low rear-side POV on ryokan tatami mats before a tall wooden floor mirror, where a rosy tipsy adult woman in a magenta floral yukata kneels on hands and knees, glancing back over her shoulder while offering a porcelain sake cup.",
     "prose_outfit_phrase": "in a magenta floral yukata",
-    "extra_neg": "western dresser, chair, table, shoes, socks"
+    "extra_neg": "western dresser, chair, table, shoes, socks",
+    "solo_spread_spec": {
+      "archetype": "rear_lookback_one_hand",
+      "spread_prop_tags": "left hand resting on white cushion holding a small porcelain 1.55::ochoko:: sake cup while right hand reaches back behind hip spreading open with fingers from behind",
+      "spread_female_tags": "1.55::pussy from behind::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
+      "spread_femboy_tags": "1.5::spread anus::, 1.55::spreading own ass::, fingers from behind, 1.4::small penis::",
+      "spread_futa_tags": "1.5::pussy from behind::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, 1.4::erect penis::, fingers",
+      "spread_prose_suffix": " while reaching her right hand back behind her hip to spread open from behind."
+    }
   },
   {
     "id": "ONS54",
@@ -1847,6 +2077,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": true,
     "lighting_mode": "warm_spot",
     "onsen_light_mode": "tatami_andon_warm",
     "light_badge": "🏮和室行灯柔光",
@@ -1871,7 +2102,15 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "futa_tags": "wide M-spread bare thighs on white futon, openly inviting viewer, 1.45::erect penis::",
     "prose": "Overhead first-person POV looking down at a deeply tipsy adult woman sprawled on her back on a white ryokan futon in an apricot floral yukata with her legs spread in a wide M-pose, hugging a white ceramic sake carafe while reaching one hand up toward the viewer.",
     "prose_outfit_phrase": "in an apricot floral yukata",
-    "extra_neg": "western bedframe, shoes, socks, pants"
+    "extra_neg": "western bedframe, shoes, socks, pants",
+    "solo_spread_spec": {
+      "archetype": "one_hand_prop_frontal",
+      "spread_prop_tags": "left hand hugging a warm white ceramic 1.6::tokkuri:: sake carafe against her chest while right hand reaches down between wide M-spread thighs spreading open with fingers",
+      "spread_female_tags": "1.7::spread legs::, 1.6::m legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
+      "spread_femboy_tags": "1.7::spread legs::, 1.6::m legs::, 1.45::small penis::, 1.5::spread anus::, 1.55::spreading own ass::, fingers",
+      "spread_futa_tags": "1.7::spread legs::, 1.6::m legs::, 1.45::erect penis::, 1.4::labia::, 1.35::spread pussy::, 1.55::spreading own pussy::, fingers",
+      "spread_prose_suffix": " while her right hand reaches down between her wide M-spread thighs to spread open with her fingers."
+    }
   },
   {
     "id": "ONS55",
@@ -1880,6 +2119,7 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "category": "22. 温泉单人",
     "canvas": "竖图 832x1216",
     "is_solo": true,
+    "is_precoital_invite": true,
     "lighting_mode": "night_neon",
     "onsen_light_mode": "lantern_onsen_town_night",
     "light_badge": "🏮夜街提灯回廊",
@@ -1903,7 +2143,17 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "femboy_tags": "lifted yukata hem on garden bench revealing bare inner thighs and 1.45::small penis::, secret outdoor invitation",
     "futa_tags": "lifted yukata hem on garden bench revealing bare inner thighs and 1.45::erect penis::, secret outdoor invitation",
     "prose": "Low-angle POV in a secluded lantern-lit ryokan garden at night where a playfully tipsy adult woman sits wide-legged on a stone bench dangling a wooden geta sandal from her toes, holding a corded gourd sake flask while lifting her crimson yukata hem.",
-    "prose_outfit_phrase": "",
-    "extra_neg": "indoors, daylight, park metal bench, sneakers, socks, city street"
+    "prose_outfit_phrase": "while lifting her crimson yukata hem",
+    "extra_neg": "indoors, daylight, park metal bench, sneakers, socks, city street",
+    "solo_spread_spec": {
+      "archetype": "one_hand_prop_frontal",
+      "spread_outfit_override": "adult woman, dark-crimson camellia cotton 1.6::yukata:: with intact modest collar closed over chest and front hem tucked into gold obi sash exposing bare thighs, wooden 1.55::geta:: sandals",
+      "spread_femboy_outfit_override": "dark-crimson camellia cotton 1.6::yukata:: with intact modest collar closed over chest and front hem tucked into gold obi sash exposing bare thighs, wooden 1.55::geta:: sandals",
+      "spread_prop_tags": "left hand holding up a corded 1.6::gourd:: sake flask while right hand reaches down between wide-parted thighs on stone bench spreading open with fingers, wooden geta dangling from toes",
+      "spread_female_tags": "1.7::spread legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
+      "spread_femboy_tags": "1.7::spread legs::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers",
+      "spread_futa_tags": "1.7::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers",
+      "spread_prose_suffix": " while her right hand reaches between her thighs on the garden stone bench to spread open."
+    }
   }
 ];

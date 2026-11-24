@@ -78,9 +78,12 @@ import {
   ALL_RAW_ONSEN_ENTRIES,
   ONSEN_BAREFOOT_BAN_UC,
   ONSEN_LIGHT_DEFAULTS,
+  ONSEN_SOLO_SPREAD_EXTRA_UC,
   ONSEN_UNDERGARMENT_UC,
   type OnsenActionCategory,
   type OnsenLightMode,
+  type OnsenSoloSpreadArchetype,
+  type OnsenSoloSpreadSpec,
 } from "./onsenYukataActionsData";
 
 export {
@@ -105,6 +108,7 @@ export {
   kitchenLegwearTagsFor,
   ONSEN_BAREFOOT_BAN_UC,
   ONSEN_LIGHT_DEFAULTS,
+  ONSEN_SOLO_SPREAD_EXTRA_UC,
   ONSEN_UNDERGARMENT_UC,
   PHOTO_SUBSTITUTE_BELLY_PRESS_ARM_UC,
   PHOTO_SUBSTITUTE_GUARD_UC,
@@ -131,6 +135,8 @@ export {
   type KitchenLightMode,
   type OnsenActionCategory,
   type OnsenLightMode,
+  type OnsenSoloSpreadArchetype,
+  type OnsenSoloSpreadSpec,
   type PhotoSubstituteCategory,
   type PhotoSubstitutePortraitSpec,
   type PhotoSubstituteStageKind,
@@ -247,8 +253,11 @@ export interface OtherActionTemplate {
   onsen_light_mode?: OnsenLightMode;
   is_outdoor_onsen?: boolean;
   is_onsen_yuri_showcase?: boolean;
+  is_precoital_invite?: boolean;
   onsen_partner_tags?: string;
   onsen_expr_tags?: string;
+  solo_spread_spec?: OnsenSoloSpreadSpec;
+  solo_spread_disabled_reason?: string;
 }
 
 export interface OtherActionChapter {
@@ -1472,29 +1481,65 @@ const MAPPED_AFTERSEX_DRIP_ENTRIES: RawSfEntry[] = ALL_RAW_AFTERSEX_DRIP_ENTRIES
 });
 
 const MAPPED_ONSEN_ENTRIES: RawSfEntry[] = ALL_RAW_ONSEN_ENTRIES.map((ons) => {
+  const isCameraLeadSolo =
+    ons.is_solo &&
+    /^(?:High-angle|Low-angle|Steep low-angle|Low cushion-level|Ground-level|First-person|Overhead|Frontal low-angle|Low eye-level|Low frontal|Low rear-side)\b/i.test(
+      ons.prose
+    );
   const cleanSoloProse = ons.is_solo
-    ? ons.prose
-        .replace(/^An adult woman\s+/i, "")
-        .replace(/^A (?:[a-z -]+\s+)?adult woman\s+/i, "")
-        .replace(/\ban adult woman\b/gi, "she")
-        .replace(/\ba (?:[a-z -]+\s+)?adult woman\b/gi, "she")
+    ? isCameraLeadSolo
+      ? ons.prose
+          .replace(/,\s*sitting barefoot with knees parted wide\b/i, ", where {name} sits barefoot with knees parted wide")
+          .replace(/\ba rosy tipsy adult woman\b/gi, "rosy, tipsy {name}")
+          .replace(/\ba sultry tipsy adult woman\b/gi, "sultry, tipsy {name}")
+          .replace(/\ba ([a-z]+)\s+tipsy adult woman\b/gi, "$1 tipsy {name}")
+          .replace(/\ban adult woman\b/gi, "{name}")
+      : ons.prose
+          .replace(/^An adult woman\s+/i, "")
+          .replace(/^A (?:[a-z -]+\s+)?adult woman\s+/i, "")
+          .replace(/\ban adult woman\b/gi, "she")
+          .replace(/\ba (?:[a-z -]+\s+)?adult woman\b/gi, "she")
     : ons.prose;
   const femboyProse = cleanSoloProse
     .replace(
       /\bTwo girls in contrasting navy and sakura-pink floral yukata with intact collars covering their chests\b/i,
       "Crossdressing boy in a navy floral yukata with intact collar covering his flat chest"
     )
-    .replace(/\bAn adult woman\b/g, "He")
-    .replace(/\ban adult woman\b/g, "he")
-    .replace(/\ba (?:[a-z -]+\s+)?adult woman\b/gi, "he")
+    .replace(/\bAn adult woman\b/g, "A crossdressing boy")
+    .replace(/\ban adult woman\b/g, "a crossdressing boy")
+    .replace(/\bA ([a-z ,-]+?)\s+adult woman\b/g, "A $1 crossdressing boy")
+    .replace(/\ba ([a-z ,-]+?)\s+adult woman\b/gi, "a $1 crossdressing boy")
     .replace(/\bShe\b/g, "He")
     .replace(/\bshe\b/g, "he")
+    .replace(/\bhers\b/gi, "his")
+    .replace(
+      /\b(behind|beneath|beside|watching|looking down at)\s+her\b(?=$|[.,;!]|\s+(?:in|on|at|from|with|by|for|to|into|onto|over|under|above|below|along|across|through|between|while|as|and|raising|gripping|holding|supporting|leaning|lying|sitting|standing|kneeling|walk|walks|walking)\b)/gi,
+      "$1 him"
+    )
     .replace(/\bHer\b/g, "His")
     .replace(/\bher\b/g, "his");
   const futaProse = cleanSoloProse.replace(
     /\bTwo girls in contrasting navy and sakura-pink floral yukata with intact collars covering their chests\b/i,
     "Futanari girl in a navy floral yukata with intact collar covering her chest"
   );
+  const rawOutfitPhrase = ons.prose_outfit_phrase || "";
+  const femboyOutfitPhrase = rawOutfitPhrase
+    .replace(/\bShe\b/g, "He")
+    .replace(/\bshe\b/g, "he")
+    .replace(/\bhers\b/gi, "his")
+    .replace(
+      /\b(behind|beneath|beside|watching|looking down at)\s+her\b(?=$|[.,;!]|\s+(?:in|on|at|from|with|by|for|to|into|onto|over|under|above|below|along|across|through|between|while|as|and|raising|gripping|holding|supporting|leaning|lying|sitting|standing|kneeling|walk|walks|walking)\b)/gi,
+      "$1 him"
+    )
+    .replace(/\bHer\b/g, "His")
+    .replace(/\bher\b/g, "his");
+  const extraOns10Clauses =
+    ons.id === "ONS10"
+      ? "|in a navy floral yukata with intact collar covering his flat chest|in a navy floral yukata with intact collar covering her chest|wearing a navy floral yukata closed over his flat chest|wearing a navy floral yukata closed over her chest"
+      : "";
+  const combinedOutfitPhrase = rawOutfitPhrase
+    ? `${rawOutfitPhrase}${femboyOutfitPhrase !== rawOutfitPhrase ? `|${femboyOutfitPhrase}` : ""}${extraOns10Clauses}`
+    : undefined;
   return {
     id: ons.id,
     title: ons.title,
@@ -1511,6 +1556,7 @@ const MAPPED_ONSEN_ENTRIES: RawSfEntry[] = ALL_RAW_ONSEN_ENTRIES.map((ons) => {
     allow_wall_mirror: ons.allow_wall_mirror,
     is_outdoor_onsen: ons.is_outdoor_onsen,
     is_onsen_yuri_showcase: ons.is_yuri_showcase,
+    is_precoital_invite: ons.is_precoital_invite,
     light_badge: ons.light_badge,
     light_tags: ons.light_tags,
     light_prose: ons.light_prose,
@@ -1527,8 +1573,10 @@ const MAPPED_ONSEN_ENTRIES: RawSfEntry[] = ALL_RAW_ONSEN_ENTRIES.map((ons) => {
     female_prose: cleanSoloProse,
     femboy_prose: femboyProse,
     futa_prose: futaProse,
-    prose_outfit_phrase: ons.prose_outfit_phrase,
+    prose_outfit_phrase: combinedOutfitPhrase,
     extra_neg: ons.extra_neg,
+    solo_spread_spec: ons.solo_spread_spec,
+    solo_spread_disabled_reason: ons.solo_spread_disabled_reason,
     keep_wet_clothes:
       ons.onsen_light_mode === "misty_bamboo_rotenburo" ||
       ons.onsen_light_mode === "snowy_lantern_rock_bath" ||

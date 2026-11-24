@@ -37,3 +37,17 @@ Using **Multi-Character Regional Partitioning (`[Base Prompt]` + `[Character 1]`
    - For crisp retro pixel-art sprites, downsampling finished art to `25%` and scaling back to `400%` with **Nearest Neighbor** interpolation locks clean pixel edges.
 3. **Regional Draw + Inpaint for Exact Emblems**:
    - For specific geometric ornaments (such as a 4-pointed star hairpin `✦`), sketching a simple color hint on NAI's Draw canvas and running regional **Inpaint** (`Strength: 0.45 ~ 0.55`) lets the emblem inherit surrounding lighting and brushwork naturally.
+
+## 3. Single-Panel Gesture & Anatomical CG Differentials (`单图动作/手势原画级差分`)
+
+When creating a standalone CG variation of an existing solo render (e.g., shifting one resting/skirt-holding hand into a finger-spreading display while keeping background, lighting, face, and garment folds locked):
+
+1. **Pre-Flight Eligibility & Two-Hand Conservation**:
+   - Skip mid-stride walking scenes or scenes whose lower body is occluded by intact skirts.
+   - Enforce a strict **2-hand budget**: keep Hand 1 on the signature prop (cup, carafe, bottle, quilt corner), tuck any hand-held skirt hem into the waist sash (`obi`) if needed, and reassign Hand 2 to the variation gesture so V5 never hallucinates a third arm (`extra hands, 3 hands, extra arms, 3 arms` in UC).
+   - On rear looking-back angles (`looking back`), pair reach-back hand phrasing with rear-oriented anatomy (`from behind`) rather than frontal leg tags so the pelvis does not twist 180°.
+2. **Anti-Self-Covering Negative Guards**:
+   - Whenever a hand moves to the lower body on solo framing, append `covering crotch, covering pussy, hand over crotch` to Negative UC so V5 does not misinterpret the hand placement as a modesty-covering gesture.
+3. **The Hand-Travel Distance Law (`Img2Img` vs. `Txt2Img` / Corridor `Inpaint`)**:
+   - **Short Arm Travel (`< 18%` canvas distance — hand already near hip, thigh hem, or waist sash)**: Whole-frame V5 Full `action: "img2img"` at **`Strength: 0.60 ~ 0.64` (`0.62` sweet spot), `Noise: 0.05`, `Steps: 28`, `CFG: 6.8`** preserves ~99% of room architecture, lighting, facial expression, and garment folds while cleanly moving the nearby hand into the target gesture.
+   - **Long Arm Travel (`> 20%` canvas distance — base hand high on a doorframe, near the face, outstretched toward viewer, or in a mirror scene)**: Whole-frame `Img2Img (0.62)` cannot erase the distant arm pixels and risks three defects: *(a)* frozen unmoved arm, *(b)* detached "phantom fingertips" spawning without a connected forearm, or *(c)* mirror-only updates where the reflection changes while the foreground pose stays frozen. Use **Standalone Surgical `Txt2Img`** (cleanest full-arm anatomy) or a **Regional `Inpaint` mask** covering both the old arm and the travel corridor.

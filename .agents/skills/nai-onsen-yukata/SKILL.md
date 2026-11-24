@@ -7,7 +7,7 @@ description: Empirically calibrated NovelAI V4.5 / V5 Japanese Hot-Spring Onsen 
 
 This skill documents the empirically verified prompt architecture for **55 Japanese Hot-Spring Onsen & Ryokan Yukata Compositions (`ONS01–ONS55`: 32 Duo + 23 Solo)** on NovelAI V5 Full (`nai-diffusion-5-full`, `28 steps, CFG 6.8`), verified across all 4 gender modes (`normal`, `femboy`, `futa_no_balls`, `futa_with_balls`) plus `2girls` Yuri (`ONS10`), totaling `221` verified T5 prompt combinations.
 
-See also [onsen_yukata_catalog.md](references/onsen_yukata_catalog.md) for the complete 55-scene creative palette.
+See also [onsen_yukata_catalog.md](references/onsen_yukata_catalog.md) for the complete 55-scene creative palette and [onsen_solo_spread_variations.md](references/onsen_solo_spread_variations.md) for the 23-scene Solo Spreading CG Variation (`单人掰穴差分`) evaluation and dual `Txt2Img` / `Img2Img` (`strength = 0.62`) implementation guide.
 
 ---
 
@@ -26,6 +26,11 @@ See also [onsen_yukata_catalog.md](references/onsen_yukata_catalog.md) for the c
   - `ONS26` lifting white futon blanket corner; `ONS27` wet hand beckoning at private bath edge; `ONS32` biting wooden room-key tag by retro vending machine; `ONS36` pouring tokkuri sake across collarbone; `ONS37` biting porcelain sake cup while offering red obi sash;
   - `ONS46` sideways tatami lounge tipping sake cup; `ONS47` sliding shoji doorway holding up sake carafe; `ONS48` moonlit veranda iced plum wine + rear skirt lift; `ONS49` lifting red kotatsu quilt wide open; `ONS50` hinoki tub rim extending red-lacquer sakazuki saucer;
   - `ONS51` hiroen rattan armchair leg-over-armrest with frosted green sake bottle; `ONS52` changing-room cypress bench untying obi beside masu cup; `ONS53` tall floor mirror reflecting flushed face while offering sake cup on all-fours; `ONS54` overhead white futon M-legs hugging sake carafe & reaching up; `ONS55` night garden stone bench dangling wooden geta from toes with gourd sake flask.
+
+### C. Solo Spreading CG Variation (`单人掰穴差分` · `20 / 23` Eligible Scenes)
+- **Eligibility Filter**: `20 / 23` solo scenes (`ONS12, 13, 18–20, 26–27, 32, 36–37, 46–55`) support clean 2-hand-conserving spreading variations across all 4 gender modes (`80` verified T5 prompts); `ONS11` (standing rear obi tie), `ONS14` (walking stone steps), and `ONS15` (active tissue wipe) preserve their base actions.
+- **Three Hand-Allocation Modes**: (1) *One-Hand Prop + Free-Hand Spread* (`14` scenes, tucking any hand-held hem into `obi`); (2) *Symmetrical Two-Hand Spread* (`ONS13, 18, 20, 32`); (3) *Rear Lookback Reach-Back Spread* (`ONS48, 53` paired with `1.55::pussy from behind::`).
+- **Dual Rendering Pipeline**: Use surgical hand-clause replacement for standalone `Txt2Img`, or feed the base PNG into V5 Full `action: "img2img"` (`strength: 0.58 ~ 0.64`, `noise: 0.05`) for pixel-locked background/face/yukata CG differentials (full rules in [onsen_solo_spread_variations.md](references/onsen_solo_spread_variations.md)).
 
 ---
 
