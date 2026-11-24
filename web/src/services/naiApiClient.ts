@@ -32,6 +32,25 @@ export class NaiApiError extends Error {
   }
 }
 
+const NAI_IMAGE_ORIGIN_PREFIX = "https://image.novelai.net/";
+const NAI_API_ORIGIN_PREFIX = "https://api.novelai.net/";
+
+export function resolveNaiApiUrl(url: string): string {
+  if (
+    typeof window !== "undefined" &&
+    (window.location.protocol === "http:" || window.location.protocol === "https:") &&
+    window.location.port === "17890"
+  ) {
+    if (url.startsWith(NAI_IMAGE_ORIGIN_PREFIX)) {
+      return `${window.location.origin}/api/nai-proxy/image/${url.slice(NAI_IMAGE_ORIGIN_PREFIX.length)}`;
+    }
+    if (url.startsWith(NAI_API_ORIGIN_PREFIX)) {
+      return `${window.location.origin}/api/nai-proxy/api/${url.slice(NAI_API_ORIGIN_PREFIX.length)}`;
+    }
+  }
+  return url;
+}
+
 export function normalizeToken(rawToken: string): string {
   let token = rawToken.trim();
   if (token.toLowerCase().startsWith("bearer ")) {
@@ -779,7 +798,7 @@ export async function fetchSubscriptionInfo(rawToken: string): Promise<Subscript
 
   let resp: Response;
   try {
-    resp = await fetch(`${NAI_IMAGE_ENDPOINT}/user/subscription`, {
+    resp = await fetch(resolveNaiApiUrl(`${NAI_IMAGE_ENDPOINT}/user/subscription`), {
       method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -1058,7 +1077,7 @@ export async function generateSingleImageNai(options: {
   let resp: Response;
   try {
     if (model === MODEL_V4_5_FULL) {
-      resp = await fetch(`${NAI_IMAGE_ENDPOINT}/ai/generate-image`, {
+      resp = await fetch(resolveNaiApiUrl(`${NAI_IMAGE_ENDPOINT}/ai/generate-image`), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -1074,7 +1093,7 @@ export async function generateSingleImageNai(options: {
         new Blob([JSON.stringify(payload)], { type: "application/json" }),
         "blob"
       );
-      resp = await fetch(`${NAI_IMAGE_ENDPOINT}/ai/generate-image`, {
+      resp = await fetch(resolveNaiApiUrl(`${NAI_IMAGE_ENDPOINT}/ai/generate-image`), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -1150,7 +1169,7 @@ export async function encodeVibeImageNai(options: {
 
   let resp: Response;
   try {
-    resp = await fetch(`${NAI_IMAGE_ENDPOINT}/ai/encode-vibe`, {
+    resp = await fetch(resolveNaiApiUrl(`${NAI_IMAGE_ENDPOINT}/ai/encode-vibe`), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -1226,7 +1245,7 @@ export async function upscaleSingleImageNai(options: {
   const t0 = performance.now();
   let resp: Response;
   try {
-    resp = await fetch(`${NAI_IMAGE_ENDPOINT}/ai/upscale`, {
+    resp = await fetch(resolveNaiApiUrl(`${NAI_IMAGE_ENDPOINT}/ai/upscale`), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,

@@ -431,11 +431,14 @@ export function loadActiveConfig(): CharacterConfig {
     if (merged.other_use_scene_outfit === undefined) {
       merged.other_use_scene_outfit = true;
     }
-    if (merged.enable_solo_spread === undefined) {
-      merged.enable_solo_spread = false;
-    } else {
-      merged.enable_solo_spread = Boolean(merged.enable_solo_spread);
+    if (
+      merged.solo_spread_mode !== "off" &&
+      merged.solo_spread_mode !== "pure" &&
+      merged.solo_spread_mode !== "cum"
+    ) {
+      merged.solo_spread_mode = merged.enable_solo_spread ? "pure" : "off";
     }
+    merged.enable_solo_spread = merged.solo_spread_mode !== "off";
     delete (merged as unknown as Record<string, unknown>).eye_color;
     delete (merged as unknown as Record<string, unknown>).hair_tags;
     if (!parsed.wb_v2_migrated) {
@@ -533,8 +536,17 @@ export function loadCustomPresets(): Record<string, Partial<CharacterConfig>> {
     if (pVal && typeof pVal.lighting_preset === "string") {
       pVal.lighting_preset = normalizeLightingPresetName(pVal.lighting_preset);
     }
-    if (pVal && pVal.enable_solo_spread !== undefined) {
-      pVal.enable_solo_spread = Boolean(pVal.enable_solo_spread);
+    if (pVal && (pVal.solo_spread_mode !== undefined || pVal.enable_solo_spread !== undefined)) {
+      const m =
+        pVal.solo_spread_mode === "off" ||
+        pVal.solo_spread_mode === "pure" ||
+        pVal.solo_spread_mode === "cum"
+          ? pVal.solo_spread_mode
+          : pVal.enable_solo_spread
+            ? "pure"
+            : "off";
+      pVal.solo_spread_mode = m;
+      pVal.enable_solo_spread = m !== "off";
     }
   }
   return merged;
@@ -911,5 +923,50 @@ export async function saveStarredGalleryRecords(records: GeneratedImageRecord[])
     db.close();
   } catch {
     // ignore IndexedDB quota/availability errors
+  }
+}
+
+export async function resetAllWorkbenchStorage(): Promise<void> {
+  unmountLocalOutputDirectory();
+  if (typeof localStorage !== "undefined") {
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("nai_wb_")) {
+          keysToRemove.push(k);
+        }
+      }
+      for (const k of keysToRemove) {
+        localStorage.removeItem(k);
+      }
+    } catch {
+      // ignore localStorage errors
+    }
+  }
+  if (typeof indexedDB !== "undefined") {
+    try {
+      const db = await openWorkbenchIdb();
+      await new Promise<void>((resolve) => {
+        const tx = db.transaction(IDB_STORE, "readwrite");
+        tx.objectStore(IDB_STORE).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+        tx.onabort = () => resolve();
+      });
+      db.close();
+    } catch {
+      // ignore IndexedDB clear errors
+    }
+    try {
+      await new Promise<void>((resolve) => {
+        const req = indexedDB.deleteDatabase(IDB_NAME);
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+        req.onblocked = () => resolve();
+      });
+    } catch {
+      // ignore IndexedDB delete errors
+    }
   }
 }

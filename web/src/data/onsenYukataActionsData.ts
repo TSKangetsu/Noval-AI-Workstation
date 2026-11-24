@@ -1,5 +1,5 @@
 // NovelAI V4.5 / V5 Japanese Hot-Spring Onsen & Ryokan Yukata Scenes (ONS01-ONS55 · 21. 温泉双人 [32] + 22. 温泉单人 [23])
-// Empirically calibrated across 5 Scene-Bound Onsen Lighting Modes, Chest-Coverage & Geta/Slipper Footwear Hygiene, Sake-Tipsy Mechanics, Solo Spreading CG Variations (20/23), and 4-Mode Gender Isolation.
+// Empirically calibrated across 5 Scene-Bound Onsen Lighting Modes, Chest-Coverage & Geta/Slipper Footwear Hygiene, Sake-Tipsy Mechanics, 3-Stage Solo Spreading CG Variations (20/23), and 4-Mode Gender Isolation.
 
 export type OnsenActionCategory = "21. 温泉双人" | "22. 温泉单人";
 
@@ -24,10 +24,14 @@ export interface OnsenSoloSpreadSpec {
   spread_femboy_tags: string;
   spread_futa_tags: string;
   spread_prose_suffix: string;
+  strip_aftermath_prose?: boolean;
+  spread_cum_female_tags?: string;
+  spread_cum_femboy_tags?: string;
+  spread_cum_futa_tags?: string;
+  spread_cum_prose_suffix?: string;
 }
 
-export const ONSEN_SOLO_SPREAD_EXTRA_UC =
-  "covering crotch, covering pussy, hand over crotch, holding own penis, grabbing penis, extra arms, 3 arms";
+export const ONSEN_SOLO_SPREAD_EXTRA_UC = "covering crotch, covering pussy, hand over crotch, holding own penis, grabbing penis, extra arms, 3 arms";
 
 export const ONSEN_LIGHT_DEFAULTS: Record<
   OnsenLightMode,
@@ -70,8 +74,7 @@ export const ONSEN_LIGHT_DEFAULTS: Record<
   }
 };
 
-export const ONSEN_BAREFOOT_BAN_UC =
-  "shoes, footwear, sneakers, boots, thighhighs, stockings, socks, legwear, pantyhose";
+export const ONSEN_BAREFOOT_BAN_UC = "shoes, footwear, sneakers, boots, thighhighs, stockings, socks, legwear, pantyhose";
 
 export const ONSEN_UNDERGARMENT_UC = "bra, panties, underwear";
 
@@ -524,10 +527,15 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "solo_spread_spec": {
       "archetype": "one_hand_prop_frontal",
       "spread_prop_tags": "right hand holding a retro cold glass 1.65::milk bottle:: near her lips while left hand reaches between parted knees with fingers gently spreading",
-      "spread_female_tags": "1.6::after sex::, 1.35::labia::, 1.25::spread pussy::, 1.55::spreading own pussy::, fingers, 1.5::cum in pussy::, 1.5::cumdrip:: down inner thighs",
-      "spread_femboy_tags": "1.6::after sex::, 1.6::after anal::, 1.4::small penis::, 1.45::spread anus::, 1.45::spreading own ass::, fingers, 1.5::cumdrip::",
-      "spread_futa_tags": "1.6::after sex::, 1.4::small penis::, 1.35::labia::, 1.25::spread pussy::, 1.5::spreading own pussy::, fingers, 1.5::cumdrip::",
-      "spread_prose_suffix": " while her free left hand reaches between her thighs to spread open with her fingers."
+      "spread_female_tags": "1.35::labia::, 1.25::spread pussy::, 1.55::spreading own pussy::, fingers, 1.45::pussy juice:: above footbath",
+      "spread_femboy_tags": "1.4::small penis::, 1.45::spread anus::, 1.45::spreading own ass::, fingers above footbath",
+      "spread_futa_tags": "1.4::small penis::, 1.35::labia::, 1.25::spread pussy::, 1.5::spreading own pussy::, fingers",
+      "spread_prose_suffix": " while her free left hand reaches between her thighs to spread open with her fingers.",
+      "strip_aftermath_prose": true,
+      "spread_cum_female_tags": "1.6::after sex::, 1.35::labia::, 1.25::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cum overflow::, 1.5::cumdrip::",
+      "spread_cum_femboy_tags": "1.6::after sex::, 1.6::after anal::, 1.4::small penis::, 1.45::spread anus::, 1.45::spreading own ass::, fingers, 1.6::cum in ass::, 1.5::cumdrip::",
+      "spread_cum_futa_tags": "1.6::after sex::, 1.4::small penis::, 1.35::labia::, 1.25::spread pussy::, 1.5::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.5::cumdrip::",
+      "spread_cum_prose_suffix": " while her free left hand spreads open as white cum overflows toward the footbath."
     }
   },
   {
@@ -566,10 +574,15 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "solo_spread_spec": {
       "archetype": "two_hand_symmetrical",
       "spread_prop_tags": "small folded white cotton 1.55::towel on head:: resting on her head while both wet hands reach down between parted thighs in crystal-clear shallow water",
-      "spread_female_tags": "1.6::after sex::, 1.35::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, both hands fingers, 1.5::cum in pussy::, white wisps in clear water",
-      "spread_femboy_tags": "1.6::after sex::, 1.6::after anal::, 1.4::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers in clear water",
-      "spread_futa_tags": "1.6::after sex::, 1.4::small penis::, 1.35::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers in clear water",
-      "spread_prose_suffix": " while reaching both wet hands between her thighs in the shallow clear water to spread open with her fingers."
+      "spread_female_tags": "1.35::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.45::pussy juice:: in clear water",
+      "spread_femboy_tags": "1.4::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers in clear water",
+      "spread_futa_tags": "1.4::small penis::, 1.35::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers in clear water",
+      "spread_prose_suffix": " while reaching both wet hands between her thighs in the shallow clear water to spread open with her fingers.",
+      "strip_aftermath_prose": true,
+      "spread_cum_female_tags": "1.6::after sex::, 1.35::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cum overflow::, wisps in water",
+      "spread_cum_femboy_tags": "1.6::after sex::, 1.6::after anal::, 1.4::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, 1.6::cum in ass:: in water",
+      "spread_cum_futa_tags": "1.6::after sex::, 1.4::small penis::, 1.35::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy:: in water",
+      "spread_cum_prose_suffix": " while both wet hands spread open in shallow water as white cum drifts out."
     }
   },
   {
@@ -746,10 +759,15 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "solo_spread_spec": {
       "archetype": "two_hand_symmetrical",
       "spread_prop_tags": "back leaning against cedar veranda post beside an opened retro glass 1.6::milk bottle:: while both hands reach down between wide M-spread thighs",
-      "spread_female_tags": "1.65::after sex::, 1.4::labia::, 1.35::spread pussy::, 1.6::spreading own pussy::, both hands fingers, 1.55::cum in pussy::, 1.55::cumdrip::",
-      "spread_femboy_tags": "1.65::after sex::, 1.6::after anal::, 1.4::small penis::, 1.5::spread anus::, 1.55::spreading own ass::, both hands fingers, 1.55::cumdrip::",
-      "spread_futa_tags": "1.65::after sex::, 1.4::small penis::, 1.4::labia::, 1.35::spread pussy::, 1.55::spreading own pussy::, fingers, 1.55::cumdrip::",
-      "spread_prose_suffix": " while using both hands between her wide-spread knees to pull open and display."
+      "spread_female_tags": "1.4::labia::, 1.35::spread pussy::, 1.6::spreading own pussy::, both hands fingers, 1.5::pussy juice::",
+      "spread_femboy_tags": "1.4::small penis::, 1.5::spread anus::, 1.55::spreading own ass::, both hands fingers",
+      "spread_futa_tags": "1.4::small penis::, 1.4::labia::, 1.35::spread pussy::, 1.55::spreading own pussy::, fingers",
+      "spread_prose_suffix": " while using both hands between her wide-spread knees to pull open and display.",
+      "strip_aftermath_prose": true,
+      "spread_cum_female_tags": "1.65::after sex::, 1.4::labia::, 1.35::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.6::cum overflow::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.65::after sex::, 1.6::after anal::, 1.4::small penis::, 1.5::spread anus::, 1.55::spreading own ass::, fingers, 1.6::cum in ass::, 1.55::cumdrip::",
+      "spread_cum_futa_tags": "1.65::after sex::, 1.4::small penis::, 1.4::labia::, 1.35::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cumdrip::",
+      "spread_cum_prose_suffix": " while both hands spread open as white cum overflows onto the wooden veranda."
     }
   },
   {
@@ -790,10 +808,15 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_outfit_override": "adult woman, light-blue hydrangea-patterned cotton 1.6::yukata:: with intact modest collar covering chest and lower hem tucked neatly into yellow obi sash exposing bare thighs, 1.5::bare feet::",
       "spread_femboy_outfit_override": "light-blue hydrangea-patterned cotton 1.6::yukata:: with intact modest collar covering chest and lower hem tucked neatly into yellow obi sash exposing bare thighs, 1.5::bare feet::",
       "spread_prop_tags": "right hand pressing a cold retro glass 1.65::milk bottle:: against her flushed cheek while left hand reaches down between wide-squatting thighs to spread",
-      "spread_female_tags": "1.65::after sex::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.55::cum in pussy::, 1.55::cumdrip::",
-      "spread_femboy_tags": "1.65::after sex::, 1.6::after anal::, 1.4::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, 1.55::cumdrip::",
-      "spread_futa_tags": "1.65::after sex::, 1.4::small penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers, 1.55::cumdrip::",
-      "spread_prose_suffix": " while her free left hand reaches down between her squatting thighs to spread open with her fingers."
+      "spread_female_tags": "1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.5::pussy juice::",
+      "spread_femboy_tags": "1.4::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers",
+      "spread_futa_tags": "1.4::small penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers",
+      "spread_prose_suffix": " while her free left hand reaches down between her squatting thighs to spread open with her fingers.",
+      "strip_aftermath_prose": true,
+      "spread_cum_female_tags": "1.65::after sex::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.6::cum overflow::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.65::after sex::, 1.6::after anal::, 1.4::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, 1.6::cum in ass::, 1.55::cumdrip::",
+      "spread_cum_futa_tags": "1.65::after sex::, 1.4::small penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cumdrip::",
+      "spread_cum_prose_suffix": " while her free left hand spreads open as white cum drips toward the water."
     }
   },
   {
@@ -832,10 +855,15 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
     "solo_spread_spec": {
       "archetype": "two_hand_symmetrical",
       "spread_prop_tags": "both trembling hands reaching inward, between wide-splayed thighs on woven tatami mat, to spread open in dazed display",
-      "spread_female_tags": "1.7::after sex::, 1.65::after vaginal::, 1.4::labia::, 1.35::spread pussy::, 1.6::spreading own pussy::, fingers, 1.65::cum overflow::, 1.6::cum in pussy::",
-      "spread_femboy_tags": "1.7::after sex::, 1.65::after anal::, 1.4::small penis::, 1.5::spread anus::, 1.55::spreading own ass::, fingers, 1.65::cum overflow::",
-      "spread_futa_tags": "1.7::after sex::, 1.4::small penis::, 1.4::labia::, 1.35::spread pussy::, 1.55::spreading own pussy::, fingers, 1.65::cum overflow::",
-      "spread_prose_suffix": " while reaching both trembling hands between her wide-splayed thighs to spread open."
+      "spread_female_tags": "1.4::labia::, 1.35::spread pussy::, 1.6::spreading own pussy::, fingers, 1.5::pussy juice::",
+      "spread_femboy_tags": "1.4::small penis::, 1.5::spread anus::, 1.55::spreading own ass::, fingers",
+      "spread_futa_tags": "1.4::small penis::, 1.4::labia::, 1.35::spread pussy::, 1.55::spreading own pussy::, fingers",
+      "spread_prose_suffix": " while reaching both trembling hands between her wide-splayed thighs to spread open.",
+      "strip_aftermath_prose": true,
+      "spread_cum_female_tags": "1.7::after sex::, 1.4::labia::, 1.35::spread pussy::, 1.6::spreading own pussy::, fingers, 1.65::cum overflow::, 1.6::cum in pussy::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.7::after sex::, 1.65::after anal::, 1.4::small penis::, 1.5::spread anus::, 1.55::spreading own ass::, fingers, 1.65::cum overflow::, 1.6::cum in ass::",
+      "spread_cum_futa_tags": "1.7::after sex::, 1.4::small penis::, 1.4::labia::, 1.35::spread pussy::, 1.55::spreading own pussy::, fingers, 1.65::cum overflow::, 1.6::cum in pussy::",
+      "spread_cum_prose_suffix": " while both hands spread open as white cum pools onto the tatami."
     }
   },
   {
@@ -1047,7 +1075,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_female_tags": "1.55::spread legs::, 1.4::labia::, 1.25::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::, seductive bedtime invitation",
       "spread_femboy_tags": "1.55::spread legs::, 1.45::small penis::, 1.4::erect penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, seductive bedtime invitation",
       "spread_futa_tags": "1.55::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.25::spread pussy::, 1.55::spreading own pussy::, fingers, seductive bedtime invitation",
-      "spread_prose_suffix": " while sliding her other hand down between her thighs to spread open in an explicit bedtime invitation."
+      "spread_prose_suffix": " while sliding her other hand down between her thighs to spread open in an explicit bedtime invitation.",
+      "spread_cum_female_tags": "1.55::after sex::, 1.4::labia::, 1.25::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.6::cum overflow::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.55::after sex::, 1.55::after anal::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, 1.6::cum in ass::, 1.55::cumdrip::",
+      "spread_cum_futa_tags": "1.55::after sex::, 1.45::erect penis::, 1.4::labia::, 1.25::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cum overflow::",
+      "spread_cum_prose_suffix": " while her other hand spreads open as white cum overflows onto the futon."
     }
   },
   {
@@ -1089,7 +1121,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_female_tags": "1.4::labia::, 1.25::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.45::pussy juice:: visible at shallow clear waterline",
       "spread_femboy_tags": "1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers visible at shallow clear waterline",
       "spread_futa_tags": "1.45::erect penis::, 1.4::labia::, 1.25::spread pussy::, 1.55::spreading own pussy::, fingers visible at shallow clear waterline",
-      "spread_prose_suffix": " while her other wet hand reaches between her thighs at the clear waterline to spread open."
+      "spread_prose_suffix": " while her other wet hand reaches between her thighs at the clear waterline to spread open.",
+      "spread_cum_female_tags": "1.55::after sex::, 1.4::labia::, 1.25::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cum overflow::, wisps at waterline",
+      "spread_cum_femboy_tags": "1.55::after sex::, 1.55::after anal::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, 1.6::cum in ass:: at waterline",
+      "spread_cum_futa_tags": "1.55::after sex::, 1.45::erect penis::, 1.4::labia::, 1.25::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy:: at waterline",
+      "spread_cum_prose_suffix": " while her wet hand spreads open at the waterline as white cum drifts out."
     }
   },
   {
@@ -1269,7 +1305,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_female_tags": "1.6::spread legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, both hands fingers, glistening 1.5::pussy juice::",
       "spread_femboy_tags": "1.6::spread legs::, 1.45::small penis::, 1.4::erect penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers",
       "spread_futa_tags": "1.6::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers",
-      "spread_prose_suffix": " with her front yukata hem tucked into her red obi so both hands reach down to spread open."
+      "spread_prose_suffix": " with her front yukata hem tucked into her red obi so both hands reach down to spread open.",
+      "spread_cum_female_tags": "1.55::after sex::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, both hands fingers, 1.6::cum in pussy::, 1.6::cum overflow::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.55::after sex::, 1.55::after anal::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, 1.6::cum in ass::, 1.55::cumdrip::",
+      "spread_cum_futa_tags": "1.55::after sex::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cumdrip::",
+      "spread_cum_prose_suffix": " with hem tucked in her obi as both hands spread open and white cum trails down."
     }
   },
   {
@@ -1413,7 +1453,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_female_tags": "1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::, clear sake droplets on torso",
       "spread_femboy_tags": "1.45::small penis::, 1.4::erect penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, clear sake droplets on chest",
       "spread_futa_tags": "1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers, clear sake droplets on torso",
-      "spread_prose_suffix": " while her left hand reaches down between her wide-parted thighs to spread open with her fingers."
+      "spread_prose_suffix": " while her left hand reaches down between her wide-parted thighs to spread open with her fingers.",
+      "spread_cum_female_tags": "1.55::after sex::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.6::cum overflow::, 1.55::cumdrip::, sake droplets",
+      "spread_cum_femboy_tags": "1.55::after sex::, 1.55::after anal::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, 1.6::cum in ass::, 1.55::cumdrip::",
+      "spread_cum_futa_tags": "1.55::after sex::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cum overflow::",
+      "spread_cum_prose_suffix": " while her left hand spreads open as white cum overflows onto the silk cushion."
     }
   },
   {
@@ -1455,7 +1499,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_female_tags": "1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice:: between kneeling thighs",
       "spread_femboy_tags": "1.45::small penis::, 1.4::erect penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers between kneeling thighs",
       "spread_futa_tags": "1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers between kneeling thighs",
-      "spread_prose_suffix": " while her free right hand reaches down between her parted knees to spread open with her fingers."
+      "spread_prose_suffix": " while her free right hand reaches down between her parted knees to spread open with her fingers.",
+      "spread_cum_female_tags": "1.55::after sex::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.6::cum overflow::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.55::after sex::, 1.55::after anal::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, 1.6::cum in ass::, 1.55::cumdrip::",
+      "spread_cum_futa_tags": "1.55::after sex::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cum overflow::",
+      "spread_cum_prose_suffix": " while her right hand spreads open as white cum overflows onto the futon."
     }
   },
   {
@@ -1769,7 +1817,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_female_tags": "1.55::spread legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
       "spread_femboy_tags": "1.55::spread legs::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers",
       "spread_futa_tags": "1.55::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers",
-      "spread_prose_suffix": " while her right hand reaches between her thighs to spread open with her fingers."
+      "spread_prose_suffix": " while her right hand reaches between her thighs to spread open with her fingers.",
+      "spread_cum_female_tags": "1.55::after sex::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.6::cum overflow::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.55::after sex::, 1.55::after anal::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, 1.6::cum in ass::, 1.55::cumdrip::",
+      "spread_cum_futa_tags": "1.55::after sex::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cum overflow::",
+      "spread_cum_prose_suffix": " while her right hand spreads open as white cum trickles onto the tatami."
     }
   },
   {
@@ -1813,7 +1865,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_female_tags": "1.55::spread legs::, 1.4::labia::, 1.25::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.45::pussy juice::",
       "spread_femboy_tags": "1.55::spread legs::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers",
       "spread_futa_tags": "1.55::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.25::spread pussy::, 1.55::spreading own pussy::, fingers",
-      "spread_prose_suffix": " with her front hem tucked into her red sash so her right hand spreads open at the doorway."
+      "spread_prose_suffix": " with her front hem tucked into her red sash so her right hand spreads open at the doorway.",
+      "spread_cum_female_tags": "1.55::after sex::, 1.4::labia::, 1.25::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cum overflow::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.55::after sex::, 1.55::after anal::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, 1.6::cum in ass::, 1.55::cumdrip::",
+      "spread_cum_futa_tags": "1.55::after sex::, 1.45::erect penis::, 1.4::labia::, 1.25::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cumdrip::",
+      "spread_cum_prose_suffix": " with front hem tucked in her red sash as her right hand spreads open with cum."
     }
   },
   {
@@ -1857,7 +1913,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_female_tags": "1.55::pussy from behind::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.45::pussy juice::",
       "spread_femboy_tags": "1.5::spread anus::, 1.55::spreading own ass::, fingers from behind, 1.4::small penis::",
       "spread_futa_tags": "1.5::pussy from behind::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, 1.4::erect penis::, fingers",
-      "spread_prose_suffix": " with her back hem tucked into her sash while reaching one hand back to spread open from behind."
+      "spread_prose_suffix": " with her back hem tucked into her sash while reaching one hand back to spread open from behind.",
+      "spread_cum_female_tags": "1.55::after sex::, 1.55::pussy from behind::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.6::cum overflow::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.55::after sex::, 1.55::after anal::, 1.5::spread anus::, 1.55::spreading own ass::, fingers from behind, 1.4::small penis::, 1.6::cum in ass::, 1.55::cumdrip::",
+      "spread_cum_futa_tags": "1.55::after sex::, 1.5::pussy from behind::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, 1.4::erect penis::, fingers, 1.6::cum in pussy::, 1.55::cumdrip::",
+      "spread_cum_prose_suffix": " with back hem tucked in her sash while reaching back to spread open as cum drips."
     }
   },
   {
@@ -1899,7 +1959,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_female_tags": "1.65::spread legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
       "spread_femboy_tags": "1.65::spread legs::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers",
       "spread_futa_tags": "1.65::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers",
-      "spread_prose_suffix": " while her left hand reaches down under the lifted red kotatsu quilt to spread open with her fingers."
+      "spread_prose_suffix": " while her left hand reaches down under the lifted red kotatsu quilt to spread open with her fingers.",
+      "spread_cum_female_tags": "1.55::after sex::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.6::cum overflow::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.55::after sex::, 1.55::after anal::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, 1.6::cum in ass::, 1.55::cumdrip::",
+      "spread_cum_futa_tags": "1.55::after sex::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cum overflow::",
+      "spread_cum_prose_suffix": " while her left hand spreads open under the kotatsu quilt as white cum overflows."
     }
   },
   {
@@ -1941,7 +2005,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_female_tags": "1.7::spread legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
       "spread_femboy_tags": "1.7::spread legs::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers",
       "spread_futa_tags": "1.7::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers",
-      "spread_prose_suffix": " while her left hand reaches between her thighs on the wooden tub rim to spread open."
+      "spread_prose_suffix": " while her left hand reaches between her thighs on the wooden tub rim to spread open.",
+      "spread_cum_female_tags": "1.55::after sex::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.6::cum overflow::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.55::after sex::, 1.55::after anal::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, 1.6::cum in ass::, 1.55::cumdrip::",
+      "spread_cum_futa_tags": "1.55::after sex::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cum overflow::",
+      "spread_cum_prose_suffix": " while her left hand spreads open on the tub rim as white cum overflows onto cypress."
     }
   },
   {
@@ -1983,7 +2051,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_female_tags": "1.65::spread legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
       "spread_femboy_tags": "1.65::spread legs::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers",
       "spread_futa_tags": "1.65::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers",
-      "spread_prose_suffix": " while her left hand reaches between her thighs in the rattan armchair to spread open with her fingers."
+      "spread_prose_suffix": " while her left hand reaches between her thighs in the rattan armchair to spread open with her fingers.",
+      "spread_cum_female_tags": "1.55::after sex::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.6::cum overflow::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.55::after sex::, 1.55::after anal::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, 1.6::cum in ass::, 1.55::cumdrip::",
+      "spread_cum_futa_tags": "1.55::after sex::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cum overflow::",
+      "spread_cum_prose_suffix": " while her left hand spreads open in the rattan chair as white cum overflows."
     }
   },
   {
@@ -2025,7 +2097,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_female_tags": "1.7::spread legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
       "spread_femboy_tags": "1.7::spread legs::, 1.45::small penis::, 1.3::small testicles::, 1.5::spread anus::, 1.55::spreading own ass::, fingers",
       "spread_futa_tags": "1.7::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers",
-      "spread_prose_suffix": " while reaching down between wide-parted knees on the wooden bench to spread open."
+      "spread_prose_suffix": " while reaching down between wide-parted knees on the wooden bench to spread open.",
+      "spread_cum_female_tags": "1.55::after sex::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.6::cum overflow::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.55::after sex::, 1.55::after anal::, 1.45::small penis::, 1.3::small testicles::, 1.5::spread anus::, 1.55::spreading own ass::, fingers, 1.6::cum in ass::, 1.55::cumdrip::",
+      "spread_cum_futa_tags": "1.55::after sex::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cum overflow::",
+      "spread_cum_prose_suffix": " while spreading open on the wooden bench as white cum overflows."
     }
   },
   {
@@ -2067,7 +2143,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_female_tags": "1.55::pussy from behind::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
       "spread_femboy_tags": "1.5::spread anus::, 1.55::spreading own ass::, fingers from behind, 1.4::small penis::",
       "spread_futa_tags": "1.5::pussy from behind::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, 1.4::erect penis::, fingers",
-      "spread_prose_suffix": " while reaching her right hand back behind her hip to spread open from behind."
+      "spread_prose_suffix": " while reaching her right hand back behind her hip to spread open from behind.",
+      "spread_cum_female_tags": "1.55::after sex::, 1.55::pussy from behind::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.6::cum overflow::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.55::after sex::, 1.55::after anal::, 1.5::spread anus::, 1.55::spreading own ass::, fingers from behind, 1.4::small penis::, 1.6::cum in ass::, 1.55::cumdrip::",
+      "spread_cum_futa_tags": "1.55::after sex::, 1.5::pussy from behind::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, 1.4::erect penis::, fingers, 1.6::cum in pussy::, 1.55::cumdrip::",
+      "spread_cum_prose_suffix": " while reaching her right hand back to spread open as white cum drips onto the cushion."
     }
   },
   {
@@ -2109,7 +2189,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_female_tags": "1.7::spread legs::, 1.6::m legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
       "spread_femboy_tags": "1.7::spread legs::, 1.6::m legs::, 1.45::small penis::, 1.5::spread anus::, 1.55::spreading own ass::, fingers",
       "spread_futa_tags": "1.7::spread legs::, 1.6::m legs::, 1.45::erect penis::, 1.4::labia::, 1.35::spread pussy::, 1.55::spreading own pussy::, fingers",
-      "spread_prose_suffix": " while her right hand reaches down between her wide M-spread thighs to spread open with her fingers."
+      "spread_prose_suffix": " while her right hand reaches down between her wide M-spread thighs to spread open with her fingers.",
+      "spread_cum_female_tags": "1.55::after sex::, 1.6::m legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.65::cum in pussy::, 1.6::cum overflow::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.55::after sex::, 1.55::after anal::, 1.6::m legs::, 1.45::small penis::, 1.5::spread anus::, 1.55::spreading own ass::, fingers, 1.6::cum in ass::, 1.6::cum overflow::",
+      "spread_cum_futa_tags": "1.55::after sex::, 1.6::m legs::, 1.45::erect penis::, 1.4::labia::, 1.35::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.6::cum overflow::",
+      "spread_cum_prose_suffix": " while her right hand spreads open between M-spread thighs as white cum overflows onto the futon."
     }
   },
   {
@@ -2153,7 +2237,11 @@ export const ALL_RAW_ONSEN_ENTRIES: RawOnsenActionEntry[] = [
       "spread_female_tags": "1.7::spread legs::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, glistening 1.5::pussy juice::",
       "spread_femboy_tags": "1.7::spread legs::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers",
       "spread_futa_tags": "1.7::spread legs::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers",
-      "spread_prose_suffix": " while her right hand reaches between her thighs on the garden stone bench to spread open."
+      "spread_prose_suffix": " while her right hand reaches between her thighs on the garden stone bench to spread open.",
+      "spread_cum_female_tags": "1.55::after sex::, 1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.6::cum overflow::, 1.55::cumdrip::",
+      "spread_cum_femboy_tags": "1.55::after sex::, 1.55::after anal::, 1.45::small penis::, 1.45::spread anus::, 1.5::spreading own ass::, fingers, 1.6::cum in ass::, 1.55::cumdrip::",
+      "spread_cum_futa_tags": "1.55::after sex::, 1.45::erect penis::, 1.4::labia::, 1.3::spread pussy::, 1.55::spreading own pussy::, fingers, 1.6::cum in pussy::, 1.55::cum overflow::",
+      "spread_cum_prose_suffix": " while her right hand spreads open on the stone bench as white cum overflows."
     }
   }
 ];

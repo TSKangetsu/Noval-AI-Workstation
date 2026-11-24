@@ -85,6 +85,38 @@ import {
   type OnsenSoloSpreadArchetype,
   type OnsenSoloSpreadSpec,
 } from "./onsenYukataActionsData";
+import {
+  ALL_RAW_CAR_INTERIOR_ENTRIES,
+  CAR_ANTI_BEDROOM_UC,
+  CAR_BACKSEAT_NO_WHEEL_UC,
+  CAR_BAREFOOT_BAN_UC,
+  CAR_LIGHT_DEFAULTS,
+  CAR_SEATBELT_GUARD_UC,
+  CAR_SOLO_PARTNER_BAN_UC,
+  CAR_SOLO_PURE_SPREAD_ANTI_CUM_UC,
+  CAR_SOLO_SPREAD_EXTRA_UC,
+  CAR_STEERING_SINGLE_UC,
+  type CarCameraMode,
+  type CarInteriorActionCategory,
+  type CarLightMode,
+  type CarLightSpec,
+} from "./carInteriorActionsData";
+import {
+  ALL_RAW_MATSURI_ENTRIES,
+  MATSURI_ANTI_INDOOR_UC,
+  MATSURI_BAREFOOT_BAN_UC,
+  MATSURI_CROWD_GUARD_UC,
+  MATSURI_GETA_SOCK_BAN_UC,
+  MATSURI_LIGHT_DEFAULTS,
+  MATSURI_PURE_SPREAD_ANTI_CUM_UC,
+  MATSURI_SOLO_PARTNER_BAN_UC,
+  MATSURI_SOLO_SPREAD_EXTRA_UC,
+  MATSURI_UNDERGARMENT_UC,
+  type MatsuriActionCategory,
+  type MatsuriCameraMode,
+  type MatsuriLightMode,
+  type MatsuriLightSpec,
+} from "./matsuriStealthActionsData";
 
 export {
   AFTERSEX_DRIP_DRESSED_CHEST_UC,
@@ -95,6 +127,15 @@ export {
   BATHROOM_TOWEL_UC,
   CAMPING_BAREFOOT_BAN_UC,
   CAMPING_LIGHT_DEFAULTS,
+  CAR_ANTI_BEDROOM_UC,
+  CAR_BACKSEAT_NO_WHEEL_UC,
+  CAR_BAREFOOT_BAN_UC,
+  CAR_LIGHT_DEFAULTS,
+  CAR_SEATBELT_GUARD_UC,
+  CAR_SOLO_PARTNER_BAN_UC,
+  CAR_SOLO_PURE_SPREAD_ANTI_CUM_UC,
+  CAR_SOLO_SPREAD_EXTRA_UC,
+  CAR_STEERING_SINGLE_UC,
   FEMALE_APRON_NO_LEGWEAR,
   FEMALE_NAKED_APRON_CORE,
   FEMALE_NAKED_APRON_REAR_ONLY_CORE,
@@ -106,6 +147,15 @@ export {
   HOUSEWORK_LIGHT_DEFAULTS,
   KITCHEN_LANDSCAPE_ANTI_LETTERBOX_UC,
   kitchenLegwearTagsFor,
+  MATSURI_ANTI_INDOOR_UC,
+  MATSURI_BAREFOOT_BAN_UC,
+  MATSURI_CROWD_GUARD_UC,
+  MATSURI_GETA_SOCK_BAN_UC,
+  MATSURI_LIGHT_DEFAULTS,
+  MATSURI_PURE_SPREAD_ANTI_CUM_UC,
+  MATSURI_SOLO_PARTNER_BAN_UC,
+  MATSURI_SOLO_SPREAD_EXTRA_UC,
+  MATSURI_UNDERGARMENT_UC,
   ONSEN_BAREFOOT_BAN_UC,
   ONSEN_LIGHT_DEFAULTS,
   ONSEN_SOLO_SPREAD_EXTRA_UC,
@@ -126,6 +176,10 @@ export {
   type CampingActionCategory,
   type CampingDuoMeta,
   type CampingLightMode,
+  type CarCameraMode,
+  type CarInteriorActionCategory,
+  type CarLightMode,
+  type CarLightSpec,
   type HouseworkActionCategory,
   type HouseworkDuoMeta,
   type HouseworkLightMode,
@@ -133,6 +187,10 @@ export {
   type KitchenFootwearMode,
   type KitchenFutaYuriSpec,
   type KitchenLightMode,
+  type MatsuriActionCategory,
+  type MatsuriCameraMode,
+  type MatsuriLightMode,
+  type MatsuriLightSpec,
   type OnsenActionCategory,
   type OnsenLightMode,
   type OnsenSoloSpreadArchetype,
@@ -258,6 +316,24 @@ export interface OtherActionTemplate {
   onsen_expr_tags?: string;
   solo_spread_spec?: OnsenSoloSpreadSpec;
   solo_spread_disabled_reason?: string;
+  is_car_scene?: boolean;
+  is_car_solo?: boolean;
+  car_light_mode?: CarLightMode;
+  car_camera_mode?: CarCameraMode;
+  is_car_backseat?: boolean;
+  is_car_yuri_showcase?: boolean;
+  car_upper_body_window?: boolean;
+  car_c2_outfit_tags?: string;
+  car_partner_tags?: string;
+  car_expr_tags?: string;
+  is_matsuri_scene?: boolean;
+  is_matsuri_solo?: boolean;
+  matsuri_light_mode?: MatsuriLightMode;
+  matsuri_camera_mode?: MatsuriCameraMode;
+  is_matsuri_yuri_showcase?: boolean;
+  matsuri_c2_outfit_tags?: string;
+  matsuri_partner_tags?: string;
+  matsuri_expr_tags?: string;
 }
 
 export interface OtherActionChapter {
@@ -290,6 +366,8 @@ export const OTHER_ACTION_CATEGORIES: string[] = [
   "20. 事后滑落",
   "21. 温泉双人",
   "22. 温泉单人",
+  "23. 车内玩法",
+  "24. 夏日祭典",
 ];
 
 export const SF_MIRROR_UC = "pov hands, extra hands, 3 hands, extra fingers, bad hands";
@@ -1586,6 +1664,191 @@ const MAPPED_ONSEN_ENTRIES: RawSfEntry[] = ALL_RAW_ONSEN_ENTRIES.map((ons) => {
   };
 });
 
+const MAPPED_CAR_ENTRIES: RawSfEntry[] = ALL_RAW_CAR_INTERIOR_ENTRIES.map((car) => {
+  const lightSpec = CAR_LIGHT_DEFAULTS[car.car_light_mode];
+  const lightingMode: SfLightingMode =
+    car.car_light_mode === "dappled_roadside_daylight"
+      ? "sunlit_indoor"
+      : car.car_light_mode === "sunset_highway_glare"
+        ? "warm_spot"
+        : car.car_light_mode === "underground_garage_amber"
+          ? "enclosed_indoor"
+          : "night_neon";
+
+  const femboyOutfit =
+    car.femboy_outfit_tags ||
+    car.outfit_tags
+      .replace(/,\s*\d+(?:\.\d+)?::nipples::/gi, "")
+      .replace(/\bbare breasts\b/gi, "flat chest")
+      .replace(/,\s*,+/g, ", ")
+      .replace(/^[ ,]+|[ ,]+$/g, "");
+
+  const femboyProse = car.prose
+    .replace(
+      /\bTwo girls in contrasting white and black blouses with lifted pleated skirts\b/i,
+      "Two crossdressing boys in contrasting white and black blouses with lifted pleated skirts"
+    )
+    .replace(/\bAn adult woman\b/g, "A slender crossdressing boy")
+    .replace(/\ban adult woman\b/g, "a slender crossdressing boy")
+    .replace(/\bher bare breasts\b/gi, "his flat chest")
+    .replace(/\bbetween her bare breasts\b/gi, "across his flat chest")
+    .replace(/\bbare breasts\b/gi, "flat chest")
+    .replace(/\bShe\b/g, "He")
+    .replace(/\bshe\b/g, "he")
+    .replace(/\bhers\b/gi, "his")
+    .replace(
+      /\b(at|behind|beneath|beside|holding|watching|looking up at|looking down at|grips|gripping)\s+her\b(?=$|[.,;!]|\s+(?:in|on|at|from|with|by|for|to|into|onto|over|under|above|below|along|across|through|between|while|as|and|close|straddling|kneeling|lying|sitting|standing)\b)/gi,
+      "$1 him"
+    )
+    .replace(/\bHer\b/g, "His")
+    .replace(/\bher\b/g, "his");
+
+  const futaProse = car.is_yuri_showcase
+    ? car.prose.replace(
+        /\bTwo girls in contrasting white and black blouses with lifted pleated skirts\b/i,
+        "A futanari girl and her female partner in contrasting white and black blouses with lifted pleated skirts"
+      )
+    : car.prose;
+
+  const rawCarOutfitPhrase = car.prose_outfit_phrase || "";
+  const femboyCarOutfitPhrase = rawCarOutfitPhrase
+    .replace(/\bHer\b/g, "His")
+    .replace(/\bher\b/g, "his");
+  const combinedCarOutfitPhrase = rawCarOutfitPhrase
+    ? `${rawCarOutfitPhrase}${femboyCarOutfitPhrase !== rawCarOutfitPhrase ? `|${femboyCarOutfitPhrase}` : ""}`
+    : undefined;
+
+  return {
+    id: car.id,
+    title: car.title,
+    sub: car.sub,
+    category: car.category,
+    canvas: car.canvas,
+    camera_mode: "direct",
+    lighting_mode: lightingMode,
+    car_light_mode: car.car_light_mode,
+    car_camera_mode: car.car_camera_mode,
+    barefoot: car.barefoot,
+    chest_covered: car.chest_covered,
+    no_face_pov: Boolean(car.pure_rear),
+    is_car_scene: true,
+    is_car_solo: Boolean(car.is_solo),
+    is_precoital_invite: Boolean(car.is_precoital_invite),
+    is_car_backseat: car.is_backseat,
+    is_car_yuri_showcase: Boolean(car.is_yuri_showcase),
+    car_upper_body_window: Boolean(car.upper_body_window),
+    car_c2_outfit_tags: car.c2_outfit_tags,
+    car_partner_tags: car.partner_tags,
+    car_expr_tags: car.expr_tags,
+    light_badge: lightSpec.badge,
+    light_tags: lightSpec.pos,
+    light_prose: car.is_solo ? "" : lightSpec.prose,
+    builtin_outfit: car.outfit_tags,
+    femboy_outfit: femboyOutfit,
+    framing_tags: car.framing_tags,
+    env_tags: car.env_tags,
+    core_prop_tags: car.core_prop_tags,
+    female_tags: car.female_tags,
+    femboy_tags: car.femboy_tags,
+    futa_tags: car.futa_tags,
+    female_prose: car.prose,
+    femboy_prose: femboyProse,
+    futa_prose: futaProse,
+    prose_outfit_phrase: combinedCarOutfitPhrase,
+    solo_spread_spec: car.solo_spread_spec,
+    extra_neg: car.extra_neg,
+  };
+});
+
+const MAPPED_MATSURI_ENTRIES: RawSfEntry[] = ALL_RAW_MATSURI_ENTRIES.map((mts) => {
+  const lightSpec = MATSURI_LIGHT_DEFAULTS[mts.matsuri_light_mode];
+  const lightingMode: SfLightingMode =
+    mts.matsuri_light_mode === "sparkler_close_glow" ||
+    mts.matsuri_light_mode === "yatai_chochin_amber"
+      ? "warm_spot"
+      : "night_neon";
+
+  const femboyOutfit =
+    mts.femboy_outfit_tags ||
+    mts.outfit_tags
+      .replace(/,\s*\d+(?:\.\d+)?::nipples::/gi, "")
+      .replace(/\bbare breasts\b/gi, "flat chest")
+      .replace(/^adult woman,\s*/i, "")
+      .replace(/,\s*,+/g, ", ")
+      .replace(/^[ ,]+|[ ,]+$/g, "");
+
+  const femboyProse = mts.prose
+    .replace(
+      /\bTwo girls in contrasting sakura-pink and navy-blue summer yukatas\b/i,
+      "Two crossdressing boys in contrasting sakura-pink and navy-blue summer yukatas"
+    )
+    .replace(/\bthe kitsune-masked girl\b/gi, "the kitsune-masked boy")
+    .replace(/\bAn adult woman\b/g, "A slender crossdressing boy")
+    .replace(/\ban adult woman\b/g, "a slender crossdressing boy")
+    .replace(/\bShe\b/g, "He")
+    .replace(/\bshe\b/g, "he")
+    .replace(/\bhers\b/gi, "his")
+    .replace(
+      /\b(at|behind|beneath|beside|holding|watching|pinning|covering)\s+her\b(?=$|[.,;!]|\s+(?:in|on|at|from|with|by|for|to|into|onto|over|under|above|below|along|across|through|between|while|as|and|against|straddling|kneeling|lying|sitting|standing)\b)/gi,
+      "$1 him"
+    )
+    .replace(/\bHer\b/g, "His")
+    .replace(/\bher\b/g, "his");
+
+  const futaProse = mts.is_yuri_showcase
+    ? mts.prose.replace(
+        /\bTwo girls in contrasting sakura-pink and navy-blue summer yukatas\b/i,
+        "A futanari girl and her female partner in contrasting sakura-pink and navy-blue summer yukatas"
+      )
+    : mts.prose;
+
+  const rawMtsOutfitPhrase = mts.prose_outfit_phrase || "";
+  const femboyMtsOutfitPhrase = rawMtsOutfitPhrase
+    .replace(/\bHer\b/g, "His")
+    .replace(/\bher\b/g, "his");
+  const combinedMtsOutfitPhrase = rawMtsOutfitPhrase
+    ? `${rawMtsOutfitPhrase}${femboyMtsOutfitPhrase !== rawMtsOutfitPhrase ? `|${femboyMtsOutfitPhrase}` : ""}`
+    : undefined;
+
+  return {
+    id: mts.id,
+    title: mts.title,
+    sub: mts.sub,
+    category: mts.category,
+    canvas: mts.canvas,
+    camera_mode: "direct",
+    lighting_mode: lightingMode,
+    matsuri_light_mode: mts.matsuri_light_mode,
+    matsuri_camera_mode: mts.matsuri_camera_mode,
+    barefoot: mts.barefoot,
+    chest_covered: mts.chest_covered,
+    is_matsuri_scene: true,
+    is_matsuri_solo: mts.is_solo,
+    is_precoital_invite: Boolean(mts.is_precoital_invite),
+    is_matsuri_yuri_showcase: Boolean(mts.is_yuri_showcase),
+    matsuri_c2_outfit_tags: mts.c2_outfit_tags,
+    matsuri_partner_tags: mts.partner_tags,
+    matsuri_expr_tags: mts.expr_tags,
+    light_badge: lightSpec.badge,
+    light_tags: lightSpec.pos,
+    light_prose: "",
+    builtin_outfit: mts.outfit_tags,
+    femboy_outfit: femboyOutfit,
+    framing_tags: mts.framing_tags,
+    env_tags: mts.env_tags,
+    core_prop_tags: mts.core_prop_tags,
+    female_tags: mts.female_tags,
+    femboy_tags: mts.femboy_tags,
+    futa_tags: mts.futa_tags,
+    female_prose: mts.prose,
+    femboy_prose: femboyProse,
+    futa_prose: futaProse,
+    prose_outfit_phrase: combinedMtsOutfitPhrase,
+    solo_spread_spec: mts.solo_spread_spec,
+    extra_neg: mts.extra_neg,
+  };
+});
+
 const ALL_RAW_OTHER_ENTRIES: RawSfEntry[] = [
   ...RAW_SF_ENTRIES,
   ...ALL_RAW_KITCHEN_ENTRIES,
@@ -1597,6 +1860,8 @@ const ALL_RAW_OTHER_ENTRIES: RawSfEntry[] = [
   ...MAPPED_CAMPING_ENTRIES,
   ...MAPPED_AFTERSEX_DRIP_ENTRIES,
   ...MAPPED_ONSEN_ENTRIES,
+  ...MAPPED_CAR_ENTRIES,
+  ...MAPPED_MATSURI_ENTRIES,
 ];
 
 export const OTHER_ACTION_TEMPLATES: Record<string, OtherActionTemplate> = Object.fromEntries(

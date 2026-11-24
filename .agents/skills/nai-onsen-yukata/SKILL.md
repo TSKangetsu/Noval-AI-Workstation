@@ -1,42 +1,77 @@
 ---
 name: nai-onsen-yukata
-description: Empirically calibrated NovelAI V4.5 / V5 Japanese Hot-Spring Onsen & Ryokan Yukata Play (日式温泉与旅馆浴衣玩法 / 温泉旅館・湯上り浴衣プレイ) prompt engineering guide. Covers 55 scenes across 32 Duo interactions (bamboo rotenburo, snowy floating sake, hinoki tub leg-up, wooden wash stool, bamboo-blind mountain bath, shoji/lattice/noren loosened-yukata trio, tatami futon POV, lacquer matcha table, ryokan ping-pong, 2girls dual-yukata dango-feeding, 4 novel mechanics including egg steamer, belly-balanced sake cup, vintage massage chair & fogged glass heart, plus 16 warm-sake/umeshu/bamboo-sake/gourd-sake/byobu-game/masu/tokkuri tipsy 微醺 duo scenes) and 23 Solo scenes (15 tipsy seductive POV invitations across futon, doorway, moonlit veranda, kotatsu, hinoki rim, hiroen rattan chair, changing bench, standing mirror & night garden stone bench + 8 post-bath/engawa-footbath/aftermath scenes), 5 scene-bound lighting modes, and 4-mode gender compatibility.
+description: >-
+  NovelAI V4.5 / V5 craft guide for Japanese hot-spring onsen and ryokan yukata
+  compositions (日式温泉与旅馆浴衣玩法 / 温泉旅館・湯上り浴衣). Covers 5 scene-bound
+  onsen/ryokan lighting archetypes with anti-modern UC guards, tipsy POV solo
+  invitation framing, unified 3-stage solo CG variations (default -> pure spread
+  -> spread + overflow) with yukata/obi hand conservation, and 4-mode gender
+  routing.
 ---
 
-# NovelAI V4.5 / V5 Japanese Onsen & Ryokan Yukata (`ONS01–ONS55` · 温泉浴衣) Skill
+# NovelAI V4.5 / V5 Japanese Onsen & Ryokan Yukata Craft Guide
 
-This skill documents the empirically verified prompt architecture for **55 Japanese Hot-Spring Onsen & Ryokan Yukata Compositions (`ONS01–ONS55`: 32 Duo + 23 Solo)** on NovelAI V5 Full (`nai-diffusion-5-full`, `28 steps, CFG 6.8`), verified across all 4 gender modes (`normal`, `femboy`, `futa_no_balls`, `futa_with_balls`) plus `2girls` Yuri (`ONS10`), totaling `221` verified T5 prompt combinations.
-
-See also [onsen_yukata_catalog.md](references/onsen_yukata_catalog.md) for the complete 55-scene creative palette and [onsen_solo_spread_variations.md](references/onsen_solo_spread_variations.md) for the 23-scene Solo Spreading CG Variation (`单人掰穴差分`) evaluation and dual `Txt2Img` / `Img2Img` (`strength = 0.62`) implementation guide.
-
----
-
-## 1. Scene-Bound Onsen Lighting, Wardrobe & Sake-Tipsy Calibration
-
-### A. Five Scene-Bound Onsen & Ryokan Lighting Modes
-1. **`misty_bamboo_rotenburo` (`ONS01, ONS05, ONS23`)**: `soft morning mountain mist filtering through green bamboo grove, rising warm white onsen steam, natural daylight` (UC guard: `modern bathroom, ceramic tiles, chrome faucet, swimming pool, fiberglass bathtub`)
-2. **`snowy_lantern_rock_bath` (`ONS02, ONS13, ONS39`)**: `winter night falling snowflakes, warm amber glow from traditional stone yukimi-doro lantern reflecting on steaming water, cold blue night contrast` (UC guard: `daylight, summer, modern tiles, indoor ceiling, swimming pool`)
-3. **`amber_hinoki_steam` (`ONS03, ONS04, ONS11, ONS17, ONS29, ONS50, ONS52`)**: `warm amber wooden wall sconce inside traditional hinoki cypress bathhouse, fragrant rising white steam, glistening wet wood grain` (UC guard: `white ceramic tiles, fiberglass bathtub, plastic shower curtain, swimming pool`)
-4. **`tatami_andon_warm` (`ONS06–ONS10, ONS15, ONS20, ONS21, ONS24–ONS26, ONS30, ONS32–ONS34, ONS36–ONS38, ONS40, ONS41, ONS43, ONS45–ONS47, ONS49, ONS51, ONS53, ONS54`)**: `soft warm amber glow from floor-standing paper andon lamp in traditional ryokan tatami room, warm shadows across shoji lattice` (UC guard: `western bedframe, modern office chair, neon lights, modern concrete`)
-5. **`lantern_onsen_town_night` (`ONS12, ONS14, ONS16, ONS18, ONS19, ONS22, ONS27, ONS28, ONS31, ONS35, ONS42, ONS44, ONS48, ONS55`)**: `warm red-and-white paper chochin lantern glow along traditional wooden engawa and stone-paved hot-spring street at night, drifting steam` (UC guard: `daylight, asphalt highway, modern skyscraper, cars`)
-
-### B. 15 Solo Tipsy Seductive POV Invitations (`ONS26, ONS27, ONS32, ONS36, ONS37, ONS46–ONS55`)
-- **Pre-Coital Solo Framing**: Omit `after sex / cumdrip` and pair `1.55::pov::` or `1.6::from below::` with `1.65::drunk::, 1.55::half-closed eyes::`, keeping solo anti-partner UC guards active so the viewer has an unobstructed 1st-person gaze.
-- **Concrete Ryokan Props & Invitation Gestures**:
-  - `ONS26` lifting white futon blanket corner; `ONS27` wet hand beckoning at private bath edge; `ONS32` biting wooden room-key tag by retro vending machine; `ONS36` pouring tokkuri sake across collarbone; `ONS37` biting porcelain sake cup while offering red obi sash;
-  - `ONS46` sideways tatami lounge tipping sake cup; `ONS47` sliding shoji doorway holding up sake carafe; `ONS48` moonlit veranda iced plum wine + rear skirt lift; `ONS49` lifting red kotatsu quilt wide open; `ONS50` hinoki tub rim extending red-lacquer sakazuki saucer;
-  - `ONS51` hiroen rattan armchair leg-over-armrest with frosted green sake bottle; `ONS52` changing-room cypress bench untying obi beside masu cup; `ONS53` tall floor mirror reflecting flushed face while offering sake cup on all-fours; `ONS54` overhead white futon M-legs hugging sake carafe & reaching up; `ONS55` night garden stone bench dangling wooden geta from toes with gourd sake flask.
-
-### C. Solo Spreading CG Variation (`单人掰穴差分` · `20 / 23` Eligible Scenes)
-- **Eligibility Filter**: `20 / 23` solo scenes (`ONS12, 13, 18–20, 26–27, 32, 36–37, 46–55`) support clean 2-hand-conserving spreading variations across all 4 gender modes (`80` verified T5 prompts); `ONS11` (standing rear obi tie), `ONS14` (walking stone steps), and `ONS15` (active tissue wipe) preserve their base actions.
-- **Three Hand-Allocation Modes**: (1) *One-Hand Prop + Free-Hand Spread* (`14` scenes, tucking any hand-held hem into `obi`); (2) *Symmetrical Two-Hand Spread* (`ONS13, 18, 20, 32`); (3) *Rear Lookback Reach-Back Spread* (`ONS48, 53` paired with `1.55::pussy from behind::`).
-- **Dual Rendering Pipeline**: Use surgical hand-clause replacement for standalone `Txt2Img`, or feed the base PNG into V5 Full `action: "img2img"` (`strength: 0.58 ~ 0.64`, `noise: 0.05`) for pixel-locked background/face/yukata CG differentials (full rules in [onsen_solo_spread_variations.md](references/onsen_solo_spread_variations.md)).
+Use this skill when composing Japanese hot-spring (`温泉 / 露天風呂`) and traditional ryokan yukata (`浴衣 / 畳 / 縁側`) scenes on NovelAI V4.5 / V5 — preserving authentic timber/stone/steam atmosphere, tipsy POV intimacy, and clean yukata/obi garment physics across all gender modes.
 
 ---
 
-## 2. Verified Matrix Summary (`ONS01–ONS55`)
+## 1. Five Scene-Bound Onsen & Ryokan Lighting Archetypes
 
-- **Duo Onsen & Ryokan Classics (`ONS01–ONS10, ONS16–ONS17` · 12 scenes)**: `ONS01` (`s9601122334`), `ONS02` (`s9602233445`), `ONS03` (`s9603344556`), `ONS04` (`s9604455667` femboy), `ONS05` (`s9605566778` `1216×832`), `ONS06` (`s9606677889`), `ONS07` (`s9607788990`), `ONS08` (`s9608899001` futa), `ONS09` (`s9609900112`), `ONS10` (`s9610011223` 2girls yuri), `ONS16` (`s9616677889`), `ONS17` (`s9617788990`).
-- **Duo Tipsy Sake & Novel Mechanics (`ONS21–ONS25, ONS28–ONS31, ONS33–ONS35, ONS38–ONS45` · 20 scenes)**: `ONS21` (`s9621122399`), `ONS22` (`s9622233456`), `ONS23` (`s9623344567`), `ONS24` (`s9624455699` futa), `ONS25` (`s9625566789`), `ONS28` (`s9628899012`), `ONS29` (`s9629900155`), `ONS30` (`s9630011234`), `ONS31` (`s9631122388`), `ONS33` (`s9633344567`), `ONS34` (`s9634455712`), `ONS35` (`s9635566789`), `ONS38` (`s9638899055`), `ONS39` (`s9639900123`), `ONS40` (`s9640011234` femboy), `ONS41` (`s9641122345`), `ONS42` (`s9642233456`), `ONS43` (`s9643344567` futa), `ONS44` (`s9644455722`), `ONS45` (`s9645566789`).
-- **Solo Post-Bath Everyday & Aftermath (`ONS11–ONS15, ONS18–ONS20` · 8 scenes)**: `ONS11` (`s9611122388`), `ONS12` (`s9612233445`), `ONS13` (`s9613344556`), `ONS14` (`s9614455712`), `ONS15` (`s9615566824`), `ONS18` (`s9618899012`), `ONS19` (`s9619900123`), `ONS20` (`s9620011234`).
-- **Solo Tipsy Seductive POV Invitations (`ONS26–ONS27, ONS32, ONS36–ONS37, ONS46–ONS55` · 15 scenes)**: `ONS26` (`s9626677890`), `ONS27` (`s9627788901`), `ONS32` (`s9632233456`), `ONS36` (`s9636677890`), `ONS37` (`s9637788901`), `ONS46` (`s9646677890`), `ONS47` (`s9647788901`), `ONS48` (`s9648899012`), `ONS49` (`s9649900123`), `ONS50` (`s9650011234`), `ONS51` (`s9651122345`), `ONS52` (`s9652233456` femboy), `ONS53` (`s9653344567`), `ONS54` (`s9654455678` futa), `ONS55` (`s9655566789`).
+Pair each architectural setting with its companion anti-modern UC guard so NovelAI does not inject tiled western bathrooms or modern apartments:
+
+1. **Misty Bamboo Rotenburo (Outdoor Rock Bath)**:
+   - `soft morning mountain mist filtering through green bamboo grove, rising warm white onsen steam, natural daylight`
+   - **UC Guard**: `modern bathroom, ceramic tiles, chrome faucet, swimming pool, fiberglass bathtub`
+2. **Snowy Lantern Rock Bath (Winter Night)**:
+   - `winter night falling snowflakes, warm amber glow from traditional stone yukimi-doro lantern reflecting on steaming water, cold blue night contrast`
+   - **UC Guard**: `daylight, summer, modern tiles, indoor ceiling, swimming pool`
+3. **Amber Hinoki Cypress Bathhouse**:
+   - `warm amber wooden wall sconce inside traditional hinoki cypress bathhouse, fragrant rising white steam, glistening wet wood grain`
+   - **UC Guard**: `white ceramic tiles, fiberglass bathtub, plastic shower curtain, swimming pool`
+4. **Tatami Andon Lamp Interior**:
+   - `soft warm amber glow from floor-standing paper andon lamp in traditional ryokan tatami room, warm shadows across shoji lattice`
+   - **UC Guard**: `western bedframe, modern office chair, neon lights, modern concrete`
+5. **Lantern Onsen Town & Engawa Night**:
+   - `warm red-and-white paper chochin lantern glow along traditional wooden engawa and stone-paved hot-spring street at night, drifting steam`
+   - **UC Guard**: `daylight, asphalt highway, modern skyscraper, cars`
+
+---
+
+## 2. Tipsy Solo POV Invitation Framing (`微醺诱惑`)
+
+- **Pre-Coital Solo Gaze**: Omit `after sex` and `cumdrip`; combine `1.55::pov::` or `1.6::from below::` with `1.65::drunk::, 1.55::half-closed eyes::, flushed cheeks` and cross-gender-safe solo anti-partner UC (`2boys, multiple boys, man, hetero, penetration, insertion, 2girls, multiple girls`, plus female-only `1boy, male, penis` on standard female mode) so the viewer receives an unobstructed 1st-person invitation.
+- **Grounded Ryokan Props**: Anchor hands naturally to traditional ryokan objects (`tokkuri sake carafe`, `porcelain ochoko cup`, `red-lacquer sakazuki saucer`, `wooden masu cup`, `gourd flask`, `kotatsu quilt corner`, `white futon corner`, `wooden room-key tag`, `sliding shoji frame`, or `wooden geta` dangling from bare toes).
+- **Loosened Yukata Physics**: Describe `loosened yukata, slipping off shoulder, untied obi sash, yukata hem parted` rather than generic `undressing` so the wrap-around kimono collar and wide sleeves stay structurally coherent.
+
+---
+
+## 3. Unified 3-Stage Solo CG Variations & Yukata/Obi Hand-Conservation
+
+When upgrading a solo onsen/ryokan composition into a same-seed **3-Stage CG Progression** — **Default Base → Pure Spread (`纯净掰开`) → Spread + Overflow (`掰开+白流出`)** (see also `nai-cg-variations` for the **Hand-Travel Distance Law** governing `Img2Img` vs. `Txt2Img` / `Inpaint`):
+
+1. **Three-Stage Fluid & Aftermath Isolation (CRITICAL)**:
+   - **Stage 2 (Pure Spread — Zero Fluid Bleed)**: When applying pure spreading to a scene whose base prose depicts post-bath aftermath, **strip all lingering aftermath/fluid clauses** (`after sex`, `cumdrip`, sticky trail sentences) from the base prose and append **`cum, semen, cum in pussy, cum in ass, cum overflow, cumdrip, after sex`** to Negative UC so the spread remains crystal-clean across any seed.
+   - **Stage 3 (Spread + Overflow — Surface-Matched Physics)**: Match fluid physics to the exact bath or ryokan surface:
+     - *Shallow Bath / Waterline*: Diffuse milky strands gently into steaming bathwater rather than drawing rigid air-bound drops.
+     - *Hinoki Cypress Tub Rim*: Let thick trails trickle down the wet wooden rim into the warm bathwater below.
+     - *Indoor Tatami / Futon / Bench*: Keep vertical gravity streams pooling naturally onto the fabric or wooden bench.
+2. **Three Physical Eligibility Invariants**:
+   - *Optical Visibility*: Lower body must not be occluded by an intact ankle-length yukata or standing profile angle.
+   - *Two-Hand Conservation (`Hand Budget <= 2`)*: Never assign three simultaneous hand tasks. If one hand holds a sake cup/carafe and the other lifts the yukata hem, **tuck the lifted yukata hem into the waist `obi` sash** so the freed hand can spread cleanly.
+   - *Core Action Preservation*: Skip mid-stride walking scenes or scenes whose lower-body hand is already performing an active gesture (e.g., tissue wiping or tying a front obi bow).
+3. **Three Hand-Allocation Archetypes**:
+   - **One-Hand Prop + Free-Hand Spread**: Keep Hand 1 on the signature ryokan prop (sake bottle, cup, quilt corner); tuck any skirt hem into the `obi` sash and assign Hand 2 to spreading.
+   - **Prop-Free Symmetrical Two-Hand Spread**: Hold small props in mouth (e.g., wooden room-key tag `1.6::in mouth::`) or lean back against a cedar post/cushion to free both hands.
+   - **Rear Lookback Reach-Back Spread**: Keep `1.55::looking back::` with Hand 1 holding a drink while Hand 2 reaches back behind the hip paired with `1.55::pussy from behind::` so V5 does not twist the pelvis 180° forward.
+4. **Four-Gender Tag Routing & Anti-Censor Guards**:
+   - **Female (`normal`)**: `1.4::labia::, 1.3::spread pussy::, 1.6::spreading own pussy::, fingers` (add `1.55::pussy from behind::` on rear lookback).
+   - **Futanari**: Keep erect shaft untouched above (`1.45::erect penis::`) while fingers spread labia below; add `holding own penis, grabbing penis` to Negative UC so the hand spreads rather than stroking.
+   - **Femboy (`otoko no ko`)**: Route to `1.45::small penis::, 1.5::spread anus::, 1.55::spreading own ass::, fingers` and strip bare `gaping` from Negative UC so rear spreading is not suppressed.
+   - **Universal Anti-Censor UC**: Append `covering crotch, covering pussy, hand over crotch, holding own penis, grabbing penis, extra arms, 3 arms`.
+
+---
+
+## 4. Multi-Character & 4-Mode Gender Isolation
+
+- **Duo Hetero (`1girl, 1boy`)**: Single-box framing with `faceless male` works cleanly in steaming bath or tatami settings.
+- **Duo Femboy (`2boys, yaoi`) / Futanari / Dual-Yukata Yuri (`2girls`)**: Use Multi-Box `[Base Prompt]` + `[Character 1]` + `[Character 2]` with `source#` / `target#` tags and contrasting yukata patterns/colors on `2girls` to prevent garment and hair-color bleed.

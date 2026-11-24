@@ -1,9 +1,11 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
+import https from "node:https";
 import type { Socket } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import tls from "node:tls";
 import { fileURLToPath } from "node:url";
 import {
   ALL_POSITIONS_CHAPTERS,
@@ -30,6 +32,7 @@ import {
   SKIN_PRESETS,
   STYLE_PRESETS,
 } from "../data/engineConstants";
+import { OTHER_ACTION_TEMPLATES } from "../data/otherActionsData";
 
 const BRIDGE_BIND_HOST = process.env.NAI_STUDIO_BRIDGE_HOST || "0.0.0.0";
 const LOCAL_RELAY_HOST = "127.0.0.1";
@@ -41,6 +44,114 @@ const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, "../../..");
 const STANDALONE_HTML_PATH = path.join(REPO_ROOT, "NovelAI_Workbench.html");
 const PREVIEW_DIR = path.join(REPO_ROOT, "outputs", "_mcp_live_preview");
+const NAI_API_CONFIG_PATH = path.join(REPO_ROOT, "nai_api_config.json");
+const NAI_PROXY_TIMEOUT_MS = 180_000;
+const NAI_PROXY_TARGETS: Record<string, string> = {
+  image: "image.novelai.net",
+  api: "api.novelai.net",
+};
+
+function resolveConfiguredNaiProxyUrl(): string | null {
+  try {
+    if (fs.existsSync(NAI_API_CONFIG_PATH)) {
+      const raw = fs.readFileSync(NAI_API_CONFIG_PATH, "utf8");
+      const parsed = JSON.parse(raw) as { proxy?: unknown };
+      if (typeof parsed.proxy === "string" && parsed.proxy.trim()) {
+        return parsed.proxy.trim();
+      }
+    }
+  } catch {
+    // Fallback to environment proxy variables if config is unreadable
+  }
+  const envProxy = (
+    process.env.HTTPS_PROXY ||
+    process.env.https_proxy ||
+    process.env.HTTP_PROXY ||
+    process.env.http_proxy ||
+    ""
+  ).trim();
+  return envProxy || null;
+}
+
+function openHttpsConnectSocket(
+  proxyUrlStr: string,
+  targetHost: string,
+  targetPort: number,
+  timeoutMs = 15_000
+): Promise<tls.TLSSocket> {
+  return new Promise((resolve, reject) => {
+    let proxyUrl: URL;
+    try {
+      proxyUrl = new URL(proxyUrlStr);
+    } catch {
+      reject(new Error(`Invalid proxy URL: ${proxyUrlStr}`));
+      return;
+    }
+
+    const proxyHost = proxyUrl.hostname;
+    const proxyPort = Number(proxyUrl.port || (proxyUrl.protocol === "https:" ? 443 : 80));
+    const connectHeaders: Record<string, string> = {
+      Host: `${targetHost}:${targetPort}`,
+    };
+    if (proxyUrl.username || proxyUrl.password) {
+      const auth = Buffer.from(
+        `${decodeURIComponent(proxyUrl.username)}:${decodeURIComponent(proxyUrl.password)}`,
+        "utf8"
+      ).toString("base64");
+      connectHeaders["Proxy-Authorization"] = `Basic ${auth}`;
+    }
+
+    let settled = false;
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+
+    const connectReq = http.request({
+      hostname: proxyHost,
+      port: proxyPort,
+      method: "CONNECT",
+      path: `${targetHost}:${targetPort}`,
+      headers: connectHeaders,
+    });
+
+    connectReq.setTimeout(timeoutMs, () => {
+      connectReq.destroy(new Error(`Proxy CONNECT timeout (${Math.round(timeoutMs / 1000)}s)`));
+    });
+
+    connectReq.on("error", (err) => fail(err));
+    connectReq.on("connect", (proxyRes, socket, head) => {
+      if (proxyRes.statusCode !== 200) {
+        socket.destroy();
+        fail(new Error(`Proxy CONNECT rejected with HTTP ${proxyRes.statusCode ?? "unknown"}`));
+        return;
+      }
+      if (head && head.length > 0) {
+        socket.unshift(head);
+      }
+      const tlsSocket = tls.connect({
+        socket,
+        servername: targetHost,
+      });
+      const tlsTimer = setTimeout(() => {
+        tlsSocket.destroy(new Error("TLS handshake via proxy timed out"));
+      }, timeoutMs);
+      tlsSocket.once("secureConnect", () => {
+        clearTimeout(tlsTimer);
+        if (settled) return;
+        settled = true;
+        resolve(tlsSocket);
+      });
+      tlsSocket.once("error", (err) => {
+        clearTimeout(tlsTimer);
+        fail(err);
+      });
+    });
+
+    connectReq.end();
+  });
+}
 
 function getLanUrls(): string[] {
   const urls: string[] = [];
@@ -251,27 +362,119 @@ class BridgeHub {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private clients: WsBrowserClient[] = [];
   private pending = new Map<string, PendingRpc>();
+  private promotedAt = 0;
+  private bindPromise: Promise<boolean> | null = null;
+
+  public getRole(): "primary" | "relay" {
+    return this.role;
+  }
 
   public async init(): Promise<void> {
-    await new Promise<void>((resolve) => {
+    await this.tryBindPrimary();
+  }
+
+  private async tryBindPrimary(): Promise<boolean> {
+    if (this.role === "primary" && this.httpServer) return true;
+    if (this.bindPromise) return this.bindPromise;
+
+    this.bindPromise = new Promise<boolean>((resolve) => {
       const srv = http.createServer((req, res) => void this.handleHttp(req, res));
       srv.on("upgrade", (req, socket) => this.handleUpgrade(req, socket as Socket));
-      srv.once("error", (err: NodeJS.ErrnoException) => {
-        if (err.code === "EADDRINUSE") {
-          this.role = "relay";
-          resolve();
-        } else {
-          this.role = "relay";
-          resolve();
-        }
+      srv.once("error", () => {
+        this.role = "relay";
+        resolve(false);
       });
       srv.listen(BRIDGE_PORT, BRIDGE_BIND_HOST, () => {
         this.role = "primary";
         this.httpServer = srv;
+        this.promotedAt = Date.now();
         this.startHeartbeat();
-        resolve();
+        resolve(true);
       });
+    }).finally(() => {
+      this.bindPromise = null;
     });
+
+    return this.bindPromise;
+  }
+
+  private loopbackHttpJson<T>(options: {
+    method: "GET" | "POST";
+    path: string;
+    body?: unknown;
+    timeoutMs: number;
+  }): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const payload =
+        options.body !== undefined ? Buffer.from(JSON.stringify(options.body), "utf8") : null;
+      const req = http.request(
+        {
+          hostname: LOCAL_RELAY_HOST,
+          port: BRIDGE_PORT,
+          path: options.path,
+          method: options.method,
+          headers: payload
+            ? {
+                "Content-Type": "application/json",
+                "Content-Length": payload.length,
+              }
+            : undefined,
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => {
+            const raw = Buffer.concat(chunks).toString("utf8");
+            if ((res.statusCode ?? 500) >= 400) {
+              reject(new Error(`Bridge loopback HTTP ${res.statusCode}: ${raw.slice(0, 200)}`));
+              return;
+            }
+            try {
+              resolve(JSON.parse(raw) as T);
+            } catch (err) {
+              reject(
+                new Error(
+                  `Invalid JSON from bridge primary: ${err instanceof Error ? err.message : String(err)}`
+                )
+              );
+            }
+          });
+        }
+      );
+
+      req.setTimeout(options.timeoutMs, () => {
+        req.destroy(new Error(`Loopback relay timeout (${Math.round(options.timeoutMs / 1000)}s)`));
+      });
+      req.on("error", (err) => reject(err));
+      if (payload) {
+        req.write(payload);
+      }
+      req.end();
+    });
+  }
+
+  private isRelayTransportError(err: unknown): boolean {
+    if (!err || typeof err !== "object") return false;
+    const code = (err as NodeJS.ErrnoException).code;
+    if (
+      code === "ECONNREFUSED" ||
+      code === "ECONNRESET" ||
+      code === "EPIPE" ||
+      code === "ETIMEDOUT"
+    ) {
+      return true;
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return /ECONNREFUSED|ECONNRESET|socket hang up|fetch failed/i.test(msg);
+  }
+
+  private async waitForClientAfterPromotion(maxWaitMs = 3600): Promise<void> {
+    if (this.getOrderedClients().length > 0) return;
+    const deadline = Math.min(this.promotedAt + maxWaitMs, Date.now() + maxWaitMs);
+    while (Date.now() < deadline) {
+      if (this.getOrderedClients().length > 0) return;
+      await new Promise((r) => setTimeout(r, 200));
+    }
   }
 
   private startHeartbeat(): void {
@@ -354,19 +557,20 @@ class BridgeHub {
       };
     }
     try {
-      const resp = await fetch(`http://${LOCAL_RELAY_HOST}:${BRIDGE_PORT}/health`);
-      if (resp.ok) {
-        const data = (await resp.json()) as {
-          connected_clients?: number;
-          latest_client_url?: string | null;
-          client_urls?: string[];
-        };
-        return {
-          connected_clients: data.connected_clients ?? 0,
-          active_client_url: data.latest_client_url ?? null,
-          client_urls: data.client_urls ?? [],
-        };
-      }
+      const data = await this.loopbackHttpJson<{
+        connected_clients?: number;
+        latest_client_url?: string | null;
+        client_urls?: string[];
+      }>({
+        method: "GET",
+        path: "/health",
+        timeoutMs: 3000,
+      });
+      return {
+        connected_clients: data.connected_clients ?? 0,
+        active_client_url: data.latest_client_url ?? null,
+        client_urls: data.client_urls ?? [],
+      };
     } catch {
       // ignore
     }
@@ -376,7 +580,8 @@ class BridgeHub {
   private setCors(res: http.ServerResponse): void {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept");
+    res.setHeader("Access-Control-Expose-Headers", "Content-Disposition, Content-Type, Content-Length");
     res.setHeader("Access-Control-Allow-Private-Network", "true");
   }
 
@@ -392,6 +597,159 @@ class BridgeHub {
       req.on("end", () => resolve(Buffer.concat(parts)));
       req.on("error", reject);
     });
+  }
+
+  private async handleNaiProxy(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    reqUrl: URL
+  ): Promise<void> {
+    const method = (req.method || "GET").toUpperCase();
+    if (method !== "GET" && method !== "POST") {
+      res.writeHead(405, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: false, error: `Method not allowed: ${method}` }));
+      return;
+    }
+
+    const match = /^\/api\/nai-proxy\/(image|api)(\/.*)$/.exec(reqUrl.pathname);
+    if (!match) {
+      res.writeHead(404, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify({
+          ok: false,
+          error: "Forbidden or invalid NovelAI proxy target (only /image/* and /api/* are allowed)",
+        })
+      );
+      return;
+    }
+
+    const targetHost = NAI_PROXY_TARGETS[match[1]];
+    const targetPath = `${match[2]}${reqUrl.search}`;
+
+    let bodyBuf: Buffer | null = null;
+    if (method === "POST") {
+      try {
+        bodyBuf = await this.readBodyBuffer(req);
+      } catch (err) {
+        res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: `Failed to read request body: ${err instanceof Error ? err.message : String(err)}`,
+          })
+        );
+        return;
+      }
+    }
+
+    const upstreamHeaders: Record<string, string> = {
+      Host: targetHost,
+    };
+    const passthroughKeys = ["authorization", "content-type", "accept", "user-agent"] as const;
+    for (const key of passthroughKeys) {
+      const val = req.headers[key];
+      if (typeof val === "string" && val.length > 0) {
+        upstreamHeaders[key] = val;
+      } else if (Array.isArray(val) && val.length > 0) {
+        upstreamHeaders[key] = val.join(", ");
+      }
+    }
+    if (bodyBuf !== null) {
+      upstreamHeaders["content-length"] = String(bodyBuf.length);
+    }
+
+    const proxyUrl = resolveConfiguredNaiProxyUrl();
+    let tlsSocket: tls.TLSSocket | null = null;
+
+    try {
+      if (proxyUrl) {
+        tlsSocket = await openHttpsConnectSocket(proxyUrl, targetHost, 443, 15_000);
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        const handleUpstreamResponse = (upstreamRes: http.IncomingMessage) => {
+          const outHeaders: Record<string, string> = {};
+          const copyRespKeys = [
+            "content-type",
+            "content-disposition",
+            "content-length",
+            "content-encoding",
+          ] as const;
+          for (const key of copyRespKeys) {
+            const val = upstreamRes.headers[key];
+            if (typeof val === "string" && val.length > 0) {
+              outHeaders[key] = val;
+            } else if (Array.isArray(val) && val.length > 0) {
+              outHeaders[key] = val.join(", ");
+            }
+          }
+          res.writeHead(upstreamRes.statusCode ?? 502, outHeaders);
+          upstreamRes.pipe(res);
+          upstreamRes.on("end", () => resolve());
+          upstreamRes.on("error", (err) => reject(err));
+        };
+
+        const upstreamReq = tlsSocket
+          ? (() => {
+              const tunnelAgent = new http.Agent({ keepAlive: false });
+              (tunnelAgent as unknown as { createConnection: () => tls.TLSSocket }).createConnection =
+                () => tlsSocket!;
+              return http.request(
+                {
+                  hostname: targetHost,
+                  port: 443,
+                  path: targetPath,
+                  method,
+                  headers: upstreamHeaders,
+                  agent: tunnelAgent,
+                },
+                handleUpstreamResponse
+              );
+            })()
+          : https.request(
+              {
+                hostname: targetHost,
+                port: 443,
+                path: targetPath,
+                method,
+                headers: upstreamHeaders,
+                agent: false,
+              },
+              handleUpstreamResponse
+            );
+
+        upstreamReq.setTimeout(NAI_PROXY_TIMEOUT_MS, () => {
+          upstreamReq.destroy(
+            new Error(`Upstream NovelAI request timed out (${Math.round(NAI_PROXY_TIMEOUT_MS / 1000)}s)`)
+          );
+        });
+        upstreamReq.on("error", (err) => reject(err));
+
+        if (bodyBuf !== null && bodyBuf.length > 0) {
+          upstreamReq.write(bodyBuf);
+        }
+        upstreamReq.end();
+      });
+    } catch (err) {
+      if (tlsSocket && !tlsSocket.destroyed) {
+        try {
+          tlsSocket.destroy();
+        } catch {
+          // ignore
+        }
+      }
+      if (!res.headersSent) {
+        res.writeHead(502, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: `NovelAI proxy error: ${err instanceof Error ? err.message : String(err)}`,
+          })
+        );
+      } else if (!res.writableEnded) {
+        res.end();
+      }
+    }
   }
 
   private async handleHttp(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -459,6 +817,11 @@ class BridgeHub {
           JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) })
         );
       }
+      return;
+    }
+
+    if (reqUrl.pathname.startsWith("/api/nai-proxy/")) {
+      await this.handleNaiProxy(req, res, reqUrl);
       return;
     }
 
@@ -625,21 +988,45 @@ class BridgeHub {
     timeoutMs = 20000
   ): Promise<unknown> {
     if (this.role === "primary") {
+      if (this.promotedAt > 0 && Date.now() - this.promotedAt < 3800) {
+        await this.waitForClientAfterPromotion();
+      }
       return this.dispatchLocalBrowserRpc(method, params, timeoutMs);
     }
 
-    // Relay mode: forward over loopback HTTP to the Primary Hub instance
-    const resp = await fetch(`http://${LOCAL_RELAY_HOST}:${BRIDGE_PORT}/api/rpc`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ method, params, timeoutMs }),
-      signal: AbortSignal.timeout(timeoutMs + 5000),
-    });
-    const data = (await resp.json()) as { ok: boolean; result?: unknown; error?: string };
-    if (!data.ok) {
-      throw new Error(data.error || "Relay RPC failed");
+    // Relay mode: forward over direct loopback HTTP (proxy-immune) to the Primary Hub instance
+    const sendRelay = async (): Promise<unknown> => {
+      const data = await this.loopbackHttpJson<{
+        ok: boolean;
+        result?: unknown;
+        error?: string;
+      }>({
+        method: "POST",
+        path: "/api/rpc",
+        body: { method, params, timeoutMs },
+        timeoutMs: timeoutMs + 5000,
+      });
+      if (!data.ok) {
+        throw new Error(data.error || "Relay RPC failed");
+      }
+      return data.result;
+    };
+
+    try {
+      return await sendRelay();
+    } catch (err) {
+      if (!this.isRelayTransportError(err)) {
+        throw err;
+      }
+      // Primary may have exited: try promoting self to Primary, or retry against the new Primary
+      const promoted = await this.tryBindPrimary();
+      if (promoted) {
+        await this.waitForClientAfterPromotion();
+        return this.dispatchLocalBrowserRpc(method, params, timeoutMs);
+      }
+      await new Promise((r) => setTimeout(r, 250));
+      return await sendRelay();
     }
-    return data.result;
   }
 }
 
@@ -709,8 +1096,11 @@ function lookupPresetCatalog(category: string, query = ""): Record<string, unkno
           category: sfCatMap[c.category] || c.category,
           camera_mode: c.camera_mode,
           canvas: c.canvas,
-          ...(c.category === "22. 温泉单人"
-            ? { solo_spread_eligible: Boolean(tpl?.solo_spread_spec) }
+          ...(c.category === "22. 温泉单人" || Boolean(tpl?.solo_spread_spec)
+            ? {
+                solo_spread_eligible: Boolean(tpl?.solo_spread_spec),
+                solo_spread_modes: ["off", "pure", "cum"],
+              }
             : {}),
         };
       }),
@@ -744,7 +1134,7 @@ const MCP_TOOLS = [
   {
     name: "nai_list_options",
     description:
-      "List exact built-in preset keys and pose IDs supported by NovelAI Studio 2.0 (styles, lighting, outfits including 6 Pool swimwear presets, body, bust, anatomy, 51 poses P01~P51, MA0~MA11, SF01~SF30, KTD01~KTD60, KT01~KT46, PLD01~PLD22, PL01~PL11, CV01~CV07, BT01~BT08, HWD01~HWD15, PS01~PS04, CP01~CP12, AFD01~AFD15, ONS01~ONS55, etc.) before calling nai_update_config.",
+      "List exact built-in preset keys and pose IDs supported by NovelAI Studio 2.0 (styles, lighting, outfits including 6 Pool swimwear presets, body, bust, anatomy, 51 poses P01~P51, MA0~MA11, SF01~SF30, KTD01~KTD60, KT01~KT46, PLD01~PLD22, PL01~PL11, CV01~CV07, BT01~BT08, HWD01~HWD15, PS01~PS04, CP01~CP12, AFD01~AFD15, ONS01~ONS55, CAR01~CAR25, MTS01~MTS15, etc.) before calling nai_update_config.",
     inputSchema: {
       type: "object",
       properties: {
@@ -763,7 +1153,7 @@ const MCP_TOOLS = [
   {
     name: "nai_update_config",
     description:
-      "Directly push configuration changes to the open NovelAI_Workbench.html webpage in real time. Supports updating any CharacterConfig field (char_tag, extra_char_tags, gender_mode: 'normal'|'femboy'|'futa_no_balls'|'futa_with_balls', body_preset, bust_preset, outfit_preset, custom_outfit_tags, outfit_state_mode, style_preset, lighting_preset, pos_stage, pos_male_mode, pos_scene, enable_condom, enable_uterus_xray, enable_solo_spread, pixiv_bar_censor: 'off'|'white'|'black'|'mosaic', other_use_scene_outfit, free_action_tags, free_action_prose, free_action_nsfw, etc.), NaiApiSettings (model, steps, scale, cfg_rescale, canvas_preset, seed, batch_count, auto_upscale_replace), action_mode ('positions' | 'multi_angle' | 'other' | 'free'), and active_scene_id ('P01'..'P51' | 'MP01'..'MP15' | 'TN01'..'TN12' | 'BG01'..'BG20' | 'MA0'..'MA11' | 'MA7A'..'MA7E' | 'SF01'..'SF30' | 'KTD01'..'KTD60' | 'KT01'..'KT46' | 'PLD01'..'PLD22' | 'PL01'..'PL11' | 'CV01'..'CV07' | 'BT01'..'BT08' | 'HWD01'..'HWD15' | 'PS01'..'PS04' | 'CP01'..'CP12' | 'AFD01'..'AFD15' | 'ONS01'..'ONS55' | 'FREE').",
+      "Directly push configuration changes to the open NovelAI_Workbench.html webpage in real time. Supports updating any CharacterConfig field (char_tag, extra_char_tags, gender_mode: 'normal'|'femboy'|'futa_no_balls'|'futa_with_balls', body_preset, bust_preset, outfit_preset, custom_outfit_tags, outfit_state_mode, style_preset, lighting_preset, pos_stage, pos_male_mode, pos_scene, enable_condom, enable_uterus_xray, solo_spread_mode: 'off'|'pure'|'cum', enable_solo_spread, pixiv_bar_censor: 'off'|'white'|'black'|'mosaic', other_use_scene_outfit, free_action_tags, free_action_prose, free_action_nsfw, etc.), NaiApiSettings (model, steps, scale, cfg_rescale, canvas_preset, seed, batch_count, auto_upscale_replace), action_mode ('positions' | 'multi_angle' | 'other' | 'free'), and active_scene_id ('P01'..'P51' | 'MP01'..'MP15' | 'TN01'..'TN12' | 'BG01'..'BG20' | 'MA0'..'MA11' | 'MA7A'..'MA7E' | 'SF01'..'SF30' | 'KTD01'..'KTD60' | 'KT01'..'KT46' | 'PLD01'..'PLD22' | 'PL01'..'PL11' | 'CV01'..'CV07' | 'BT01'..'BT08' | 'HWD01'..'HWD15' | 'PS01'..'PS04' | 'CP01'..'CP12' | 'AFD01'..'AFD15' | 'ONS01'..'ONS55' | 'CAR01'..'CAR25' | 'MTS01'..'MTS15' | 'FREE').",
     inputSchema: {
       type: "object",
       properties: {
@@ -783,7 +1173,7 @@ const MCP_TOOLS = [
         },
         active_scene_id: {
           type: "string",
-          description: "Scene ID to activate, e.g. 'P22', 'MA10', 'SF01', 'KTD01', 'KT01', 'PLD01', 'PL01', 'CV01', 'BT01', 'HWD01', 'PS01', 'CP01', 'AFD01', 'ONS01', or 'FREE'.",
+          description: "Scene ID to activate, e.g. 'P22', 'MA10', 'SF01', 'KTD01', 'KT01', 'PLD01', 'PL01', 'CV01', 'BT01', 'HWD01', 'PS01', 'CP01', 'AFD01', 'ONS01', 'CAR01', 'MTS01', or 'FREE'.",
         },
         checked_position_ids: {
           type: "array",
@@ -793,7 +1183,7 @@ const MCP_TOOLS = [
         checked_other_action_ids: {
           type: "array",
           items: { type: "string" },
-          description: "Optional batch-checked TN01..TN12 / BG01..BG20 / SF01..SF30 / KTD01..KTD60 / KT01..KT46 / PLD01..PLD22 / PL01..PL11 / CV01..CV07 / BT01..BT08 / HWD01..HWD15 / PS01..PS04 / CP01..CP12 / AFD01..AFD15 / ONS01..ONS55 other-action IDs.",
+          description: "Optional batch-checked TN01..TN12 / BG01..BG20 / SF01..SF30 / KTD01..KTD60 / KT01..KT46 / PLD01..PLD22 / PL01..PL11 / CV01..CV07 / BT01..BT08 / HWD01..HWD15 / PS01..PS04 / CP01..CP12 / AFD01..AFD15 / ONS01..ONS55 / CAR01..CAR25 / MTS01..MTS15 other-action IDs.",
         },
       },
     },
@@ -1126,6 +1516,7 @@ async function executeToolCall(
     return {
       ...state,
       bridge_access: {
+        role: hub.getRole(),
         bind_host: BRIDGE_BIND_HOST,
         port: BRIDGE_PORT,
         local_url: `http://127.0.0.1:${BRIDGE_PORT}`,
@@ -1284,6 +1675,13 @@ async function handleJsonRpcMessage(msg: Record<string, unknown>): Promise<void>
 }
 
 async function startStdioMcp(): Promise<void> {
+  process.stdout.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EPIPE") {
+      hub.close();
+      process.exit(0);
+    }
+  });
+
   await hub.init();
 
   let stdinBuf: Buffer = Buffer.alloc(0);

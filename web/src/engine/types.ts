@@ -7,6 +7,17 @@ export type CharacterGenderMode =
   | "futa_with_balls";
 export type PixivBarCensorMode = "off" | "white" | "black" | "mosaic";
 
+export type SoloSpreadMode = "off" | "pure" | "cum";
+
+export function resolveSoloSpreadMode(
+  cfg: Pick<CharacterConfig, "solo_spread_mode" | "enable_solo_spread">
+): SoloSpreadMode {
+  if (cfg.solo_spread_mode === "pure" || cfg.solo_spread_mode === "cum") {
+    return cfg.solo_spread_mode;
+  }
+  return cfg.enable_solo_spread ? "pure" : "off";
+}
+
 export interface CharacterConfig {
   preset_name: string;
   char_tag: string;
@@ -59,6 +70,7 @@ export interface CharacterConfig {
   enable_uterus_xray: boolean;
   enable_condom: boolean;
   enable_solo_spread?: boolean;
+  solo_spread_mode?: SoloSpreadMode;
   pixiv_bar_censor?: PixivBarCensorMode;
   other_use_scene_outfit?: boolean;
 
@@ -138,6 +150,7 @@ export function createDefaultCharacterConfig(): CharacterConfig {
     enable_uterus_xray: false,
     enable_condom: false,
     enable_solo_spread: false,
+    solo_spread_mode: "off",
     pixiv_bar_censor: "off",
     other_use_scene_outfit: true,
 

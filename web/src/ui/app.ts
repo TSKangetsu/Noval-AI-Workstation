@@ -56,6 +56,7 @@ import {
 } from "../engine/t5Tokenizer";
 import {
   createDefaultCharacterConfig,
+  resolveSoloSpreadMode,
   type ActionMode,
   type CarouselMode,
   type CharacterConfig,
@@ -115,6 +116,7 @@ import {
   markPresetDeleted,
   mountLocalOutputDirectory,
   moveFileInMountedDir,
+  resetAllWorkbenchStorage,
   resolveRecordDiskSubpath,
   sanitizeSubfolderName,
   saveActiveConfig,
@@ -2111,7 +2113,31 @@ export class WorkbenchApp {
     });
     advChips.append(chipQt, chipProse, chipAutoDl);
 
-    c5.body.append(tokRow, stepsRow, ucRow, extraUcRow, advChips);
+    const resetZone = this.el("div", "factory-reset-row");
+    const btnFactoryReset = this.el(
+      "button",
+      "btn btn-danger factory-reset-btn",
+      "🧨 重置全部配置（恢复出厂）"
+    ) as HTMLButtonElement;
+    btnFactoryReset.type = "button";
+    btnFactoryReset.title =
+      "清空全部本地配置、自定义预设、删除记录、Vibe、画廊收藏/分组及 API Token，并重新加载工作台恢复出厂默认";
+    btnFactoryReset.addEventListener("click", async () => {
+      const ok = window.confirm(
+        "确定要重置整个工作台并恢复出厂默认吗？\n\n此操作将彻底清空：\n• 全部角色、画风、光影与采样配置\n• 全部自定义预设与删除记录（内置预设将恢复出厂）\n• 全部 Vibe Transfer 槽位与画廊收藏 / 文件夹分组\n• API Token、MCP 设置及本地输出目录挂载\n\n确认后页面将自动刷新，且不可撤销。"
+      );
+      if (!ok) return;
+      btnFactoryReset.disabled = true;
+      btnFactoryReset.textContent = "⏳ 正在重置...";
+      try {
+        await resetAllWorkbenchStorage();
+      } finally {
+        window.location.reload();
+      }
+    });
+    resetZone.appendChild(btnFactoryReset);
+
+    c5.body.append(tokRow, stepsRow, ucRow, extraUcRow, advChips, resetZone);
     col.appendChild(c5.card);
 
     return col;
@@ -3775,12 +3801,14 @@ export class WorkbenchApp {
     const isCp = this.activeSceneId.startsWith("CP");
     const isAfd = this.activeSceneId.startsWith("AFD");
     const isOns = this.activeSceneId.startsWith("ONS");
+    const isCar = this.activeSceneId.startsWith("CAR");
+    const isMts = this.activeSceneId.startsWith("MTS");
     const isCvDuo = this.activeSceneId === "CV04";
     const isKtSolo = this.activeSceneId.startsWith("KT") && !isKtd;
     const isPlSolo = this.activeSceneId.startsWith("PL") && !isPld;
-    const hasCondomChip = isKtd || isPld || isCvDuo || isHwd || isPs || isCp || isAfd || isOns;
+    const hasCondomChip = isKtd || isPld || isCvDuo || isHwd || isPs || isCp || isAfd || isOns || isCar || isMts;
     const supportsInternalXray =
-      isKtd || isPld || isKtSolo || isPlSolo || isCv || isBt || isHwd || isPs || isCp || isAfd || isOns;
+      isKtd || isPld || isKtSolo || isPlSolo || isCv || isBt || isHwd || isPs || isCp || isAfd || isOns || isCar || isMts;
     const isFemboy = (this.cfg.gender_mode ?? "normal") === "femboy";
     const xrayAllowed = supportsInternalXray || !isFemboy;
 
@@ -3806,7 +3834,7 @@ export class WorkbenchApp {
         "🛡️ 安全套"
       );
       btnCondom.title =
-        "开关双人厨房 (KTD01~KTD60) / 公共泳池 (PLD01~PLD22) / 双人采精 (CV04) / 家务干扰 (HWD01~HWD15) / 替身盖照 (PS01~PS04) / 露营野餐 (CP01~CP12) / 事后滑落 (AFD01~AFD15) / 温泉浴衣 (ONS01~ONS55) 动作的安全套表现词条";
+        "开关双人厨房 (KTD01~KTD60) / 公共泳池 (PLD01~PLD22) / 双人采精 (CV04) / 家务干扰 (HWD01~HWD15) / 替身盖照 (PS01~PS04) / 露营野餐 (CP01~CP12) / 事后滑落 (AFD01~AFD15) / 温泉浴衣 (ONS01~ONS55) / 车内玩法 (CAR01~CAR25) / 夏日祭典 (MTS01~MTS15) 动作的安全套表现词条";
       btnCondom.addEventListener("click", () => {
         this.cfg.enable_condom = !this.cfg.enable_condom;
         this.onCfgChanged();
@@ -3843,22 +3871,31 @@ export class WorkbenchApp {
     });
 
     let btnSoloSpread: HTMLButtonElement | null = null;
-    if (otherTpl?.category === "22. 温泉单人") {
-      const spreadEligible = Boolean(otherTpl.solo_spread_spec);
-      const spreadActive = spreadEligible && Boolean(this.cfg.enable_solo_spread);
+    if (otherTpl?.category === "22. 温泉单人" || Boolean(otherTpl?.solo_spread_spec)) {
+      const spreadEligible = Boolean(otherTpl?.solo_spread_spec);
+      const curSpreadMode = spreadEligible ? resolveSoloSpreadMode(this.cfg) : "off";
+      const spreadLabel =
+        curSpreadMode === "cum"
+          ? "💧 掰开+白流出"
+          : curSpreadMode === "pure"
+            ? "🫶 掰开差分: 纯净"
+            : "🫶 掰开差分";
       btnSoloSpread = this.el(
         "button",
-        `chip-btn solo-spread-chip${spreadActive ? " active" : ""}`,
-        "🫶 掰开差分"
+        `chip-btn solo-spread-chip${curSpreadMode !== "off" ? " active" : ""}`,
+        spreadLabel
       );
       btnSoloSpread.disabled = !spreadEligible;
       btnSoloSpread.title = spreadEligible
-        ? "一键切换「22. 温泉单人」掰开展示 CG 差分（保持双手守恒 <=2 手、4性别解剖路由与防自遮挡锁）"
-        : otherTpl.solo_spread_disabled_reason ||
-          "当前单人温泉动作构图（ONS11 站立背影系带遮挡 / ONS14 石阶迈步行走中 / ONS15 已内置单手擦拭动作）不适用掰开差分";
+        ? "三态循环切换单人 CG 差分：默认态 → 🫶纯净掰开差分（0白浊）→ 💧掰开+白流出差分（同 Seed 连续，保持双手守恒与 4 性别路由）"
+        : otherTpl?.solo_spread_disabled_reason ||
+          "当前单人动作构图（ONS11 站立背影系带遮挡 / ONS14 石阶迈步行走中 / ONS15 已内置单手擦拭动作）不适用掰开差分";
       btnSoloSpread.addEventListener("click", () => {
         if (!spreadEligible) return;
-        this.cfg.enable_solo_spread = !this.cfg.enable_solo_spread;
+        const cur = resolveSoloSpreadMode(this.cfg);
+        const next = cur === "off" ? "pure" : cur === "pure" ? "cum" : "off";
+        this.cfg.solo_spread_mode = next;
+        this.cfg.enable_solo_spread = next !== "off";
         this.onCfgChanged();
         this.renderRightModeView();
       });
@@ -3877,7 +3914,7 @@ export class WorkbenchApp {
     const searchInp = this.el("input") as HTMLInputElement;
     searchInp.type = "text";
     searchInp.placeholder =
-      "🔍 搜索 TN / BG / SF / KTD / KT / PLD / PL / CV / BT / HWD / PS / CP / AFD / ONS 编号或关键词...";
+      "🔍 搜索 TN / BG / SF / KTD / KT / PLD / PL / CV / BT / HWD / PS / CP / AFD / ONS / CAR / MTS 编号或关键词...";
     searchInp.value = this.otherSearchQuery;
     searchInp.addEventListener("input", () => {
       this.otherSearchQuery = searchInp.value.trim();
@@ -3931,6 +3968,8 @@ export class WorkbenchApp {
       "20. 事后滑落",
       "21. 温泉双人",
       "22. 温泉单人",
+      "23. 车内玩法",
+      "24. 夏日祭典",
     ];
     const extraCats = Array.from(new Set(allOther.map((c) => c.category))).filter(
       (c) => !baseCats.includes(c)
@@ -8303,7 +8342,8 @@ export class WorkbenchApp {
       },
       character_config: {
         ...this.cfg,
-        enable_solo_spread: Boolean(this.cfg.enable_solo_spread),
+        solo_spread_mode: resolveSoloSpreadMode(this.cfg),
+        enable_solo_spread: resolveSoloSpreadMode(this.cfg) !== "off",
       },
       solo_spread_eligible:
         this.actionMode === "other"
@@ -8408,6 +8448,18 @@ export class WorkbenchApp {
           (this.cfg as unknown as Record<string, unknown>)[k] = nextVal;
           changedNotes.push(k);
         }
+      }
+      if (
+        cfgPatch.solo_spread_mode === "off" ||
+        cfgPatch.solo_spread_mode === "pure" ||
+        cfgPatch.solo_spread_mode === "cum"
+      ) {
+        this.cfg.solo_spread_mode = cfgPatch.solo_spread_mode;
+        this.cfg.enable_solo_spread = cfgPatch.solo_spread_mode !== "off";
+      } else if (cfgPatch.enable_solo_spread !== undefined) {
+        const legacyOn = Boolean(cfgPatch.enable_solo_spread);
+        this.cfg.solo_spread_mode = legacyOn ? "pure" : "off";
+        this.cfg.enable_solo_spread = legacyOn;
       }
 
       // Auto-sync lighting & bundled Vibe if style_preset changed and lighting_preset wasn't explicitly overridden

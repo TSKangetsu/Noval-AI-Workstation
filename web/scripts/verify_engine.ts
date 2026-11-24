@@ -14,11 +14,18 @@ import {
   BUNDLED_CUSTOM_PRESETS,
   CAMPING_BAREFOOT_BAN_UC,
   CAMPING_LIGHT_DEFAULTS,
+  CAR_BAREFOOT_BAN_UC,
+  CAR_LIGHT_DEFAULTS,
+  CAR_SOLO_PARTNER_BAN_UC,
+  CAR_SOLO_PURE_SPREAD_ANTI_CUM_UC,
   EXPRESSION_PRESETS,
   FOOT_ANAT_UC,
   FREE_ACTION_STARTERS,
   HOUSEWORK_LIGHT_DEFAULTS,
   LIGHTING_PRESETS,
+  MATSURI_LIGHT_DEFAULTS,
+  MATSURI_PURE_SPREAD_ANTI_CUM_UC,
+  MATSURI_SOLO_PARTNER_BAN_UC,
   MODEL_V4_5_FULL,
   MODEL_V5_FULL,
   MODEL_V5_FULL_MEDIUM,
@@ -2360,8 +2367,8 @@ async function main(): Promise<void> {
 
   assert.equal(
     OTHER_ACTION_CHAPTERS.length,
-    285,
-    "Expected 285 Other Actions (30 SF + 60 KTD duo + 46 KT solo + 22 PLD duo + 11 PL solo + 7 CV + 8 BT + 15 HWD + 4 PS + 12 CP + 15 AFD + 55 ONS)"
+    325,
+    "Expected 325 Other Actions (30 SF + 60 KTD duo + 46 KT solo + 22 PLD duo + 11 PL solo + 7 CV + 8 BT + 15 HWD + 4 PS + 12 CP + 15 AFD + 55 ONS + 25 CAR + 15 MTS)"
   );
   assert(
     OTHER_ACTION_CATEGORIES.includes("7. 裸围厨房") &&
@@ -3730,7 +3737,7 @@ async function main(): Promise<void> {
 
   // Verify .agents/skills/nai-specimen-collection/ hygiene (zero code/build vocabulary leaks)
   const specimenSkillDir = path.resolve(process.cwd(), "../.agents/skills/nai-specimen-collection");
-  for (const relDoc of ["SKILL.md", "references/specimen_scene_catalog.md"]) {
+  for (const relDoc of ["SKILL.md"]) {
     const docPath = path.join(specimenSkillDir, relDoc);
     assert(fs.existsSync(docPath), `Missing specimen skill doc: ${docPath}`);
     const docText = fs.readFileSync(docPath, "utf8");
@@ -3957,7 +3964,7 @@ async function main(): Promise<void> {
 
   // Verify .agents/skills/nai-bathroom-solo-toys/ hygiene (zero code/build vocabulary leaks)
   const bathroomSkillDir = path.resolve(process.cwd(), "../.agents/skills/nai-bathroom-solo-toys");
-  for (const relDoc of ["SKILL.md", "references/bathroom_toy_catalog.md"]) {
+  for (const relDoc of ["SKILL.md"]) {
     const docPath = path.join(bathroomSkillDir, relDoc);
     assert(fs.existsSync(docPath), `Missing bathroom skill doc: ${docPath}`);
     const docText = fs.readFileSync(docPath, "utf8");
@@ -4256,7 +4263,7 @@ async function main(): Promise<void> {
 
   // Verify .agents/skills/nai-housework-distraction/ hygiene (zero code/build vocabulary leaks)
   const houseworkSkillDir = path.resolve(process.cwd(), "../.agents/skills/nai-housework-distraction");
-  for (const relDoc of ["SKILL.md", "references/housework_scene_catalog.md"]) {
+  for (const relDoc of ["SKILL.md"]) {
     const docPath = path.join(houseworkSkillDir, relDoc);
     assert(fs.existsSync(docPath), `Missing housework skill doc: ${docPath}`);
     const docText = fs.readFileSync(docPath, "utf8");
@@ -4505,7 +4512,7 @@ async function main(): Promise<void> {
 
   // Verify .agents/skills/nai-photo-substitute/ hygiene (zero code/build vocabulary leaks)
   const photoSubSkillDir = path.resolve(process.cwd(), "../.agents/skills/nai-photo-substitute");
-  for (const relDoc of ["SKILL.md", "references/photo_substitute_catalog.md"]) {
+  for (const relDoc of ["SKILL.md"]) {
     const docPath = path.join(photoSubSkillDir, relDoc);
     assert(fs.existsSync(docPath), `Missing photo-substitute skill doc: ${docPath}`);
     const docText = fs.readFileSync(docPath, "utf8");
@@ -4792,7 +4799,7 @@ async function main(): Promise<void> {
 
   // Verify .agents/skills/nai-camping-picnic/ hygiene (zero code/build vocabulary leaks)
   const campingSkillDir = path.resolve(process.cwd(), "../.agents/skills/nai-camping-picnic");
-  for (const relDoc of ["SKILL.md", "references/camping_picnic_catalog.md"]) {
+  for (const relDoc of ["SKILL.md"]) {
     const docPath = path.join(campingSkillDir, relDoc);
     assert(fs.existsSync(docPath), `Missing camping skill doc: ${docPath}`);
     const docText = fs.readFileSync(docPath, "utf8");
@@ -5074,7 +5081,7 @@ async function main(): Promise<void> {
 
   // Verify .agents/skills/nai-aftersex-drip/ hygiene (zero code/build vocabulary leaks)
   const afdSkillDir = path.resolve(process.cwd(), "../.agents/skills/nai-aftersex-drip");
-  for (const relDoc of ["SKILL.md", "references/aftersex_drip_catalog.md"]) {
+  for (const relDoc of ["SKILL.md"]) {
     const docPath = path.join(afdSkillDir, relDoc);
     assert(fs.existsSync(docPath), `Missing aftersex-drip skill doc: ${docPath}`);
     const docText = fs.readFileSync(docPath, "utf8");
@@ -5570,18 +5577,58 @@ async function main(): Promise<void> {
       );
       if (tokSp.posTokens > maxOnsenSpreadPosTokens) maxOnsenSpreadPosTokens = tokSp.posTokens;
       if (tokSp.negTokens > maxOnsenSpreadNegTokens) maxOnsenSpreadNegTokens = tokSp.negTokens;
+      assert(
+        !/\bcum\b|\bcumdrip\b|\bcum overflow\b|\bcum in pussy\b|\bcum in ass\b|\bafter sex\b/i.test(
+          posNoNeg
+        ) && negSetSp.has("cum"),
+        `${ch.id}_SP pure (${gm}) leaked cum/after-sex or missed anti-cum UC`
+      );
+      onsenSoloSpreadVerifiedCount++;
+
+      // Stage 3: solo_spread_mode='cum' (💧掰开+白流出差分)
+      const [cumItem] = generateScenePrompts(
+        ch.id,
+        {
+          ...createDefaultCharacterConfig(),
+          gender_mode: gm,
+          style_preset: style6Key,
+          lighting_preset: "🔄 随画风与本幕默认光影（不额外覆盖）",
+          solo_spread_mode: "cum",
+        },
+        "3rd"
+      );
+      assertZeroNestedColons(cumItem.prompt, `${ch.id}_SP_CUM (${gm})`);
+      assert(
+        cumItem.subTitle.includes("💧掰开+白流出"),
+        `${ch.id}_SP_CUM (${gm}) missing 💧掰开+白流出 badge`
+      );
+      const spCum = splitPromptPosAndNeg(cumItem.prompt);
+      assert(!/-?\d+(?:\.\d+)?::/.test(spCum.negPrompt), `${ch.id}_SP_CUM (${gm}) negPrompt has weight`);
+      const posNoNegCum = spCum.posPrompt.replace(/-\d+(?:\.\d+)?::[\s\S]*?::/g, "");
+      assert(
+        /\bafter sex\b/i.test(posNoNegCum) && /\bcum/i.test(posNoNegCum),
+        `${ch.id}_SP_CUM (${gm}) missing after sex / cum tags`
+      );
+      const tokCum = countSeparatedT5Tokens({
+        posPrompt: spCum.posPrompt,
+        sceneNegPrompt: spCum.negPrompt,
+        ucPresetMode: "heavy",
+        appendQuality: true,
+      });
+      assert(
+        tokCum.posTokens <= 500 && tokCum.negTokens <= 512,
+        `${ch.id}_SP_CUM (${gm}) exceeded T5 budget: pos=${tokCum.posTokens}/500, neg=${tokCum.negTokens}/512`
+      );
+      if (tokCum.posTokens > maxOnsenSpreadPosTokens) maxOnsenSpreadPosTokens = tokCum.posTokens;
+      if (tokCum.negTokens > maxOnsenSpreadNegTokens) maxOnsenSpreadNegTokens = tokCum.negTokens;
       onsenSoloSpreadVerifiedCount++;
     }
   }
-  assert.equal(onsenSoloSpreadVerifiedCount, 80, "Expected 80 verified Onsen Solo Spread prompts (20 x 4)");
+  assert.equal(onsenSoloSpreadVerifiedCount, 160, "Expected 160 verified Onsen Solo Spread prompts (20 x 4 x 2 stages)");
 
   // Verify .agents/skills/nai-onsen-yukata/ & nai-cg-variations/ hygiene (zero code/build vocabulary leaks)
   const onsenSkillDir = path.resolve(process.cwd(), "../.agents/skills/nai-onsen-yukata");
-  for (const relDoc of [
-    "SKILL.md",
-    "references/onsen_yukata_catalog.md",
-    "references/onsen_solo_spread_variations.md",
-  ]) {
+  for (const relDoc of ["SKILL.md"]) {
     const docPath = path.join(onsenSkillDir, relDoc);
     assert(fs.existsSync(docPath), `Missing onsen-yukata skill doc: ${docPath}`);
     const docText = fs.readFileSync(docPath, "utf8");
@@ -5600,6 +5647,535 @@ async function main(): Promise<void> {
       cgVarText
     ),
     "nai-cg-variations/SKILL.md leaked codebase/build vocabulary"
+  );
+
+  // 17.14 Verify 20 Car Interior Scenes (CAR01..CAR20 = 80 Prompts), 5 Scene-Bound Car Light Modes, Physical Overrides (CAR02 pure_rear, CAR11 upper_body_window, CAR20 Yuri Multi-Box), Femboy Chest Sanitization, & Skill Hygiene
+  assert(
+    OTHER_ACTION_CATEGORIES.includes("23. 车内玩法"),
+    "OTHER_ACTION_CATEGORIES must include '23. 车内玩法'"
+  );
+  for (const [lKey, lEntry] of Object.entries(LIGHTING_PRESETS)) {
+    assert(
+      !/车内专属/.test(lKey) && !/^car_/i.test(lEntry.code),
+      `Car lighting must stay 100% scene-bound and NOT appear in global LIGHTING_PRESETS: ${lKey}`
+    );
+  }
+  assert.equal(
+    Object.keys(CAR_LIGHT_DEFAULTS).length,
+    5,
+    "Expected 5 scene-bound CAR_LIGHT_DEFAULTS"
+  );
+  assert(
+    !CAR_LIGHT_DEFAULTS.underground_garage_amber.backlit &&
+      !CAR_LIGHT_DEFAULTS.dashboard_glow_midnight.backlit &&
+      CAR_LIGHT_DEFAULTS.rainy_neon_night_cabin.backlit &&
+      CAR_LIGHT_DEFAULTS.sunset_highway_glare.backlit &&
+      CAR_LIGHT_DEFAULTS.dappled_roadside_daylight.backlit,
+    "Dark car cabins (underground_garage_amber, dashboard_glow_midnight) must set backlit: false"
+  );
+  assert(
+    CAR_LIGHT_DEFAULTS.dappled_roadside_daylight.neg.includes("pitch dark") &&
+      CAR_LIGHT_DEFAULTS.dappled_roadside_daylight.neg.includes("dark night") &&
+      !/(?:^|,\s*)dark(?:\s*,|$)/i.test(CAR_LIGHT_DEFAULTS.dappled_roadside_daylight.neg),
+    "dappled_roadside_daylight.neg must replace bare 'dark' with 'pitch dark, dark night'"
+  );
+
+  const carChapters = OTHER_ACTION_CHAPTERS.filter((c) => c.id.startsWith("CAR"));
+  assert.equal(carChapters.length, 25, "Expected 25 Car Interior scenes (CAR01..CAR25: 20 duo + 5 solo)");
+  const carDuoChapters = carChapters.filter((c) => !OTHER_ACTION_TEMPLATES[c.id]?.is_car_solo);
+  const carSoloChapters = carChapters.filter((c) => Boolean(OTHER_ACTION_TEMPLATES[c.id]?.is_car_solo));
+  assert.equal(carDuoChapters.length, 20, "Expected 20 Car Duo scenes (CAR01..CAR20)");
+  assert.equal(carSoloChapters.length, 5, "Expected 5 Car Solo scenes (CAR21..CAR25)");
+  let carVerifiedCount = 0;
+  let maxCarPosTokens = 0;
+  let maxCarMultiBoxPosTokens = 0;
+  let maxCarNegTokens = 0;
+  const carFemboyExposedIds = new Set(["CAR06", "CAR08", "CAR11", "CAR12", "CAR17"]);
+
+  for (const ch of carDuoChapters) {
+    const tpl = OTHER_ACTION_TEMPLATES[ch.id];
+    assert(tpl?.is_car_scene && tpl.car_light_mode, `${ch.id} missing car metadata`);
+    for (const gm of ["normal", "femboy", "futa_no_balls", "futa_with_balls"] as const) {
+      const carCfg = {
+        ...createDefaultCharacterConfig(),
+        gender_mode: gm,
+        style_preset: style6Key,
+        other_use_scene_outfit: true,
+        lighting_preset: "🔄 随画风与本幕默认光影（不额外覆盖）",
+      };
+      const items = generateScenePrompts(ch.id, carCfg, "3rd");
+      assert.equal(items.length, 1, `${ch.id} (${gm}) must emit 1 prompt`);
+      assertZeroNestedColons(items[0].prompt, `${ch.id} (${gm})`);
+      const sp = splitPromptPosAndNeg(items[0].prompt);
+      assert(!/-?\d+(?:\.\d+)?::/.test(sp.negPrompt), `${ch.id} (${gm}) negPrompt has weight`);
+      const tok = countSeparatedT5Tokens({
+        posPrompt: sp.posPrompt,
+        sceneNegPrompt: sp.negPrompt,
+        ucPresetMode: "heavy",
+        appendQuality: true,
+      });
+      const isMultiBox = sp.posPrompt.includes("[Character 1");
+      const posCeiling = isMultiBox ? 490 : 500;
+      assert(
+        tok.posTokens <= posCeiling && tok.negTokens <= 512,
+        `${ch.id} (${gm}) exceeded T5 budget: pos=${tok.posTokens}/${posCeiling}, neg=${tok.negTokens}/512`
+      );
+      if (tok.posTokens > maxCarPosTokens) maxCarPosTokens = tok.posTokens;
+      if (isMultiBox && tok.posTokens > maxCarMultiBoxPosTokens) {
+        maxCarMultiBoxPosTokens = tok.posTokens;
+      }
+      if (tok.negTokens > maxCarNegTokens) maxCarNegTokens = tok.negTokens;
+
+      const posNoInlineNeg = sp.posPrompt.replace(/-\d+(?:\.\d+)?::[\s\S]*?::/g, "");
+      if (ch.id === "CAR01") {
+        assert(
+          !/\baqua eyes\b/i.test(posNoInlineNeg),
+          `CAR01 (${gm}) must not contain hardcoded 'aqua eyes'`
+        );
+      }
+      if (ch.id === "CAR02") {
+        assert(
+          !/\b(?:red eyes|amber eyes|blue eyes|green eyes|gradient eyes|looking at viewer)\b/i.test(
+            posNoInlineNeg
+          ),
+          `CAR02 (${gm}) pure_rear must strip iris/eye/face tags`
+        );
+      }
+      if (ch.id === "CAR11") {
+        assert(
+          !/\b(?:slender legs|thigh gap|long legs|wide hips|thick thighs)\b/i.test(posNoInlineNeg),
+          `CAR11 (${gm}) upper_body_window must strip lower-body leg/hip tags`
+        );
+      }
+      if (ch.id === "CAR20" && gm === "normal") {
+        assert(
+          posNoInlineNeg.includes("2girls") &&
+            posNoInlineNeg.includes("[Character 1 (B3)]") &&
+            posNoInlineNeg.includes("[Character 2 (D3)]"),
+          `CAR20 normal must compile as 2girls [B3]/[D3] Multi-Box Yuri Showcase`
+        );
+      }
+      if (
+        tpl.car_light_mode === "underground_garage_amber" ||
+        tpl.car_light_mode === "dashboard_glow_midnight"
+      ) {
+        assert(
+          !/\bbacklighting\b/i.test(posNoInlineNeg),
+          `${ch.id} (${gm}) dark cabin (${tpl.car_light_mode}) must NOT inject backlighting`
+        );
+      }
+      if (gm === "femboy") {
+        assert(
+          posNoInlineNeg.includes("2boys") && posNoInlineNeg.includes("1.55::flat chest::"),
+          `${ch.id} femboy must route 2boys with flat chest`
+        );
+        if (carFemboyExposedIds.has(ch.id)) {
+          assert(
+            !/\bbare breasts\b|\bbetween breasts\b|\bheavy breast squish\b/i.test(posNoInlineNeg),
+            `${ch.id} femboy must strip bare breasts / between breasts / heavy breast squish`
+          );
+        }
+      }
+      if (tpl.barefoot) {
+        const bareTokens = CAR_BAREFOOT_BAN_UC.split(",")
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean);
+        const negLower = sp.negPrompt.toLowerCase();
+        for (const bt of bareTokens) {
+          assert(negLower.includes(bt), `${ch.id} (${gm}) barefoot missing UC token '${bt}'`);
+        }
+      }
+      carVerifiedCount++;
+    }
+  }
+  assert.equal(carVerifiedCount, 80, "Expected 80 verified Car Duo prompts (20 x 4)");
+
+  // Verify CAR21..CAR25 (5 Solo scenes x 3 solo_spread_mode stages x 4 gender modes = 60 prompts, 0 truncation)
+  let carSoloVerifiedCount = 0;
+  let maxCarSoloPosTokens = 0;
+  let maxCarSoloNegTokens = 0;
+  const carSoloPartnerBanTokens = CAR_SOLO_PARTNER_BAN_UC.split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const carPureAntiCumTokens = CAR_SOLO_PURE_SPREAD_ANTI_CUM_UC.split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  for (const ch of carSoloChapters) {
+    const tpl = OTHER_ACTION_TEMPLATES[ch.id];
+    assert(tpl?.is_car_scene && tpl.is_car_solo && tpl.solo_spread_spec, `${ch.id} missing car solo metadata`);
+    for (const sMode of ["off", "pure", "cum"] as const) {
+      for (const gm of ["normal", "femboy", "futa_no_balls", "futa_with_balls"] as const) {
+        const [item] = generateScenePrompts(
+          ch.id,
+          {
+            ...createDefaultCharacterConfig(),
+            gender_mode: gm,
+            style_preset: style6Key,
+            other_use_scene_outfit: true,
+            lighting_preset: "🔄 随画风与本幕默认光影（不额外覆盖）",
+            solo_spread_mode: sMode,
+          },
+          "3rd"
+        );
+        assertZeroNestedColons(item.prompt, `${ch.id}_${sMode} (${gm})`);
+        const sp = splitPromptPosAndNeg(item.prompt);
+        assert(!/-?\d+(?:\.\d+)?::/.test(sp.negPrompt), `${ch.id}_${sMode} (${gm}) negPrompt has weight`);
+        const posNoInlineNeg = sp.posPrompt.replace(/-\d+(?:\.\d+)?::[\s\S]*?::/g, "");
+        const negSet = new Set(sp.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+        for (const pt of carSoloPartnerBanTokens) {
+          assert(negSet.has(pt), `${ch.id}_${sMode} (${gm}) missing CAR_SOLO_PARTNER_BAN_UC '${pt}'`);
+        }
+        const tok = countSeparatedT5Tokens({
+          posPrompt: sp.posPrompt,
+          sceneNegPrompt: sp.negPrompt,
+          ucPresetMode: "heavy",
+          appendQuality: true,
+        });
+        assert(
+          tok.posTokens <= 500 && tok.negTokens <= 512,
+          `${ch.id}_${sMode} (${gm}) exceeded T5 budget: pos=${tok.posTokens}/500, neg=${tok.negTokens}/512`
+        );
+        if (tok.posTokens > maxCarSoloPosTokens) maxCarSoloPosTokens = tok.posTokens;
+        if (tok.negTokens > maxCarSoloNegTokens) maxCarSoloNegTokens = tok.negTokens;
+
+        // 0-truncation check: base prose core must survive intact without enforcePositiveTokenBudget clipping
+        const expectedProseCore = (gm === "femboy" ? tpl.femboy_prose : tpl.female_prose).replace(
+          /\.+\s*$/,
+          ""
+        );
+        assert(
+          sp.posPrompt.includes(expectedProseCore),
+          `${ch.id}_${sMode} (${gm}) truncated base prose (posTokens=${tok.posTokens})`
+        );
+
+        if (gm === "femboy") {
+          assert(
+            !/\badult woman\b|\bpussy\b|\blabia\b|\bbare breasts\b/i.test(posNoInlineNeg) &&
+              posNoInlineNeg.includes("a slender crossdressing boy"),
+            `${ch.id}_${sMode} (femboy) leaked female anatomy or missed 'a slender crossdressing boy'`
+          );
+        }
+        if (sMode === "pure") {
+          assert(
+            item.subTitle.includes("🫶掰开差分") &&
+              !/\bcum\b|\bcumdrip\b|\bcum overflow\b|\bcum in pussy\b|\bcum in ass\b|\bafter sex\b/i.test(
+                posNoInlineNeg
+              ),
+            `${ch.id}_pure (${gm}) failed pure spread badge or leaked cum tags`
+          );
+          for (const ac of carPureAntiCumTokens) {
+            assert(negSet.has(ac), `${ch.id}_pure (${gm}) missing anti-cum UC '${ac}'`);
+          }
+        } else if (sMode === "cum") {
+          assert(
+            item.subTitle.includes("💧掰开+白流出") &&
+              /\bafter sex\b/i.test(posNoInlineNeg) &&
+              /\bcum/i.test(posNoInlineNeg),
+            `${ch.id}_cum (${gm}) failed cum spread badge or tags`
+          );
+        }
+        if (tpl.barefoot) {
+          const bareTokens = CAR_BAREFOOT_BAN_UC.split(",")
+            .map((s) => s.trim().toLowerCase())
+            .filter(Boolean);
+          for (const bt of bareTokens) {
+            assert(negSet.has(bt), `${ch.id}_${sMode} (${gm}) barefoot missing UC '${bt}'`);
+          }
+        }
+        carSoloVerifiedCount++;
+      }
+    }
+  }
+  assert.equal(carSoloVerifiedCount, 60, "Expected 60 verified Car Solo 3-stage prompts (5 x 3 x 4)");
+
+  // Verify CAR02 pure_rear resists global expression override
+  const car02ExprTest = generateScenePrompts(
+    "CAR02",
+    {
+      ...createDefaultCharacterConfig(),
+      style_preset: style6Key,
+      expression_preset: "迷离潮红",
+      other_use_scene_outfit: true,
+    },
+    "3rd"
+  )[0];
+  assert(
+    !/\blooking at viewer\b|\bheart-shaped pupils\b/i.test(
+      splitPromptPosAndNeg(car02ExprTest.prompt).posPrompt
+    ),
+    "CAR02 pure_rear must suppress global facial expression post-pass"
+  );
+
+  // Verify CAR01 femboy auxiliary toggles (condom + xray + transparent_bg) stay within 400 tokens (3-Vibe safe)
+  const car01AuxItem = generateScenePrompts(
+    "CAR01",
+    {
+      ...createDefaultCharacterConfig(),
+      style_preset: style6Key,
+      gender_mode: "femboy",
+      enable_condom: true,
+      enable_uterus_xray: true,
+      pos_transparent_bg: true,
+      other_use_scene_outfit: true,
+      pos_token_limit: computeSafePosTokenLimit({ isV45: true, activeVibeCount: 3 }),
+    },
+    "3rd"
+  )[0];
+  const spCar01Aux = splitPromptPosAndNeg(car01AuxItem.prompt);
+  const tokCar01Aux = countSeparatedT5Tokens({
+    posPrompt: spCar01Aux.posPrompt,
+    sceneNegPrompt: spCar01Aux.negPrompt,
+    ucPresetMode: "heavy",
+    appendQuality: true,
+  });
+  assert(
+    spCar01Aux.posPrompt.includes("1.5::intestines::") &&
+      spCar01Aux.posPrompt.includes("1.4::condom::") &&
+      spCar01Aux.posPrompt.includes("2.0::transparent background::") &&
+      tokCar01Aux.posTokens <= 400,
+    `CAR01 femboy with condom+xray+transparent_bg+3Vibes failed checks (posTokens=${tokCar01Aux.posTokens})`
+  );
+
+  // Verify .agents/skills/nai-car-interior/SKILL.md hygiene (zero code/build vocabulary leaks)
+  const carSkillDoc = path.resolve(process.cwd(), "../.agents/skills/nai-car-interior/SKILL.md");
+  assert(fs.existsSync(carSkillDoc), `Missing nai-car-interior SKILL.md: ${carSkillDoc}`);
+  const carSkillText = fs.readFileSync(carSkillDoc, "utf8");
+  assert(
+    !/storyEngine|engineConstants|otherActionsData|carInteriorActionsData|verify_engine|NovelAI_Workbench\.html|vite build|tsc --noEmit|npm --prefix/i.test(
+      carSkillText
+    ),
+    "nai-car-interior/SKILL.md leaked codebase/build vocabulary"
+  );
+
+  // 17.15 Verify 15 Summer Matsuri Stealth Yukata Scenes (MTS01..MTS15 = 92 Prompts: 11 Duo x 4 + 4 Solo x 3 x 4), 5 Scene-Bound Matsuri Light Modes, 0-Truncation, Yuri Multi-Box, & Skill Hygiene
+  assert(
+    OTHER_ACTION_CATEGORIES.includes("24. 夏日祭典"),
+    "OTHER_ACTION_CATEGORIES must include '24. 夏日祭典'"
+  );
+  for (const [lKey, lEntry] of Object.entries(LIGHTING_PRESETS)) {
+    assert(
+      !/夏日祭专属|祭典专属/.test(lKey) && !/^matsuri_/i.test(lEntry.code),
+      `Matsuri lighting must stay 100% scene-bound and NOT appear in global LIGHTING_PRESETS: ${lKey}`
+    );
+  }
+  assert.equal(
+    Object.keys(MATSURI_LIGHT_DEFAULTS).length,
+    5,
+    "Expected 5 scene-bound MATSURI_LIGHT_DEFAULTS"
+  );
+  assert(
+    !MATSURI_LIGHT_DEFAULTS.yatai_chochin_amber.backlit &&
+      !MATSURI_LIGHT_DEFAULTS.shrine_torii_moonlight.backlit &&
+      !MATSURI_LIGHT_DEFAULTS.sparkler_close_glow.backlit &&
+      MATSURI_LIGHT_DEFAULTS.hanabi_burst_riverside.backlit &&
+      MATSURI_LIGHT_DEFAULTS.festival_crowd_bokeh.backlit,
+    "Dark Matsuri modes (yatai_chochin_amber, shrine_torii_moonlight, sparkler_close_glow) must set backlit: false"
+  );
+
+  const mtsChapters = OTHER_ACTION_CHAPTERS.filter((c) => c.id.startsWith("MTS"));
+  assert.equal(mtsChapters.length, 15, "Expected 15 Matsuri scenes (MTS01..MTS15)");
+  const mtsDuoChapters = mtsChapters.filter((c) => !OTHER_ACTION_TEMPLATES[c.id]?.is_matsuri_solo);
+  const mtsSoloChapters = mtsChapters.filter((c) => Boolean(OTHER_ACTION_TEMPLATES[c.id]?.is_matsuri_solo));
+  assert.equal(mtsDuoChapters.length, 11, "Expected 11 Matsuri Duo scenes (MTS01..MTS11)");
+  assert.equal(mtsSoloChapters.length, 4, "Expected 4 Matsuri Solo 3-stage scenes (MTS12..MTS15)");
+
+  let mtsDuoVerifiedCount = 0;
+  let mtsSoloVerifiedCount = 0;
+  let maxMtsPosTokens = 0;
+  let maxMtsMultiBoxPosTokens = 0;
+  let maxMtsNegTokens = 0;
+
+  for (const ch of mtsDuoChapters) {
+    const tpl = OTHER_ACTION_TEMPLATES[ch.id];
+    assert(tpl?.is_matsuri_scene && tpl.matsuri_light_mode, `${ch.id} missing matsuri metadata`);
+    for (const gm of ["normal", "femboy", "futa_no_balls", "futa_with_balls"] as const) {
+      const [item] = generateScenePrompts(
+        ch.id,
+        {
+          ...createDefaultCharacterConfig(),
+          gender_mode: gm,
+          style_preset: style6Key,
+          other_use_scene_outfit: true,
+          lighting_preset: "🔄 随画风与本幕默认光影（不额外覆盖）",
+        },
+        "3rd"
+      );
+      assertZeroNestedColons(item.prompt, `${ch.id} (${gm})`);
+      const sp = splitPromptPosAndNeg(item.prompt);
+      assert(!/-?\d+(?:\.\d+)?::/.test(sp.negPrompt), `${ch.id} (${gm}) negPrompt has weight`);
+      const tok = countSeparatedT5Tokens({
+        posPrompt: sp.posPrompt,
+        sceneNegPrompt: sp.negPrompt,
+        ucPresetMode: "heavy",
+        appendQuality: true,
+      });
+      const isMultiBox = sp.posPrompt.includes("[Character 1");
+      const posCeiling = isMultiBox ? 490 : 500;
+      assert(
+        tok.posTokens <= posCeiling && tok.negTokens <= 512,
+        `${ch.id} (${gm}) exceeded T5 budget: pos=${tok.posTokens}/${posCeiling}, neg=${tok.negTokens}/512`
+      );
+      if (tok.posTokens > maxMtsPosTokens) maxMtsPosTokens = tok.posTokens;
+      if (isMultiBox && tok.posTokens > maxMtsMultiBoxPosTokens) {
+        maxMtsMultiBoxPosTokens = tok.posTokens;
+      }
+      if (tok.negTokens > maxMtsNegTokens) maxMtsNegTokens = tok.negTokens;
+
+      const posNoInlineNeg = sp.posPrompt.replace(/-\d+(?:\.\d+)?::[\s\S]*?::/g, "");
+      const expectedProse =
+        gm === "femboy" ? tpl.femboy_prose : gm === "normal" ? tpl.female_prose : tpl.futa_prose;
+      assert(
+        sp.posPrompt.includes(expectedProse),
+        `${ch.id} (${gm}) truncated prose (posTokens=${tok.posTokens})`
+      );
+      if (
+        tpl.matsuri_light_mode === "yatai_chochin_amber" ||
+        tpl.matsuri_light_mode === "shrine_torii_moonlight" ||
+        tpl.matsuri_light_mode === "sparkler_close_glow"
+      ) {
+        assert(
+          !/\bbacklighting\b/i.test(posNoInlineNeg),
+          `${ch.id} (${gm}) dark Matsuri mode (${tpl.matsuri_light_mode}) must NOT inject backlighting`
+        );
+      }
+      if (ch.id === "MTS11" && gm === "normal") {
+        assert(
+          posNoInlineNeg.includes("2girls") &&
+            posNoInlineNeg.includes("[Character 1 (B3)]") &&
+            posNoInlineNeg.includes("[Character 2 (D3)]"),
+          "MTS11 normal must compile as 2girls [B3]/[D3] Multi-Box Yuri Showcase"
+        );
+      }
+      if (gm === "femboy") {
+        assert(
+          posNoInlineNeg.includes("2boys") &&
+            posNoInlineNeg.includes("1.55::flat chest::") &&
+            !/\badult woman\b|\bbare breasts\b|\bthe kitsune-masked girl\b/i.test(posNoInlineNeg),
+          `${ch.id} femboy failed 2boys/flat-chest/pronoun check`
+        );
+      }
+      if (ch.id === "MTS07") {
+        const negSet = new Set(sp.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+        assert(
+          negSet.has("wearing geta") && !negSet.has("geta"),
+          `MTS07 (${gm}) must use 'wearing geta' instead of bare 'geta' in UC`
+        );
+      }
+      mtsDuoVerifiedCount++;
+    }
+  }
+  assert.equal(mtsDuoVerifiedCount, 44, "Expected 44 verified Matsuri Duo prompts (11 x 4)");
+
+  const mtsSoloPartnerBanTokens = MATSURI_SOLO_PARTNER_BAN_UC.split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const mtsPureAntiCumTokens = MATSURI_PURE_SPREAD_ANTI_CUM_UC.split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  for (const ch of mtsSoloChapters) {
+    const tpl = OTHER_ACTION_TEMPLATES[ch.id];
+    assert(
+      tpl?.is_matsuri_scene && tpl.is_matsuri_solo && tpl.solo_spread_spec,
+      `${ch.id} missing matsuri solo metadata`
+    );
+    for (const sMode of ["off", "pure", "cum"] as const) {
+      for (const gm of ["normal", "femboy", "futa_no_balls", "futa_with_balls"] as const) {
+        const [item] = generateScenePrompts(
+          ch.id,
+          {
+            ...createDefaultCharacterConfig(),
+            gender_mode: gm,
+            style_preset: style6Key,
+            other_use_scene_outfit: true,
+            lighting_preset: "🔄 随画风与本幕默认光影（不额外覆盖）",
+            solo_spread_mode: sMode,
+          },
+          "3rd"
+        );
+        assertZeroNestedColons(item.prompt, `${ch.id}_${sMode} (${gm})`);
+        const sp = splitPromptPosAndNeg(item.prompt);
+        assert(!/-?\d+(?:\.\d+)?::/.test(sp.negPrompt), `${ch.id}_${sMode} (${gm}) negPrompt has weight`);
+        const posNoInlineNeg = sp.posPrompt.replace(/-\d+(?:\.\d+)?::[\s\S]*?::/g, "");
+        const negSet = new Set(sp.negPrompt.split(",").map((s) => s.trim().toLowerCase()));
+        for (const pt of mtsSoloPartnerBanTokens) {
+          assert(negSet.has(pt), `${ch.id}_${sMode} (${gm}) missing MATSURI_SOLO_PARTNER_BAN_UC '${pt}'`);
+        }
+        const tok = countSeparatedT5Tokens({
+          posPrompt: sp.posPrompt,
+          sceneNegPrompt: sp.negPrompt,
+          ucPresetMode: "heavy",
+          appendQuality: true,
+        });
+        assert(
+          tok.posTokens <= 500 && tok.negTokens <= 512,
+          `${ch.id}_${sMode} (${gm}) exceeded T5 budget: pos=${tok.posTokens}/500, neg=${tok.negTokens}/512`
+        );
+        if (tok.posTokens > maxMtsPosTokens) maxMtsPosTokens = tok.posTokens;
+        if (tok.negTokens > maxMtsNegTokens) maxMtsNegTokens = tok.negTokens;
+
+        if (gm === "femboy") {
+          assert(
+            !/\badult woman\b|\bpussy\b|\blabia\b|\bbare breasts\b/i.test(posNoInlineNeg) &&
+              posNoInlineNeg.includes("a slender crossdressing boy"),
+            `${ch.id}_${sMode} (femboy) leaked female anatomy or missed 'a slender crossdressing boy'`
+          );
+        }
+        if (sMode === "pure") {
+          assert(
+            item.subTitle.includes("🫶掰开差分") &&
+              !/\bcum\b|\bcumdrip\b|\bcum overflow\b|\bcum in pussy\b|\bcum in ass\b|\bafter sex\b/i.test(
+                posNoInlineNeg
+              ),
+            `${ch.id}_pure (${gm}) failed pure spread badge or leaked cum tags`
+          );
+          for (const ac of mtsPureAntiCumTokens) {
+            assert(negSet.has(ac), `${ch.id}_pure (${gm}) missing anti-cum UC '${ac}'`);
+          }
+        } else if (sMode === "cum") {
+          assert(
+            item.subTitle.includes("💧掰开+白流出") &&
+              /\bafter sex\b/i.test(posNoInlineNeg) &&
+              /\bcum/i.test(posNoInlineNeg),
+            `${ch.id}_cum (${gm}) failed cum spread badge or tags`
+          );
+        }
+        if (ch.id === "MTS12" && sMode !== "off") {
+          assert(
+            posNoInlineNeg.includes("front hem tucked in gold obi"),
+            `MTS12_${sMode} (${gm}) must apply spread_outfit_override obi tuck`
+          );
+        }
+        if (ch.id === "MTS15" && sMode !== "off") {
+          assert(
+            posNoInlineNeg.includes("back hem tucked in yellow obi"),
+            `MTS15_${sMode} (${gm}) must apply spread_outfit_override obi tuck`
+          );
+        }
+        if (ch.id === "MTS13") {
+          assert(
+            negSet.has("wearing geta") && !negSet.has("geta"),
+            `MTS13_${sMode} (${gm}) must use 'wearing geta' instead of bare 'geta' in UC`
+          );
+        }
+        mtsSoloVerifiedCount++;
+      }
+    }
+  }
+  assert.equal(mtsSoloVerifiedCount, 48, "Expected 48 verified Matsuri Solo 3-stage prompts (4 x 3 x 4)");
+  const mtsVerifiedCount = mtsDuoVerifiedCount + mtsSoloVerifiedCount;
+  assert.equal(mtsVerifiedCount, 92, "Expected 92 total Matsuri prompts");
+
+  // Verify .agents/skills/nai-matsuri-stealth/SKILL.md hygiene (zero code/build vocabulary leaks)
+  const mtsSkillDoc = path.resolve(process.cwd(), "../.agents/skills/nai-matsuri-stealth/SKILL.md");
+  assert(fs.existsSync(mtsSkillDoc), `Missing nai-matsuri-stealth SKILL.md: ${mtsSkillDoc}`);
+  const mtsSkillText = fs.readFileSync(mtsSkillDoc, "utf8");
+  assert(
+    !/storyEngine|engineConstants|otherActionsData|matsuriStealthActionsData|verify_engine|NovelAI_Workbench\.html|vite build|tsc --noEmit|npm --prefix/i.test(
+      mtsSkillText
+    ),
+    "nai-matsuri-stealth/SKILL.md leaked codebase/build vocabulary"
   );
 
   // 18. Verify Opus Battery Percentage & Recharge Formatter
@@ -5777,7 +6353,7 @@ async function main(): Promise<void> {
   );
 
   console.log(
-    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts + 120 SF01~SF30 + ${kitchenVerifiedCount} Kitchen KTD01~KTD60/KT01~KT46 [maxPos=${maxKitchenPosTokens}<=500, MultiBox490=${maxMultiBox490PosTokens}<=490] + ${poolVerifiedCount} Pool PLD01~PLD22/PL01~PL11 [maxPos=${maxPoolPosTokens}<=500, PLD18=${maxPld18PosTokens}<=490] + ${specimenVerifiedCount} Specimen CV01~CV07 [maxPos=${maxSpecimenPosTokens}<=500, maxNeg=${maxSpecimenNegTokens}<=512] + ${bathroomVerifiedCount} Bathroom BT01~BT08 [maxPos=${maxBathroomPosTokens}<=500, maxNeg=${maxBathroomNegTokens}<=512] + ${houseworkVerifiedCount} Housework HWD01~HWD15 [maxPos=${maxHouseworkPosTokens}<=500, MultiBox490=${maxHouseworkMultiBoxPosTokens}<=490, maxNeg=${maxHouseworkNegTokens}<=512] + ${photoSubVerifiedCount} PhotoSubstitute PS01~PS04 [maxPos=${maxPhotoSubPosTokens}<=500, PS02=${maxPs02MultiBoxTokens}<=490, maxNeg=${maxPhotoSubNegTokens}<=512] + ${campingVerifiedCount} Camping CP01~CP12 [maxPos=${maxCampingPosTokens}<=500, MultiBox490=${maxCampingMultiBoxPosTokens}<=490, maxNeg=${maxCampingNegTokens}<=512] + ${afdVerifiedCount} AftersexDrip AFD01~AFD15 [maxPos=${maxAfdPosTokens}<=500, maxNeg=${maxAfdNegTokens}<=512] + ${onsenVerifiedCount} OnsenYukata ONS01~ONS55 [maxPos=${maxOnsenPosTokens}<=500, MultiBox490=${maxOnsenMultiBoxPosTokens}<=490, maxNeg=${maxOnsenNegTokens}<=512] + ${onsenSoloSpreadVerifiedCount} OnsenSoloSpread [maxPos=${maxOnsenSpreadPosTokens}<=500, maxNeg=${maxOnsenSpreadNegTokens}<=512] = ${totalPrompts + 120 + kitchenVerifiedCount + poolVerifiedCount + specimenVerifiedCount + bathroomVerifiedCount + houseworkVerifiedCount + photoSubVerifiedCount + campingVerifiedCount + afdVerifiedCount + onsenVerifiedCount + onsenSoloSpreadVerifiedCount} total prompts: 83 Positions x2 + MA0~MA11 + 285 Other Actions + 20 Solo Spread CG Variations + Free Action, 6 Swimwear Outfits + Scene-Bound Venue Lighting + CV01~CV07 + BT01~BT08 + HWD01~HWD15 + PS01~PS04 + CP01~CP12 + AFD01~AFD15 + ONS01~ONS55 Locks Verified, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
+    `PASS: Studio 2.0 Verified (${totalPrompts} scene prompts + 120 SF01~SF30 + ${kitchenVerifiedCount} Kitchen KTD01~KTD60/KT01~KT46 [maxPos=${maxKitchenPosTokens}<=500, MultiBox490=${maxMultiBox490PosTokens}<=490] + ${poolVerifiedCount} Pool PLD01~PLD22/PL01~PL11 [maxPos=${maxPoolPosTokens}<=500, PLD18=${maxPld18PosTokens}<=490] + ${specimenVerifiedCount} Specimen CV01~CV07 [maxPos=${maxSpecimenPosTokens}<=500, maxNeg=${maxSpecimenNegTokens}<=512] + ${bathroomVerifiedCount} Bathroom BT01~BT08 [maxPos=${maxBathroomPosTokens}<=500, maxNeg=${maxBathroomNegTokens}<=512] + ${houseworkVerifiedCount} Housework HWD01~HWD15 [maxPos=${maxHouseworkPosTokens}<=500, MultiBox490=${maxHouseworkMultiBoxPosTokens}<=490, maxNeg=${maxHouseworkNegTokens}<=512] + ${photoSubVerifiedCount} PhotoSubstitute PS01~PS04 [maxPos=${maxPhotoSubPosTokens}<=500, PS02=${maxPs02MultiBoxTokens}<=490, maxNeg=${maxPhotoSubNegTokens}<=512] + ${campingVerifiedCount} Camping CP01~CP12 [maxPos=${maxCampingPosTokens}<=500, MultiBox490=${maxCampingMultiBoxPosTokens}<=490, maxNeg=${maxCampingNegTokens}<=512] + ${afdVerifiedCount} AftersexDrip AFD01~AFD15 [maxPos=${maxAfdPosTokens}<=500, maxNeg=${maxAfdNegTokens}<=512] + ${onsenVerifiedCount} OnsenYukata ONS01~ONS55 [maxPos=${maxOnsenPosTokens}<=500, MultiBox490=${maxOnsenMultiBoxPosTokens}<=490, maxNeg=${maxOnsenNegTokens}<=512] + ${onsenSoloSpreadVerifiedCount} OnsenSoloSpread3Stage [maxPos=${maxOnsenSpreadPosTokens}<=500, maxNeg=${maxOnsenSpreadNegTokens}<=512] + ${carVerifiedCount} CarDuo CAR01~CAR20 [maxPos=${maxCarPosTokens}<=500, MultiBox490=${maxCarMultiBoxPosTokens}<=490, maxNeg=${maxCarNegTokens}<=512] + ${carSoloVerifiedCount} CarSolo3Stage CAR21~CAR25 [maxPos=${maxCarSoloPosTokens}<=500, maxNeg=${maxCarSoloNegTokens}<=512] + ${mtsVerifiedCount} Matsuri MTS01~MTS15 [maxPos=${maxMtsPosTokens}<=500, MultiBox490=${maxMtsMultiBoxPosTokens}<=490, maxNeg=${maxMtsNegTokens}<=512] = ${totalPrompts + 120 + kitchenVerifiedCount + poolVerifiedCount + specimenVerifiedCount + bathroomVerifiedCount + houseworkVerifiedCount + photoSubVerifiedCount + campingVerifiedCount + afdVerifiedCount + onsenVerifiedCount + onsenSoloSpreadVerifiedCount + carVerifiedCount + carSoloVerifiedCount + mtsVerifiedCount} total prompts: 83 Positions x2 + MA0~MA11 + 325 Other Actions + 29 3-Stage Solo Spread CG Variations + Free Action, 6 Swimwear Outfits + Scene-Bound Venue Lighting + CV01~CV07 + BT01~BT08 + HWD01~HWD15 + PS01~PS04 + CP01~CP12 + AFD01~AFD15 + ONS01~ONS55 + CAR01~CAR25 + MTS01~MTS15 Locks Verified, T5 32k vocab, Embedded M2 3-Slot Vibe + DPM++ 2M, Persistent Preset Delete, Local+LAN+Remote MCP Bridge Ready, zero Python).`
   );
 }
 
