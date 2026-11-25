@@ -141,7 +141,7 @@ export function wrapTailNeg(m: Record<string, string>, tagsStr: string, enabled:
   const baseNeg = wrapNeg("-2", tagsStr, enabled);
   const tune2Inline = m.tune2_inline_neg || "";
   if (enabled && tune2Inline) {
-    const tune2Block = wrapNeg("-2.5", tune2Inline, true);
+    const tune2Block = wrapNeg("-0.95", tune2Inline, true);
     return joinTags(baseNeg, tune2Block);
   }
   return baseNeg;
@@ -1518,7 +1518,7 @@ export function buildCommonModules(
   const isMangaStyle = cfg.style_preset.includes("黑白网点漫画") || cfg.style_preset.includes("Monochrome Manga");
   const comicLineGuard = isMangaStyle ? "" : "motion lines, emphasis lines, speed lines";
   const commonTailNeg = isTune2
-    ? joinTags(canonNeg, comicLineGuard, anatNeg, outfitExtraNeg, intactNeg, envExtraNeg)
+    ? joinTags(styleNeg, canonNeg, comicLineGuard, anatNeg, outfitExtraNeg, intactNeg, envExtraNeg)
     : joinTags(styleNeg, canonNeg, comicLineGuard, bodyFullNeg, anatNeg, outfitExtraNeg, intactNeg, envExtraNeg);
 
   return {
@@ -1553,11 +1553,11 @@ export function buildCommonModules(
     loc_prose: locProse,
     anat_pos: anatPos,
     common_tail_neg: commonTailNeg,
-    style_neg: isTune2 ? "" : styleNeg,
+    style_neg: styleNeg,
     body_neg: bodyFullNeg,
     comic_line_guard: comicLineGuard,
     outfit_extra_neg: outfitExtraNeg,
-    tune2_inline_neg: isTune2 ? styleNeg : "",
+    tune2_inline_neg: isTune2 ? "nose bridge, nostrils, lips, thick lips, philtrum" : "",
     canon_neg: canonNeg,
     name: engName,
   };

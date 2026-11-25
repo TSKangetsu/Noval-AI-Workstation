@@ -244,6 +244,7 @@ export interface NaiApiSettings {
   vibe_transfer_enabled: boolean;
   vibe_normalize_strength: boolean;
   auto_download: boolean;
+  use_webp_transfer?: boolean;
   auto_upscale_replace: boolean;
   auto_fullscreen_carousel: boolean;
   carousel_auto_mode: "follow_latest" | "timed";
@@ -253,10 +254,10 @@ export interface NaiApiSettings {
 export function createDefaultNaiApiSettings(): NaiApiSettings {
   return {
     api_token: "",
-    model: "nai-diffusion-4-5-full",
+    model: "nai-diffusion-5-full",
     steps: 28,
     canvas_preset: "🔄 自动跟随本幕推荐画布",
-    scale: 7.0,
+    scale: 6.5,
     cfg_rescale: 0.0,
     seed: -1,
     batch_count: 1,
@@ -270,6 +271,7 @@ export function createDefaultNaiApiSettings(): NaiApiSettings {
     vibe_transfer_enabled: true,
     vibe_normalize_strength: true,
     auto_download: false,
+    use_webp_transfer: true,
     auto_upscale_replace: false,
     auto_fullscreen_carousel: true,
     carousel_auto_mode: "follow_latest",

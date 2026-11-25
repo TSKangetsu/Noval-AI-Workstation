@@ -1,5 +1,5 @@
 // NovelAI V4.5 / V5 Summer Matsuri Stealth Yukata Scenes (MTS01-MTS15 · 24. 夏日祭典)
-// Verbatim from matsuri_stealth_15_handoff_v4_audited.json (dual-signed by physics-reviewer & prompt-auditor).
+// Verbatim from matsuri_stealth_15_handoff_v5_audited.json (dual-signed by physics-reviewer & prompt-auditor).
 
 import type { OnsenSoloSpreadSpec } from "./onsenYukataActionsData";
 
@@ -111,19 +111,19 @@ export const ALL_RAW_MATSURI_ENTRIES: RawMatsuriActionEntry[] = [
     "matsuri_light_mode": "hanabi_burst_riverside",
     "chest_covered": true,
     "barefoot": false,
-    "framing_tags": "cowboy shot, 3rd-person rear-side view, dark tree-shaded edge, 1.55::from behind::, partner pressed flush against back",
-    "env_tags": "riverbank, distant blurred yukata silhouettes, fireworks high in night sky, dark tree trunk shadow in foreground",
-    "core_prop_tags": "one hand holding bamboo 1.6::uchiwa:: fan, hiding lower face, other hand clutching yukata sleeve",
-    "outfit_tags": "adult woman, navy morning-glory 1.6::yukata::, collar closed over chest, yellow heko obi bow, back hem lifted",
-    "femboy_outfit_tags": "navy morning-glory 1.6::yukata::, collar closed over chest, yellow heko obi bow, back hem lifted",
-    "partner_tags": "faceless male in dark yukata, standing close behind, one hand lifting hem, other hand holding hip",
-    "expr_tags": "flushed cheeks above fan, nervous eyes darting sideways, suppressed gasp, trembling",
-    "female_tags": "1.55::vaginal::, secret standing rear under sleeves, 1.45::cumdrip:: down inner thigh",
-    "femboy_tags": "1.55::anal::, secret standing rear under sleeves, 1.4::small penis::",
-    "futa_tags": "1.5::vaginal::, secret standing rear under sleeves, 1.45::ejaculation::",
-    "prose": "Rear-side view in dark tree shadows behind festival silhouettes, a partner pressing behind an adult woman in a navy floral yukata lifting her hem while hiding gasps behind a fan.",
-    "prose_outfit_phrase": "in a navy floral yukata",
-    "extra_neg": "bed, mattress, pillow, bedroom, couch, sofa, modern bathroom, bathtub, hot spring, crowd watching, onlookers looking, voyeur, group sex, gangbang, 3boys, sneakers, boots, high heels, thighhighs, pantyhose, modern shoes, pov"
+    "framing_tags": "cowboy shot, 1.65::from behind::, 1.55::rear view::, 1.5::looking back::, bent forward slightly",
+    "env_tags": "riverbank, distant blurred yukata silhouettes, fireworks, dark tree trunk shadow",
+    "core_prop_tags": "one hand holding 1.6::uchiwa:: fan, hiding mouth in profile, other hand clutching sleeve",
+    "outfit_tags": "adult woman, navy floral 1.6::yukata::, back of yukata, intact shoulders, yellow obi bow on back, back hem lifted, 1.45::ass::",
+    "femboy_outfit_tags": "navy floral 1.6::yukata::, back of yukata, intact shoulders, yellow obi bow on back, back hem lifted, 1.45::ass::",
+    "partner_tags": "1.5::faceless male:: in dark yukata, pelvis pressed against ass, penetrating from behind, lifting hem",
+    "expr_tags": "flushed cheek above fan, nervous eyes, suppressed gasp",
+    "female_tags": "1.6::sex from behind::, 1.55::vaginal::, 1.55::penetration::, 1.45::standing sex::, 1.45::cumdrip::",
+    "femboy_tags": "1.6::sex from behind::, 1.55::anal::, 1.55::penetration::, 1.45::standing sex::, 1.4::small penis::",
+    "futa_tags": "1.6::sex from behind::, 1.5::vaginal::, 1.55::penetration::, 1.45::standing sex::, 1.45::ejaculation::",
+    "prose": "Rear view in dark tree shadows: a partner lifts the hem of an adult woman in a navy yukata, penetrating her from behind in standing sex as she leans forward glancing back behind a fan.",
+    "prose_outfit_phrase": "in a navy yukata",
+    "extra_neg": "bed, mattress, pillow, bedroom, couch, sofa, modern bathroom, bathtub, hot spring, crowd watching, onlookers looking, voyeur, group sex, gangbang, 3boys, sneakers, boots, high heels, thighhighs, pantyhose, modern shoes, pov, front view, straight-on, facing viewer, frontal, facing camera, pussy from front, pubic hair, bare back, off-shoulder, bare shoulders, floating penis, disembodied penis"
   },
   {
     "id": "MTS02",

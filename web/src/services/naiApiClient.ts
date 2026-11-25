@@ -167,6 +167,7 @@ export function buildNaiGeneratePayload(options: {
   appendV5Quality?: boolean;
   vibes?: VibeTransferSlotInput[];
   normalizeVibeStrength?: boolean;
+  useWebpTransfer?: boolean;
 }): {
   payload: Record<string, unknown>;
   actualSeed: number;
@@ -290,21 +291,21 @@ export function buildNaiGeneratePayload(options: {
       }
     }
   } else {
-    let baseCaptionInlineKept = "";
-    const tune2Re = /(?:,\s*)?(-2\.5::(?:(?!::)[\s\S])*?nose bridge,\s*nostrils,\s*lips(?:(?!::)[\s\S])*?::)/;
-    const mTune2 = tune2Re.exec(baseCaption);
-    if (mTune2) {
-      baseCaptionInlineKept = mTune2[1].trim();
-      baseCaption = (
-        baseCaption.slice(0, mTune2.index) + baseCaption.slice(mTune2.index + mTune2[0].length)
-      ).replace(/^[ ,]+|[ ,]+$/g, "");
-    }
+    const keptTune2List: string[] = [];
+    const tune2Re = /(?:,\s*)?(-(?:2\.5|1\.1|0\.95|0\.75)::(?:(?!::)[\s\S])*?nose bridge,\s*nostrils,\s*lips(?:(?!::)[\s\S])*?::)/g;
+    baseCaption = baseCaption
+      .replace(tune2Re, (_m, block: string) => {
+        keptTune2List.push(block.trim());
+        return "";
+      })
+      .replace(/^[ ,]+|[ ,]+$/g, "");
 
     const baseSplit = splitInlineNegativesFromCaption(baseCaption);
     baseCaption = baseSplit.cleaned;
     baseInlineNegs = baseSplit.negChunks;
-    if (baseCaptionInlineKept) {
-      baseCaption = `${baseCaption.replace(/[, ]+$/g, "")}, ${baseCaptionInlineKept}`;
+    if (keptTune2List.length > 0) {
+      const joined = keptTune2List.join(", ");
+      baseCaption = baseCaption ? `${baseCaption.replace(/[, ]+$/g, "")}, ${joined}` : joined;
     }
 
     charCaptions = charCaptions.map((c) => {
@@ -530,7 +531,7 @@ export function buildNaiGeneratePayload(options: {
         negative_prompt: negativePrompt,
         deliberate_euler_ancestral_bug: false,
         prefer_brownian: true,
-        image_format: "png",
+        image_format: options.useWebpTransfer ? "webp" : "png",
       }
     : {
         params_version: 4,
@@ -583,7 +584,7 @@ export function buildNaiGeneratePayload(options: {
         negative_prompt: negativePrompt,
         deliberate_euler_ancestral_bug: false,
         prefer_brownian: true,
-        image_format: "png",
+        image_format: options.useWebpTransfer ? "webp" : "png",
       };
 
   if (usedVibeTransfer) {
@@ -651,6 +652,156 @@ export function detectImageExt(b: Uint8Array): string {
   if (isWebpBytes(b)) return ".webp";
   if (isJpegBytes(b)) return ".jpg";
   return ".png";
+}
+
+let pngCrc32Table: Uint32Array | null = null;
+function getPngCrc32Table(): Uint32Array {
+  if (pngCrc32Table) return pngCrc32Table;
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) {
+      c = (c & 1) !== 0 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    table[n] = c >>> 0;
+  }
+  pngCrc32Table = table;
+  return table;
+}
+
+export function crc32Png(bytes: Uint8Array): number {
+  const table = getPngCrc32Table();
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) {
+    crc = table[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function buildPngTextChunk(keyword: string, text: string): Uint8Array {
+  const enc = new TextEncoder();
+  const keyBytes = enc.encode(keyword.slice(0, 79));
+  const valBytes = enc.encode(text);
+  const dataLen = keyBytes.length + 1 + valBytes.length;
+  const chunk = new Uint8Array(4 + 4 + dataLen + 4);
+  const view = new DataView(chunk.buffer);
+  view.setUint32(0, dataLen, false);
+  // "tEXt"
+  chunk[4] = 0x74;
+  chunk[5] = 0x45;
+  chunk[6] = 0x58;
+  chunk[7] = 0x74;
+  chunk.set(keyBytes, 8);
+  chunk[8 + keyBytes.length] = 0x00;
+  chunk.set(valBytes, 8 + keyBytes.length + 1);
+  const crc = crc32Png(chunk.subarray(4, 8 + dataLen));
+  view.setUint32(8 + dataLen, crc, false);
+  return chunk;
+}
+
+export function injectPngTextChunks(
+  pngBytes: Uint8Array,
+  entries: Record<string, string>
+): Uint8Array {
+  if (!isPngBytes(pngBytes) || pngBytes.length < 33) {
+    return pngBytes;
+  }
+  const chunks: Uint8Array[] = [];
+  for (const [key, val] of Object.entries(entries)) {
+    if (!key || val === undefined || val === null) continue;
+    chunks.push(buildPngTextChunk(key, String(val)));
+  }
+  if (chunks.length === 0) return pngBytes;
+
+  // Insert immediately after IHDR chunk
+  const view = new DataView(pngBytes.buffer, pngBytes.byteOffset, pngBytes.byteLength);
+  const ihdrDataLen = view.getUint32(8, false);
+  const insertAt = 8 + 4 + 4 + ihdrDataLen + 4;
+  if (insertAt > pngBytes.length) return pngBytes;
+
+  const extraLen = chunks.reduce((sum, c) => sum + c.length, 0);
+  const out = new Uint8Array(pngBytes.length + extraLen);
+  out.set(pngBytes.subarray(0, insertAt), 0);
+  let cursor = insertAt;
+  for (const c of chunks) {
+    out.set(c, cursor);
+    cursor += c.length;
+  }
+  out.set(pngBytes.subarray(insertAt), cursor);
+  return out;
+}
+
+export function readPngTextChunks(pngBytes: Uint8Array): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!isPngBytes(pngBytes) || pngBytes.length < 33) return result;
+  const view = new DataView(pngBytes.buffer, pngBytes.byteOffset, pngBytes.byteLength);
+  const dec = new TextDecoder("utf-8", { fatal: false });
+  let offset = 8;
+  while (offset + 12 <= pngBytes.length) {
+    const len = view.getUint32(offset, false);
+    const type = String.fromCharCode(
+      pngBytes[offset + 4],
+      pngBytes[offset + 5],
+      pngBytes[offset + 6],
+      pngBytes[offset + 7]
+    );
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + len;
+    if (dataEnd + 4 > pngBytes.length) break;
+    if (type === "tEXt") {
+      const data = pngBytes.subarray(dataStart, dataEnd);
+      const nul = data.indexOf(0);
+      if (nul > 0) {
+        const key = dec.decode(data.subarray(0, nul));
+        const val = dec.decode(data.subarray(nul + 1));
+        result[key] = val;
+      }
+    }
+    if (type === "IEND") break;
+    offset = dataEnd + 4;
+  }
+  return result;
+}
+
+export async function convertWebpToPngWithMetadata(
+  webpBytes: Uint8Array,
+  metadata?: Record<string, string>
+): Promise<Uint8Array> {
+  if (!isWebpBytes(webpBytes)) {
+    return metadata && isPngBytes(webpBytes) ? injectPngTextChunks(webpBytes, metadata) : webpBytes;
+  }
+  if (
+    typeof createImageBitmap !== "function" ||
+    typeof document === "undefined" ||
+    typeof document.createElement !== "function"
+  ) {
+    // Non-browser environment (e.g. Node.js verify scripts): safely skip canvas conversion
+    return webpBytes;
+  }
+
+  const copy = new Uint8Array(webpBytes.byteLength);
+  copy.set(webpBytes);
+  const bmp = await createImageBitmap(new Blob([copy], { type: "image/webp" }));
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = bmp.width;
+    canvas.height = bmp.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return webpBytes;
+    }
+    ctx.drawImage(bmp, 0, 0);
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("Canvas toBlob(image/png) failed"))),
+        "image/png"
+      );
+    });
+    const pngBytes = new Uint8Array(await blob.arrayBuffer());
+    return metadata ? injectPngTextChunks(pngBytes, metadata) : pngBytes;
+  } finally {
+    bmp.close();
+  }
 }
 
 export async function unpackNaiResponseBytes(bytes: Uint8Array): Promise<Uint8Array> {
@@ -1020,6 +1171,7 @@ export async function generateSingleImageNai(options: {
   appendV5Quality?: boolean;
   vibes?: VibeTransferSlotInput[];
   normalizeVibeStrength?: boolean;
+  useWebpTransfer?: boolean;
   isOpusFreeEligible?: boolean;
   pixel3xNearest?: boolean;
   signal?: AbortSignal;
@@ -1054,6 +1206,7 @@ export async function generateSingleImageNai(options: {
     effectiveSteps,
     usedVibeTransfer,
     vibeCount,
+    effectiveSampler,
   } = buildNaiGeneratePayload({
     model,
     rawPrompt: options.promptText,
@@ -1071,6 +1224,7 @@ export async function generateSingleImageNai(options: {
     appendV5Quality: options.appendV5Quality,
     vibes: options.vibes,
     normalizeVibeStrength: options.normalizeVibeStrength,
+    useWebpTransfer: options.useWebpTransfer,
   });
 
   const t0 = performance.now();
@@ -1114,6 +1268,29 @@ export async function generateSingleImageNai(options: {
   let imageBytes = await unpackNaiResponseBytes(respBytes);
   let outW = width;
   let outH = height;
+
+  if (isWebpBytes(imageBytes)) {
+    const params = (payload.parameters as Record<string, unknown>) || {};
+    const promptStr = String(payload.input || "");
+    const ucStr = String(params.negative_prompt || "");
+    const commentJson = JSON.stringify({
+      prompt: promptStr,
+      uc: ucStr,
+      seed: actualSeed,
+      steps: effectiveSteps,
+      scale: params.scale,
+      cfg_rescale: params.cfg_rescale,
+      sampler: effectiveSampler,
+      width,
+      height,
+      model,
+    });
+    imageBytes = await convertWebpToPngWithMetadata(imageBytes, {
+      Software: "NovelAI",
+      Description: promptStr,
+      Comment: commentJson,
+    });
+  }
 
   if (options.pixel3xNearest) {
     const up = await upscaleNearestNeighbor(imageBytes, 3);

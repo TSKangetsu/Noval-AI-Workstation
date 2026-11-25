@@ -65,6 +65,7 @@ import {
 } from "../src/engine/t5Tokenizer";
 import {
   createDefaultCharacterConfig,
+  createDefaultNaiApiSettings,
   type GalleryFolderItem,
   type GeneratedImageRecord,
 } from "../src/engine/types";
@@ -81,8 +82,14 @@ import {
 } from "../src/ui/app";
 import {
   buildNaiGeneratePayload,
+  convertWebpToPngWithMetadata,
+  crc32Png,
+  detectImageExt,
   estimateNaiAnlas,
   formatOpusBatterySummary,
+  injectPngTextChunks,
+  readPngTextChunks,
+  unpackNaiResponseBytes,
 } from "../src/services/naiApiClient";
 import {
   buildStoreZipBlob,
@@ -221,7 +228,14 @@ async function main(): Promise<void> {
     "Turning enable_outfit=false must strip outfit tags cleanly without emitting orphan 'clothes lift'"
   );
 
-  // 4. Verify Model Payload Routing: V4.5 Full vs V5 Full High vs V5 Full Medium
+  // 4. Verify Default Model & Model Payload Routing: V4.5 Full vs V5 Full High vs V5 Full Medium
+  const defaultApi = createDefaultNaiApiSettings();
+  assert.equal(defaultApi.model, MODEL_V5_FULL, "Default workbench model must be V5 High (nai-diffusion-5-full)");
+  assert.equal(defaultApi.steps, 28, "Default V5 High steps must be 28");
+  assert.equal(defaultApi.scale, 6.5, "Default V5 High scale must be 6.5");
+  assert.equal(defaultApi.cfg_rescale, 0.0, "Default V5 High cfg_rescale must be 0.0");
+  assert.equal(defaultApi.use_webp_transfer, true, "Default use_webp_transfer must be true");
+
   const samplePrompt = generateScenePrompts("P01", cfg, "3rd")[0].prompt;
   const v45Res = buildNaiGeneratePayload({
     model: MODEL_V4_5_FULL,
@@ -232,12 +246,14 @@ async function main(): Promise<void> {
     scale: 7.0,
     cfgRescale: 0.0,
     seed: 123456,
+    useWebpTransfer: true,
   });
   const p45 = v45Res.payload.parameters as Record<string, unknown>;
   assert.equal(v45Res.payload.model, "nai-diffusion-4-5-full");
   assert.equal(p45.params_version, 3);
   assert.equal(p45.steps, 28);
   assert.equal(p45.sampler, "k_euler_ancestral");
+  assert.equal(p45.image_format, "webp", "V4.5 payload must emit image_format=webp when useWebpTransfer=true");
   assert(!String(v45Res.payload.input).includes("-2::"), "V4.5 separates negatives out of positive caption");
 
   const v5HighRes = buildNaiGeneratePayload({
@@ -246,13 +262,80 @@ async function main(): Promise<void> {
     steps: 28,
     scale: 7.0,
     ucPresetMode: "heavy",
+    useWebpTransfer: true,
   });
   const p5High = v5HighRes.payload.parameters as Record<string, unknown>;
   assert.equal(v5HighRes.payload.model, "nai-diffusion-5-full");
   assert.equal(p5High.params_version, 4);
   assert.equal(p5High.steps, 28);
   assert.equal(p5High.ucPresetId, "heavy");
+  assert.equal(p5High.image_format, "webp", "V5 High payload must emit image_format=webp when useWebpTransfer=true");
   assert(!String(v5HighRes.payload.input).includes("-2::"), "V5 Full High separates positive and negative channels");
+
+  const v5HighPngRes = buildNaiGeneratePayload({
+    model: MODEL_V5_FULL,
+    rawPrompt: samplePrompt,
+    useWebpTransfer: false,
+  });
+  assert.equal(
+    (v5HighPngRes.payload.parameters as Record<string, unknown>).image_format,
+    "png",
+    "Payload must emit image_format=png when useWebpTransfer=false"
+  );
+
+  // Verify WebP ZIP unpacking, non-browser safe fallback, and PNG tEXt CRC32 metadata injection
+  const fakeWebp = new Uint8Array([
+    0x52, 0x49, 0x46, 0x46, 0x0c, 0x00, 0x00, 0x00,
+    0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x58,
+    0x00, 0x00, 0x00, 0x00,
+  ]);
+  const webpZipBlob = buildStoreZipBlob([{ name: "image_0.webp", data: fakeWebp }]);
+  const webpZipBytes = new Uint8Array(await webpZipBlob.arrayBuffer());
+  const unpackedWebp = await unpackNaiResponseBytes(webpZipBytes);
+  assert.equal(detectImageExt(unpackedWebp), ".webp", "ZIP unpacker must recognize .webp payload by RIFF/WEBP magic");
+  assert.deepEqual(unpackedWebp, fakeWebp, "Unpacked .webp bytes must match original entry");
+  const nodeFallbackBytes = await convertWebpToPngWithMetadata(unpackedWebp, { Software: "NovelAI" });
+  assert.deepEqual(
+    nodeFallbackBytes,
+    unpackedWebp,
+    "Non-browser Node environment must safely skip canvas WebP->PNG conversion"
+  );
+
+  // Minimal valid 1x1 PNG (signature + 13-byte IHDR + 0-byte IEND)
+  const minimalPng = new Uint8Array([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89,
+    0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
+    0xae, 0x42, 0x60, 0x82,
+  ]);
+  const testComment = JSON.stringify({ prompt: "1girl, test", uc: "lowres", seed: 42, steps: 28, scale: 6.5 });
+  const taggedPng = injectPngTextChunks(minimalPng, {
+    Software: "NovelAI",
+    Description: "1girl, test",
+    Comment: testComment,
+  });
+  assert.equal(detectImageExt(taggedPng), ".png", "Tagged PNG must preserve PNG signature");
+  const parsedMeta = readPngTextChunks(taggedPng);
+  assert.equal(parsedMeta.Software, "NovelAI");
+  assert.equal(parsedMeta.Description, "1girl, test");
+  assert.equal(parsedMeta.Comment, testComment);
+  // Verify CRC32 of every chunk in taggedPng
+  {
+    const dv = new DataView(taggedPng.buffer, taggedPng.byteOffset, taggedPng.byteLength);
+    let off = 8;
+    let chunkCount = 0;
+    while (off + 12 <= taggedPng.length) {
+      const len = dv.getUint32(off, false);
+      const expectedCrc = dv.getUint32(off + 8 + len, false);
+      const actualCrc = crc32Png(taggedPng.subarray(off + 4, off + 8 + len));
+      assert.equal(actualCrc, expectedCrc, `PNG chunk #${chunkCount} CRC32 mismatch`);
+      chunkCount += 1;
+      off += 12 + len;
+    }
+    assert.equal(chunkCount, 5, "Tagged minimal PNG should contain IHDR + 3 tEXt + IEND");
+  }
 
   const { posPrompt: samplePos, negPrompt: sampleNeg } = splitPromptPosAndNeg(samplePrompt);
   const v5MedRes = buildNaiGeneratePayload({
@@ -271,12 +354,13 @@ async function main(): Promise<void> {
     "V5 Medium must auto-inject scene and extra negatives inline as -2::...::"
   );
 
-  // Verify fractional positive counterweights (< 1.0) & M6-Tune2 face counterweight (-2.5::nose bridge, nostrils, lips::) stay in Positive
+  // Verify fractional positive counterweights (< 1.0) & M6-Tune2 face counterweight (-0.95:: / legacy -2.5::) stay in Positive
   const counterweightTest =
-    "1girl, solo, -0.45::wide hips::, -2.5::nose bridge, nostrils, lips::, -2::lowres, bad anatomy::";
+    "1girl, solo, -0.45::wide hips::, -0.95::nose bridge, nostrils, lips, thick lips, philtrum::, -2.5::nose bridge, nostrils, lips::, -2::lowres, bad anatomy::";
   const splitCw = splitPromptPosAndNeg(counterweightTest);
   assert(
     splitCw.posPrompt.includes("-0.45::wide hips::") &&
+      splitCw.posPrompt.includes("-0.95::nose bridge, nostrils, lips, thick lips, philtrum::") &&
       splitCw.posPrompt.includes("-2.5::nose bridge, nostrils, lips::") &&
       !splitCw.posPrompt.includes("lowres"),
     "Fractional counterweights and M6-Tune2 face counterweight must stay in Positive prompt"
@@ -284,6 +368,31 @@ async function main(): Promise<void> {
   assert(splitCw.negPrompt.includes("lowres"), "Standard -2::...:: negative must extract into Negative prompt");
   const mergedBack = mergePosAndNegToInline(splitCw.posPrompt, splitCw.negPrompt);
   assert(mergedBack.includes("-2::lowres, bad anatomy::"), "mergePosAndNegToInline must restore inline -2:: block");
+
+  // Verify M6-Tune2 anti-cropped-head fix: -0.95:: 5-tag facial counterweight in Positive + head out of frame UC in Negative
+  const tune2Cfg = {
+    ...createDefaultCharacterConfig(),
+    style_preset: "🎨 柔雾白纱无界油画 · 点鼻小嘴内联锁脸款（M6-Tune2 保留款 · 无界油画感）",
+  };
+  const [tune2Scene] = generateScenePrompts("P01", tune2Cfg, "3rd");
+  const tune2Split = splitPromptPosAndNeg(tune2Scene.prompt);
+  assert(
+    tune2Split.posPrompt.includes("-0.95::nose bridge, nostrils, lips, thick lips, philtrum::"),
+    "M6-Tune2 must emit narrowed -0.95:: facial counterweight in Positive"
+  );
+  assert(
+    !tune2Split.posPrompt.includes("-2.5::") &&
+      !tune2Split.posPrompt.includes("crown") &&
+      !tune2Split.posPrompt.includes("small mouth") &&
+      !tune2Split.posPrompt.includes(":o"),
+    "M6-Tune2 Positive must not contain legacy -2.5::, crown, or mouth-locking small mouth/:o tags"
+  );
+  assert(
+    tune2Split.negPrompt.includes("head out of frame") &&
+      tune2Split.negPrompt.includes("cropped head") &&
+      tune2Split.negPrompt.includes("headless"),
+    "M6-Tune2 must route anti-cropped-head UC into Negative prompt"
+  );
 
   // 5. Verify add_cat_ears + tail-wrap on All-Positions pull_out & 5-stage progression
   for (const stageKey of Object.keys(POS_STAGE_PRESETS)) {

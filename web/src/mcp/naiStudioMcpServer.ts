@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
@@ -50,6 +51,138 @@ const NAI_PROXY_TARGETS: Record<string, string> = {
   image: "image.novelai.net",
   api: "api.novelai.net",
 };
+
+function isJpegBuffer(buf: Buffer): boolean {
+  return buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+}
+
+function runPipeEncoder(
+  command: string,
+  args: string[],
+  input: Buffer,
+  timeoutMs = 8000
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    const outChunks: Buffer[] = [];
+    const errChunks: Buffer[] = [];
+    let settled = false;
+
+    const finishErr = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    };
+
+    const timer = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        // ignore
+      }
+      finishErr(new Error(`${command} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk: Buffer) => outChunks.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => errChunks.push(chunk));
+    child.on("error", (err) => finishErr(err));
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const out = Buffer.concat(outChunks);
+      if (code === 0 && isJpegBuffer(out) && out.length > 100) {
+        resolve(out);
+      } else {
+        const errMsg = Buffer.concat(errChunks).toString("utf8").trim().slice(0, 200);
+        reject(new Error(`${command} exited ${code}: ${errMsg || "invalid JPEG output"}`));
+      }
+    });
+
+    child.stdin.on("error", () => {
+      // ignore EPIPE if child exits early
+    });
+    child.stdin.end(input);
+  });
+}
+
+async function encodePreviewToJpeg(buf: Buffer): Promise<Buffer> {
+  if (isJpegBuffer(buf)) return buf;
+
+  // Tier 1: ffmpeg native MJPEG pipe (q:v 4 ~= JPEG quality 82, ~110-130ms, zero temp files)
+  try {
+    return await runPipeEncoder(
+      "ffmpeg",
+      [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        "pipe:0",
+        "-frames:v",
+        "1",
+        "-c:v",
+        "mjpeg",
+        "-q:v",
+        "4",
+        "-f",
+        "mjpeg",
+        "pipe:1",
+      ],
+      buf,
+      8000
+    );
+  } catch {
+    // Fall through to Tier 2
+  }
+
+  // Tier 2: Python Pillow (exact quality=82, optimize=True)
+  const pyScript = [
+    "import sys, io",
+    "from PIL import Image",
+    "im = Image.open(io.BytesIO(sys.stdin.buffer.read())).convert('RGB')",
+    "out = io.BytesIO()",
+    "im.save(out, format='JPEG', quality=82, optimize=True)",
+    "sys.stdout.buffer.write(out.getvalue())",
+  ].join("; ");
+  return await runPipeEncoder("python", ["-c", pyScript], buf, 8000);
+}
+
+async function savePreviewImage(
+  buf: Buffer,
+  rawFilename: string
+): Promise<{ savedPath: string; format: "jpg" | "png"; originalBytes: number; savedBytes: number }> {
+  fs.mkdirSync(PREVIEW_DIR, { recursive: true });
+  const sanitized = (rawFilename || `preview_${Date.now()}.png`).replace(/[^a-zA-Z0-9._-]/g, "_");
+  const baseName = sanitized.replace(/\.(png|jpe?g|webp)$/i, "") || `preview_${Date.now()}`;
+
+  try {
+    const jpgBuf = await encodePreviewToJpeg(buf);
+    const destPath = path.join(PREVIEW_DIR, `${baseName}.jpg`);
+    fs.writeFileSync(destPath, jpgBuf);
+    return {
+      savedPath: destPath.replace(/\\/g, "/"),
+      format: "jpg",
+      originalBytes: buf.length,
+      savedBytes: jpgBuf.length,
+    };
+  } catch {
+    // Zero-interruption fallback: write original PNG bytes as-is
+    const fallbackName = sanitized.endsWith(".png") ? sanitized : `${baseName}.png`;
+    const destPath = path.join(PREVIEW_DIR, fallbackName);
+    fs.writeFileSync(destPath, buf);
+    return {
+      savedPath: destPath.replace(/\\/g, "/"),
+      format: "png",
+      originalBytes: buf.length,
+      savedBytes: buf.length,
+    };
+  }
+}
 
 function resolveConfiguredNaiProxyUrl(): string | null {
   try {
@@ -802,15 +935,18 @@ class BridgeHub {
     if (req.method === "POST" && reqUrl.pathname === "/bridge/upload-latest") {
       try {
         const buf = await this.readBodyBuffer(req);
-        fs.mkdirSync(PREVIEW_DIR, { recursive: true });
-        const rawName = (reqUrl.searchParams.get("filename") || `preview_${Date.now()}.png`).replace(
-          /[^a-zA-Z0-9._-]/g,
-          "_"
-        );
-        const destPath = path.join(PREVIEW_DIR, rawName);
-        fs.writeFileSync(destPath, buf);
+        const rawName = reqUrl.searchParams.get("filename") || `preview_${Date.now()}.png`;
+        const saved = await savePreviewImage(buf, rawName);
         res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-        res.end(JSON.stringify({ ok: true, savedPath: destPath.replace(/\\/g, "/") }));
+        res.end(
+          JSON.stringify({
+            ok: true,
+            savedPath: saved.savedPath,
+            format: saved.format,
+            originalBytes: saved.originalBytes,
+            savedBytes: saved.savedBytes,
+          })
+        );
       } catch (err) {
         res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
         res.end(

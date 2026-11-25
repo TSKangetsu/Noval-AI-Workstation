@@ -1789,7 +1789,7 @@ const MAPPED_MATSURI_ENTRIES: RawSfEntry[] = ALL_RAW_MATSURI_ENTRIES.map((mts) =
     .replace(/\bshe\b/g, "he")
     .replace(/\bhers\b/gi, "his")
     .replace(
-      /\b(at|behind|beneath|beside|holding|watching|pinning|covering)\s+her\b(?=$|[.,;!]|\s+(?:in|on|at|from|with|by|for|to|into|onto|over|under|above|below|along|across|through|between|while|as|and|against|straddling|kneeling|lying|sitting|standing)\b)/gi,
+      /\b(at|behind|beneath|beside|holding|watching|pinning|covering|penetrating)\s+her\b(?=$|[.,;!]|\s+(?:in|on|at|from|with|by|for|to|into|onto|over|under|above|below|along|across|through|between|while|as|and|against|straddling|kneeling|lying|sitting|standing)\b)/gi,
       "$1 him"
     )
     .replace(/\bHer\b/g, "His")

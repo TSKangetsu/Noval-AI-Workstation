@@ -283,20 +283,19 @@ export function extractFirstPromptFromPreview(rawText: string, blockIndex = 0): 
 }
 
 function stripInlineNegsKeepingTune2(text: string): { posClean: string; negParts: string[] } {
-  let keptTune2 = "";
-  const tune2Re = /(?:,\s*)?(-2\.5::(?:(?!::)[\s\S])*?nose bridge,\s*nostrils,\s*lips(?:(?!::)[\s\S])*?::)/;
-  const mTune2 = tune2Re.exec(text);
-  let working = text;
-  if (mTune2) {
-    keptTune2 = mTune2[1].trim();
-    working = (
-      working.slice(0, mTune2.index) + working.slice(mTune2.index + mTune2[0].length)
-    ).replace(/^[ ,]+|[ ,]+$/g, "");
-  }
+  const keptTune2List: string[] = [];
+  const tune2Re = /(?:,\s*)?(-(?:2\.5|1\.1|0\.95|0\.75)::(?:(?!::)[\s\S])*?nose bridge,\s*nostrils,\s*lips(?:(?!::)[\s\S])*?::)/g;
+  const working = text
+    .replace(tune2Re, (_m, block: string) => {
+      keptTune2List.push(block.trim());
+      return "";
+    })
+    .replace(/^[ ,]+|[ ,]+$/g, "");
   const split = splitInlineNegativesFromCaption(working);
   let posClean = split.cleaned;
-  if (keptTune2) {
-    posClean = posClean ? `${posClean.replace(/[, ]+$/g, "")}, ${keptTune2}` : keptTune2;
+  if (keptTune2List.length > 0) {
+    const joined = keptTune2List.join(", ");
+    posClean = posClean ? `${posClean.replace(/[, ]+$/g, "")}, ${joined}` : joined;
   }
   return { posClean, negParts: split.negChunks };
 }

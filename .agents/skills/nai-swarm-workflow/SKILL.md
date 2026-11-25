@@ -77,6 +77,11 @@ Whenever `creator` posts `@coordinator [done]` with a new scene pack / handoff J
 
 ## 3. Agent-Managed Workbench & Swarm MCP Architecture
 
+- **MANDATORY MCP-Only Rendering Rule (ZERO Direct-Gen Script Bypass)**:
+  - **Strictly forbidden** to bypass the `17890` MCP bridge by writing temporary `.ts` / `.mjs` / `tsx` scripts that call `image.novelai.net` or `naiApiClient.ts` directly!
+  - All live test renders by `creator`, `after-reviewer`, or any other worker **MUST** go through `POST http://127.0.0.1:17890/api/rpc` (`update_config` / `set_manual_prompt` + `trigger_generate` + `get_latest_image`) and inspect **only** the compressed `outputs/_mcp_live_preview/*.jpg` returned in `local_preview_path` — ensuring every render automatically uses **WebP lossless download (-29%)** and **MCP automatic JPG preview compression (-87% Gemini upload bandwidth)**.
+  - If `GET http://127.0.0.1:17890/health` shows `connected_clients: 0` (e.g., after a server restart), workers **MUST NOT** fall back to direct API scripts — immediately stop and report to `@coordinator` to revive the built-in browser tab on `http://127.0.0.1:17890/`.
+  - Never leave temporary image-generation `.ts` / `.mjs` scripts in the workspace or `scratch/`.
 - **Swarm Worker MCP Access**: Antigravity Swarm runtime injects native `nai_*` MCP tools only into the Coordinator, not into Swarm workers. Workers (such as `creator` and `after-reviewer`) control the live workbench directly via loopback HTTP RPC (`POST http://127.0.0.1:17890/api/rpc`), which has 100% parity with all 10 `nai_*` tools, zero startup cost, and proxy-immune loopback handling.
 - **Same-Origin Hosting & Proxy (`17890`)**:
   - `http://127.0.0.1:17890/` natively serves root `NovelAI_Workbench.html` and exposes allowlisted `/api/nai-proxy/{image|api}/*` routed through `nai_api_config.json`'s `proxy` via native Node `CONNECT`+TLS tunneling.
@@ -92,4 +97,5 @@ Whenever `creator` posts `@coordinator [done]` with a new scene pack / handoff J
 
 - **Target**: `ssh tskg@kangetsu.online -p 9097`, port `18080`, directory `/home/tskg/novelai-workbench/`.
 - **Security**: Upload **only** `NovelAI_Workbench.html` (and lightweight static server `server.py`); **never** upload `nai_api_config.json` or any API token.
-- **Verification**: Confirm persistent daemon (`~/novelai-workbench/server.pid`, survives across SSH sessions), `curl http://127.0.0.1:18080/health` returns `200`, and remote `GET /` SHA-256 matches local `NovelAI_Workbench.html` 100%.
+- **Public HTTPS Entry**: `https://kangetsu.online:9061/` (existing `nginx` SSL on `root@kangetsu.online` → `nps` `19061` → internal `18080`, reusing Let's Encrypt cert `kangetsu.online-0001`).
+- **Verification**: Confirm persistent daemon (`~/novelai-workbench/server.pid`, survives across SSH sessions), `curl http://127.0.0.1:18080/health` returns `200`, and strict TLS verification on `https://kangetsu.online:9061/` returns `200 OK` with SHA-256 matching local `NovelAI_Workbench.html` 100%.

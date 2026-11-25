@@ -1832,6 +1832,7 @@ export class WorkbenchApp {
 
     // Embedded Vibe Transfer Panel inside Style Card (Hidden on V5 models!)
     const vibePanel = this.el("div", "vibe-panel");
+    vibePanel.style.display = this.apiSettings.model === MODEL_V4_5_FULL ? "flex" : "none";
     this.elVibePanel = vibePanel;
     const vibeHead = this.el("div", "vibe-head");
     const vibeLeft = this.el("div", "topbar-group");
@@ -2106,12 +2107,21 @@ export class WorkbenchApp {
       saveApiSettings(this.apiSettings);
       this.syncApiControls();
     });
+    const chipWebp = this.el("button", "chip-btn", "📦 WebP 省流下载（自动无损转 PNG）");
+    chipWebp.title =
+      "请求服务端以无损 WebP 传输（约省 29% 流量），下载后在浏览器本地无损转回 PNG 并完整保留 NovelAI 参数元数据";
+    chipWebp.addEventListener("click", () => {
+      this.apiSettings.use_webp_transfer = !Boolean(this.apiSettings.use_webp_transfer ?? true);
+      saveApiSettings(this.apiSettings);
+      this.syncAllControls();
+    });
     this.syncHooks.push(() => {
       chipQt.classList.toggle("active", Boolean(this.apiSettings.append_v5_quality));
       chipProse.classList.toggle("active", Boolean(this.cfg.enable_t5_prose));
       chipAutoDl.classList.toggle("active", Boolean(this.apiSettings.auto_download));
+      chipWebp.classList.toggle("active", Boolean(this.apiSettings.use_webp_transfer ?? true));
     });
-    advChips.append(chipQt, chipProse, chipAutoDl);
+    advChips.append(chipQt, chipProse, chipAutoDl, chipWebp);
 
     const resetZone = this.el("div", "factory-reset-row");
     const btnFactoryReset = this.el(
@@ -5954,6 +5964,7 @@ export class WorkbenchApp {
           appendV5Quality: this.apiSettings.append_v5_quality,
           vibes: activeVibes,
           normalizeVibeStrength: this.apiSettings.vibe_normalize_strength,
+          useWebpTransfer: Boolean(this.apiSettings.use_webp_transfer ?? true),
           isOpusFreeEligible: this.isOpusFreeActive(),
           pixel3xNearest: isPixelC5,
           signal: this.abortController.signal,
@@ -6636,6 +6647,7 @@ export class WorkbenchApp {
           appendV5Quality: snap.append_v5_quality,
           vibes: activeVibes,
           normalizeVibeStrength: this.apiSettings.vibe_normalize_strength,
+          useWebpTransfer: Boolean(this.apiSettings.use_webp_transfer ?? true),
           isOpusFreeEligible: this.isOpusFreeActive(),
           pixel3xNearest: isPixelC5,
           signal: this.abortController.signal,

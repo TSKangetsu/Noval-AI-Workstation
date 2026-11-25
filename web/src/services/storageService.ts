@@ -672,6 +672,10 @@ export function loadApiSettings(): NaiApiSettings {
       parsed.vibe_transfer_enabled === undefined ? true : Boolean(parsed.vibe_transfer_enabled);
     merged.vibe_normalize_strength =
       parsed.vibe_normalize_strength === undefined ? true : Boolean(parsed.vibe_normalize_strength);
+    merged.use_webp_transfer =
+      parsed.use_webp_transfer === undefined
+        ? Boolean(def.use_webp_transfer ?? true)
+        : Boolean(parsed.use_webp_transfer);
     if (merged.carousel_auto_mode !== "follow_latest" && merged.carousel_auto_mode !== "timed") {
       merged.carousel_auto_mode = parsed.carousel_interval_sec === 0 ? "follow_latest" : "timed";
     }

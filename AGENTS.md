@@ -14,7 +14,7 @@
 - **Model Positive / Negative Routing**:
   - `nai-diffusion-4-5-full` (V4.5 Full) & `nai-diffusion-5-full` (V5 Full High, `params_version: 4` multipart) use separated positive (`v4_prompt`) and negative (`v4_negative_prompt`) channels.
   - `nai-diffusion-5-full-medium` (14-step distilled) ignores custom `negative_prompt` server-side; inject scene/custom negative tags as inline `-2::...::` in `base_caption` on Medium.
-  - Keep fractional positive-space counterweights (`|weight| < 1.0`, e.g. `-0.45::wide hips::`) and M6-Tune2 face counterweights (`-2.5::nose bridge, nostrils, lips::`) inside Positive.
+  - Keep fractional positive-space counterweights (`|weight| < 1.0`, e.g. `-0.45::wide hips::`) and M6-Tune2 face counterweights (`-0.95::nose bridge, nostrils, lips, thick lips, philtrum::`, plus legacy `-2.5::` compatibility) inside Positive.
 
 ## 3. Windows Shell & Live NovelAI API Proxy
 - **PowerShell 5.1 Chaining**: Do not use `&&` in Windows PowerShell commands; chain sequentially with `; if ($LASTEXITCODE -eq 0) { ... }`.

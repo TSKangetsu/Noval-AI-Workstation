@@ -33,7 +33,7 @@ Scope: Applies when inspecting, modifying, verifying, or building the TypeScript
 - **Positive/Negative Routing by Model**:
   - `nai-diffusion-4-5-full` (V4.5 Full) & `nai-diffusion-5-full` (V5 Full High, `params_version: 4` multipart) use separated positive (`v4_prompt`) and negative (`v4_negative_prompt`) channels by default.
   - `nai-diffusion-5-full-medium` (14-step distilled) ignores custom `negative_prompt` server-side; always auto-inject scene/custom negative tags as inline `-2::...::` in `base_caption` on Medium.
-  - Preserve fractional positive-space counterweights (`|weight| < 1.0`, e.g. `-0.45::wide hips::`) and M6-Tune2 face counterweights (`-2.5::nose bridge, nostrils, lips::`) inside the Positive prompt when splitting negatives.
+  - Preserve fractional positive-space counterweights (`|weight| < 1.0`, e.g. `-0.45::wide hips::`) and M6-Tune2 face counterweights (`-0.95::nose bridge, nostrils, lips, thick lips, philtrum::`, plus legacy `-2.5::` compatibility) inside the Positive prompt when splitting negatives.
   - Never place `w::tag::` weight syntax inside preset negative tuples (`MORPH_PRESETS`, `PUBIC_PRESETS`, `extra_neg`) or inside `-2::...::` wrappers (`wrapNeg` must unwrap any inner `w::...::` first so non-nesting `::` delimiters never prematurely close `-2::...::` and leak tail tags into Positive).
 - **V4.5 Vibe Transfer Sampler & Token Budget**:
   - On V4.5 Full with active Vibe slots (`reference_image_multiple`), auto-switch sampler to `k_dpmpp_2m` (`DPM++ 2M`, `0 Anlas` on Opus for `<=4` pre-encoded vibes) and reserve `34` T5 tokens per active Vibe slot (`computeSafePosTokenLimit`: `502 - 34 * activeVibeCount`).
